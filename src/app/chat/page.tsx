@@ -60,6 +60,12 @@ export default async function GuestChatPage() {
 
   return (
     <div className="h-dvh">
+      {/* Guests default to light mode unless they flipped the header switch */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `try{if(localStorage.getItem('theme')!=='dark'){document.documentElement.classList.add('light');}}catch(e){document.documentElement.classList.add('light');}`,
+        }}
+      />
       <GuestPresence chatId={chatId} ownerId={chat.owner_id} />
       <OwnerEscapeHatch />
       <ChatView

@@ -2,6 +2,7 @@
 
 import { mediaUrl } from "@/lib/utils";
 import { IconMapPin, IconUser } from "./Icons";
+import GuestThemeToggle from "./GuestThemeToggle";
 
 /** Guest-side chat header: the owner's profile, always shown as online. */
 export default function GuestChatHeader({
@@ -45,6 +46,7 @@ export default function GuestChatHeader({
           )}
         </div>
       </div>
+      <GuestThemeToggle />
     </header>
   );
 }
