@@ -7,9 +7,10 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
-import { IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconTrash } from "./Icons";
+import { IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
+import MassMessage from "./MassMessage";
 import Portal from "./Portal";
 
 type ChatRow = {
@@ -26,13 +27,6 @@ type ChatRow = {
 };
 
 type Category = { id: string; name: string };
-
-function countryFlag(code: string | null): string {
-  if (!code || code.length !== 2) return "";
-  return String.fromCodePoint(
-    ...[...code.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)
-  );
-}
 
 // Module-level cache: navigating between pages re-mounts the list,
 // so start from the last known data instead of a loading skeleton.
@@ -100,6 +94,7 @@ export default function ChatList() {
   // Guests currently viewing their chat, and whether to show only them.
   const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
   const [onlineOnly, setOnlineOnly] = useState(false);
+  const [massOpen, setMassOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const cancelledRef = useRef(false);
@@ -320,6 +315,15 @@ export default function ChatList() {
     <div>
       {/* Category tabs + multi-select — desktop web view only */}
       <div className="hidden lg:block px-3 pb-2 space-y-2">
+        {/* Mass message: prominent, always at the very top */}
+        <button
+          onClick={() => setMassOpen(true)}
+          className="w-full flex items-center justify-center gap-2 bg-accent text-white font-semibold rounded-xl py-2.5 text-sm active:opacity-80 transition-opacity"
+        >
+          <IconSend className="w-4 h-4" />
+          Mass message
+        </button>
+
         {/* Always-visible actions: never scroll away with the category tabs */}
         <div className="flex items-center gap-1.5">
           <button
@@ -508,7 +512,6 @@ export default function ChatList() {
                           {chat.guest_name}
                         </span>
                       )}
-                      <span className="text-xs shrink-0">{countryFlag(chat.guest_country)}</span>
                     </p>
                     <p className={`text-[13px] truncate ${
                       chat.unread > 0 && !active ? "text-fg font-medium" : "text-muted"
@@ -669,6 +672,15 @@ export default function ChatList() {
           </div>
         </div>
         </Portal>
+      )}
+
+      {massOpen && (
+        <MassMessage
+          chats={chats}
+          categories={categories}
+          onlineIds={onlineIds}
+          onClose={() => setMassOpen(false)}
+        />
       )}
 
       {deletingChat && (
