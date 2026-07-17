@@ -5,7 +5,8 @@ import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
 import { mediaUrl } from "@/lib/utils";
 import JoinForm from "@/components/JoinForm";
-import { IconMapPin, IconUser } from "@/components/Icons";
+import InviteProfile from "@/components/InviteProfile";
+import { IconMapPin } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -97,35 +98,26 @@ export default async function InvitePage({
             {location}
           </p>
         )}
-        <div className="relative">
-          <div className="ig-ring">
-            {avatarPath ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={mediaUrl(avatarPath)}
-                alt={ownerName}
-                className="w-24 h-24 rounded-full object-cover bg-bg"
-              />
-            ) : (
-              <div className="w-24 h-24 rounded-full bg-bg flex items-center justify-center">
-                <IconUser className="w-10 h-10 text-muted" />
-              </div>
-            )}
-          </div>
-        </div>
+        <InviteProfile
+          name={ownerName}
+          avatarUrl={avatarPath ? mediaUrl(avatarPath) : null}
+          minutesAgo={minutesAgo}
+        />
 
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">{ownerName}</h1>
-          <p className="text-green-400 text-xs font-medium mt-1">
-            Online {minutesAgo} minutes ago
-          </p>
-          <p className="text-muted text-sm mt-3">
+        <div className="text-center -mt-2">
+          <p className="text-muted text-sm">
             {blockedReason
               ? blockedReason
               : `${ownerName} invited you to a private chat. Pick a name and start chatting — no sign-up needed.`}
           </p>
         </div>
-        {!blockedReason && <JoinForm code={code} />}
+        {!blockedReason && (
+          <JoinForm
+            code={code}
+            inviterName={ownerName}
+            avatarUrl={avatarPath ? mediaUrl(avatarPath) : null}
+          />
+        )}
       </div>
     </main>
   );
