@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 import { IconMoon, IconSun } from "./Icons";
 
 type Theme = "dark" | "light";
@@ -21,6 +22,10 @@ export default function ThemeToggle() {
     } catch {
       // storage unavailable; theme still applies for this session
     }
+    // Save on the account too, so the owner's invite link page matches.
+    supabaseBrowser()
+      .auth.updateUser({ data: { theme: next } })
+      .catch(() => {});
   }
 
   const options: { id: Theme; label: string; icon: React.ReactNode }[] = [

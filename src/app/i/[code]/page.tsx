@@ -7,6 +7,7 @@ import { visitorLocation } from "@/lib/geo";
 import { mediaUrl } from "@/lib/utils";
 import JoinForm from "@/components/JoinForm";
 import InviteProfile from "@/components/InviteProfile";
+import InviteTheme from "@/components/InviteTheme";
 import { IconMapPin } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
@@ -77,18 +78,30 @@ export default async function InvitePage({
   // The profile of whoever created this link
   let ownerName = "Lolyfans";
   let avatarPath: string | null = null;
+  let ownerTheme: "light" | "dark" = "dark";
   if (invite) {
     const { data: ownerUser } = await db.auth.admin.getUserById(invite.owner_id);
     const meta = (ownerUser?.user?.user_metadata ?? {}) as {
       display_name?: string;
       avatar_path?: string;
+      theme?: string;
     };
     ownerName = meta.display_name || "Lolyfans";
     avatarPath = meta.avatar_path || null;
+    ownerTheme = meta.theme === "light" ? "light" : "dark";
   }
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
+      {/* Match the inviter's chosen theme on first paint (no flash) */}
+      <script
+        dangerouslySetInnerHTML={{
+          __html: `document.documentElement.classList.${
+            ownerTheme === "light" ? "add" : "remove"
+          }('light')`,
+        }}
+      />
+      <InviteTheme theme={ownerTheme} />
       <div className="w-full max-w-sm flex flex-col items-center gap-6">
         {location && (
           <p className="inline-flex items-center gap-1.5 rounded-full bg-card2 border border-line px-3 py-1.5 text-xs text-muted">
