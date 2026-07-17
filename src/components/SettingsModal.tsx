@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { mediaUrl } from "@/lib/utils";
+import { mediaUrl, resizeImage } from "@/lib/utils";
 import InviteManager from "./InviteManager";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import { IconLink, IconLogout, IconUser } from "./Icons";
@@ -31,9 +31,12 @@ function ProfileSection() {
       });
   }, []);
 
-  async function uploadAvatar(file: File) {
+  async function uploadAvatar(original: File) {
     setUploading(true);
     try {
+      // Profile pictures are shown small everywhere — store a 480p version
+      // so they download and render fast.
+      const file = await resizeImage(original, 480);
       const res = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
