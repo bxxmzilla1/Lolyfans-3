@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl } from "@/lib/utils";
+import { IconLock } from "./Icons";
 
 type Album = {
   id: string;
@@ -192,8 +193,8 @@ export default function VaultManager() {
 
       {items.length === 0 ? (
         <div className="py-16 text-center flex flex-col items-center gap-3">
-          <div className="w-16 h-16 rounded-full ig-gradient flex items-center justify-center text-3xl">
-            🔒
+          <div className="w-14 h-14 rounded-2xl ig-gradient glow-accent flex items-center justify-center">
+            <IconLock className="w-6 h-6 text-white" />
           </div>
           <p className="font-semibold">Vault is empty</p>
           <p className="text-muted text-sm">

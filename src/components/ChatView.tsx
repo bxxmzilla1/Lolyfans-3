@@ -5,6 +5,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl } from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
 import LinkPopup from "./LinkPopup";
+import { IconChat, IconPlus, IconSend } from "./Icons";
 
 export default function ChatView({
   chatId,
@@ -142,8 +143,8 @@ export default function ChatView({
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
-            <div className="w-16 h-16 rounded-full ig-gradient flex items-center justify-center text-3xl">
-              💬
+            <div className="w-16 h-16 rounded-2xl ig-gradient glow-accent flex items-center justify-center">
+              <IconChat className="w-8 h-8 text-white" />
             </div>
             <p className="text-muted text-sm">No messages yet. Say hi!</p>
           </div>
@@ -171,7 +172,7 @@ export default function ChatView({
             </p>
             <p className="text-xs text-muted truncate">
               {replyTo.content ||
-                (replyTo.media_type === "image" ? "📷 Photo" : "🎬 Video")}
+                (replyTo.media_type === "image" ? "Photo" : "Video")}
             </p>
           </div>
           <button
@@ -185,17 +186,17 @@ export default function ChatView({
       )}
 
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div className="flex items-end gap-2 bg-card2 border border-line rounded-3xl px-2 py-1.5">
+        <div className="flex items-end gap-2 bg-card2/80 border border-line rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
-            className="w-9 h-9 rounded-full ig-gradient text-white text-lg shrink-0 disabled:opacity-50 flex items-center justify-center"
+            className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-50 flex items-center justify-center active:opacity-80 transition-opacity"
             aria-label="Attach media"
           >
             {uploading ? (
               <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
             ) : (
-              "+"
+              <IconPlus className="w-5 h-5" />
             )}
           </button>
           <input
@@ -221,9 +222,10 @@ export default function ChatView({
           <button
             onClick={() => send()}
             disabled={!text.trim()}
-            className="px-4 py-2 text-accent font-semibold text-sm disabled:opacity-40 shrink-0"
+            className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-40 flex items-center justify-center active:opacity-80 transition-opacity"
+            aria-label="Send"
           >
-            Send
+            <IconSend className="w-4.5 h-4.5" />
           </button>
         </div>
       </div>

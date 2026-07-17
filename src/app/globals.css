@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #0a0a0c;
-  --card: #141417;
-  --card-2: #1c1c21;
-  --line: #26262c;
-  --fg: #fafafa;
-  --muted: #9b9ba3;
-  --accent: #0095f6;
-  --accent-press: #1877f2;
-  --ig-gradient: linear-gradient(45deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5);
+  --bg: #0c0a11;
+  --card: #131019;
+  --card-2: #1a1524;
+  --line: #262033;
+  --fg: #f5f3f9;
+  --muted: #8f8a9d;
+  --accent: #8b5cf6;
+  --accent-press: #7c3aed;
+  --ig-gradient: linear-gradient(135deg, #c084fc 0%, #8b5cf6 55%, #7c3aed 100%);
 }
 
 @theme inline {
@@ -35,7 +35,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Soft ambient gradient glow behind everything */
+/* Soft ambient violet glow behind everything */
 body::before {
   content: "";
   position: fixed;
@@ -43,9 +43,9 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(640px 320px at 88% -6%, rgba(150, 47, 191, 0.16), transparent 62%),
-    radial-gradient(560px 300px at -4% 104%, rgba(214, 41, 118, 0.11), transparent 62%),
-    radial-gradient(420px 240px at 50% 0%, rgba(79, 91, 213, 0.08), transparent 60%);
+    radial-gradient(680px 340px at 88% -6%, rgba(139, 92, 246, 0.14), transparent 62%),
+    radial-gradient(560px 300px at -4% 104%, rgba(124, 58, 237, 0.1), transparent 62%),
+    radial-gradient(420px 240px at 50% 0%, rgba(192, 132, 252, 0.06), transparent 60%);
 }
 
 .ig-gradient {
@@ -68,8 +68,13 @@ body::before {
 
 /* Chat bubble for own messages */
 .bubble-own {
-  background: linear-gradient(135deg, #962fbf, #d62976);
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
   color: #fff;
+}
+
+/* Glowing app mark */
+.glow-accent {
+  box-shadow: 0 0 22px rgba(139, 92, 246, 0.45);
 }
 
 ::-webkit-scrollbar {

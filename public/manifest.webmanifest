@@ -4,8 +4,8 @@
   "description": "Private chat with media, vault and invite links",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0a0a0c",
-  "theme_color": "#0a0a0c",
+  "background_color": "#0c0a11",
+  "theme_color": "#0c0a11",
   "icons": [
     {
       "src": "/icons/icon.svg",

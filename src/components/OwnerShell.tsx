@@ -7,6 +7,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import ChatList from "./ChatList";
 import VaultPanel from "./VaultPanel";
 import BottomNav from "./BottomNav";
+import { IconChat, IconGear, IconLink, IconLogout } from "./Icons";
 
 function SettingsMenu() {
   const [open, setOpen] = useState(false);
@@ -21,35 +22,35 @@ function SettingsMenu() {
 
   return (
     <div className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        aria-label="Settings"
-        className={`w-9 h-9 rounded-full flex items-center justify-center text-lg transition-colors ${
-          open ? "bg-card2 text-fg" : "text-muted hover:bg-card2 hover:text-fg"
-        }`}
-      >
-        ⚙️
-      </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-2 z-50 w-52 bg-card border border-line rounded-xl shadow-2xl overflow-hidden fade-up">
+          <div className="absolute bottom-full left-0 right-0 mb-2 z-50 bg-card border border-line rounded-2xl shadow-2xl overflow-hidden fade-up">
             <Link
               href="/invites"
               onClick={() => setOpen(false)}
-              className="flex items-center gap-2.5 px-4 py-3 text-sm font-medium hover:bg-card2 transition-colors"
+              className="flex items-center gap-3 px-4 py-3 text-sm font-medium hover:bg-card2 transition-colors"
             >
-              <span>🔗</span> Invite links
+              <IconLink className="w-4.5 h-4.5 text-muted" /> Invite links
             </Link>
             <button
               onClick={logout}
-              className="w-full flex items-center gap-2.5 px-4 py-3 text-sm font-medium text-red-400 hover:bg-card2 transition-colors border-t border-line"
+              className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-red-400 hover:bg-card2 transition-colors border-t border-line"
             >
-              <span>↪</span> Log out
+              <IconLogout className="w-4.5 h-4.5" /> Log out
             </button>
           </div>
         </>
       )}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+          open ? "bg-card2 text-fg" : "text-muted hover:bg-card2 hover:text-fg"
+        }`}
+      >
+        <IconGear className="w-5 h-5" />
+        Settings
+      </button>
     </div>
   );
 }
@@ -62,18 +63,23 @@ export default function OwnerShell({ children }: { children: React.ReactNode }) 
   return (
     <div className="h-dvh flex overflow-hidden">
       {/* Left sidebar: chats + settings (desktop) */}
-      <aside className="hidden lg:flex w-[340px] shrink-0 flex-col border-r border-line bg-card/40 backdrop-blur">
-        <div className="px-5 py-4 border-b border-line flex items-center justify-between">
-          <Link href="/inbox" className="text-2xl font-bold ig-gradient-text tracking-tight">
+      <aside className="hidden lg:flex w-[320px] shrink-0 flex-col border-r border-line bg-card/60 backdrop-blur">
+        <Link href="/inbox" className="px-5 py-5 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl ig-gradient glow-accent flex items-center justify-center">
+            <IconChat className="w-5 h-5 text-white" />
+          </div>
+          <span className="text-xl font-bold ig-gradient-text tracking-tight">
             Lolyfans
-          </Link>
-          <SettingsMenu />
-        </div>
-        <p className="px-5 pt-4 pb-1 text-xs font-semibold uppercase tracking-wider text-muted">
+          </span>
+        </Link>
+        <p className="px-5 pt-1 pb-2 text-[11px] font-semibold uppercase tracking-widest text-muted">
           Messages
         </p>
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto pb-2">
           <ChatList />
+        </div>
+        <div className="border-t border-line p-3">
+          <SettingsMenu />
         </div>
       </aside>
 
@@ -82,7 +88,7 @@ export default function OwnerShell({ children }: { children: React.ReactNode }) 
 
       {/* Right sidebar: full vault (desktop) */}
       {showVaultPanel && (
-        <aside className="hidden xl:flex w-[380px] shrink-0 flex-col border-l border-line bg-card/40 backdrop-blur">
+        <aside className="hidden xl:flex w-[380px] shrink-0 flex-col border-l border-line bg-card/60 backdrop-blur">
           <VaultPanel />
         </aside>
       )}

@@ -4,6 +4,7 @@ import { getOwnerId, getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import AuthForm from "@/components/AuthForm";
+import { IconChat } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +36,8 @@ export default async function Home({
     <main className="flex-1 flex flex-col items-center justify-center p-6">
       <div className="w-full max-w-sm flex flex-col items-center gap-8">
         <div className="flex flex-col items-center gap-4">
-          <div className="ig-ring">
-            <div className="w-20 h-20 rounded-full bg-bg flex items-center justify-center text-4xl">
-              💬
-            </div>
+          <div className="w-20 h-20 rounded-3xl ig-gradient glow-accent flex items-center justify-center">
+            <IconChat className="w-10 h-10 text-white" />
           </div>
           <h1 className="text-4xl font-bold ig-gradient-text tracking-tight">
             Lolyfans

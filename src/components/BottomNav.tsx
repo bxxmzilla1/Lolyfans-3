@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { IconChat, IconLock, IconLink } from "./Icons";
 
 const tabs = [
-  { href: "/inbox", label: "Chats", icon: "💬" },
-  { href: "/vault", label: "Vault", icon: "🔒" },
-  { href: "/invites", label: "Links", icon: "🔗" },
+  { href: "/inbox", label: "Chats", Icon: IconChat },
+  { href: "/vault", label: "Vault", Icon: IconLock },
+  { href: "/invites", label: "Links", Icon: IconLink },
 ];
 
 export default function BottomNav() {
@@ -14,24 +15,18 @@ export default function BottomNav() {
   return (
     <nav className="border-t border-line bg-card/80 backdrop-blur-lg pb-[env(safe-area-inset-bottom)]">
       <div className="max-w-2xl mx-auto flex">
-        {tabs.map((tab) => {
-          const active = pathname.startsWith(tab.href);
+        {tabs.map(({ href, label, Icon }) => {
+          const active = pathname.startsWith(href);
           return (
             <Link
-              key={tab.href}
-              href={tab.href}
-              className={`flex-1 flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors ${
-                active ? "text-fg" : "text-muted"
+              key={href}
+              href={href}
+              className={`flex-1 flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
+                active ? "text-accent" : "text-muted"
               }`}
             >
-              <span className={`text-xl ${active ? "" : "grayscale opacity-70"}`}>
-                {tab.icon}
-              </span>
-              {active ? (
-                <span className="ig-gradient-text font-semibold">{tab.label}</span>
-              ) : (
-                tab.label
-              )}
+              <Icon className="w-5.5 h-5.5" />
+              {label}
             </Link>
           );
         })}

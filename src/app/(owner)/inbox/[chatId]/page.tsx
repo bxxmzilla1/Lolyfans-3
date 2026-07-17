@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getOwnerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import ChatView from "@/components/ChatView";
+import { IconBack } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -34,8 +35,8 @@ export default async function OwnerChatPage({
 
   const header = (
     <header className="border-b border-line px-3 py-2.5 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
-      <Link href="/inbox" className="lg:hidden text-fg text-xl px-1" aria-label="Back">
-        ‹
+      <Link href="/inbox" className="lg:hidden text-fg p-1" aria-label="Back">
+        <IconBack className="w-5 h-5" />
       </Link>
       <div className="ig-ring">
         <div className="w-9 h-9 rounded-full bg-bg flex items-center justify-center font-bold uppercase text-sm">

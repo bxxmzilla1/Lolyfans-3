@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, Invite } from "@/lib/invites";
 import JoinForm from "@/components/JoinForm";
+import { IconChat } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -35,10 +36,8 @@ export default async function InvitePage({
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
       <div className="w-full max-w-sm flex flex-col items-center gap-6">
-        <div className="ig-ring">
-          <div className="w-20 h-20 rounded-full bg-bg flex items-center justify-center text-4xl">
-            💬
-          </div>
+        <div className="w-20 h-20 rounded-3xl ig-gradient glow-accent flex items-center justify-center">
+          <IconChat className="w-10 h-10 text-white" />
         </div>
         <div className="text-center">
           <h1 className="text-3xl font-bold ig-gradient-text">Lolyfans</h1>

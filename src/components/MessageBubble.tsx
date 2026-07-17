@@ -1,6 +1,7 @@
 "use client";
 
 import { mediaUrl, formatTime, URL_REGEX } from "@/lib/utils";
+import { IconReply } from "./Icons";
 
 export type Message = {
   id: string;
@@ -64,7 +65,7 @@ export default function MessageBubble({
             </p>
             <p className="truncate">
               {repliedTo.content ||
-                (repliedTo.media_type === "image" ? "📷 Photo" : "🎬 Video")}
+                (repliedTo.media_type === "image" ? "Photo" : "Video")}
             </p>
           </div>
         )}
@@ -104,11 +105,11 @@ export default function MessageBubble({
 
       <button
         onClick={() => onReply(message)}
-        className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted text-xs px-1.5 py-1 shrink-0"
+        className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted hover:text-fg p-1.5 shrink-0"
         aria-label="Reply"
         title="Reply"
       >
-        ↩
+        <IconReply className="w-4 h-4" />
       </button>
     </div>
   );

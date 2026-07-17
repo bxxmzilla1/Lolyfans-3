@@ -1,5 +1,6 @@
 import ChatList from "@/components/ChatList";
 import LogoutButton from "@/components/LogoutButton";
+import { IconChat } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -19,10 +20,8 @@ export default function InboxPage() {
 
       {/* Desktop: pick a chat from the sidebar */}
       <div className="hidden lg:flex h-full flex-col items-center justify-center gap-4 text-center p-8">
-        <div className="ig-ring">
-          <div className="w-24 h-24 rounded-full bg-bg flex items-center justify-center text-5xl">
-            💬
-          </div>
+        <div className="w-20 h-20 rounded-3xl ig-gradient glow-accent flex items-center justify-center">
+          <IconChat className="w-10 h-10 text-white" />
         </div>
         <h2 className="text-xl font-bold">Your messages</h2>
         <p className="text-muted text-sm max-w-xs">
