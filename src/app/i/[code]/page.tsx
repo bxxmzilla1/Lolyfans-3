@@ -131,14 +131,7 @@ export default async function InvitePage({
             {blockedReason ? blockedReason : description}
           </p>
         </div>
-        {!blockedReason && (
-          <JoinForm
-            code={code}
-            inviterName={ownerName}
-            avatarUrl={avatarPath ? mediaUrl(avatarPath) : null}
-            buttonText={buttonText}
-          />
-        )}
+        {!blockedReason && <JoinForm code={code} buttonText={buttonText} />}
       </div>
     </main>
   );
