@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { IconLink } from "./Icons";
 
@@ -13,6 +14,7 @@ type ChatRow = {
   last_message_at: string;
   invites: { label: string | null; code: string } | null;
   preview: { content: string | null; media_type: string | null } | null;
+  unread: number;
 };
 
 function countryFlag(code: string | null): string {
@@ -25,28 +27,50 @@ function countryFlag(code: string | null): string {
 // Module-level cache: navigating between pages re-mounts the list,
 // so start from the last known data instead of a loading skeleton.
 let chatsCache: ChatRow[] | null = null;
+let ownerIdCache: string | null = null;
 
 export default function ChatList() {
   const [chats, setChats] = useState<ChatRow[] | null>(chatsCache);
+  const [ownerId, setOwnerId] = useState<string | null>(ownerIdCache);
   const pathname = usePathname();
+  const cancelledRef = useRef(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      const res = await fetch("/api/chats");
-      if (res.ok && !cancelled) {
-        const { chats } = await res.json();
-        chatsCache = chats;
-        setChats(chats);
-      }
+  async function load() {
+    const res = await fetch("/api/chats");
+    if (res.ok && !cancelledRef.current) {
+      const { chats, ownerId } = await res.json();
+      chatsCache = chats;
+      ownerIdCache = ownerId;
+      setChats(chats);
+      setOwnerId(ownerId);
     }
+  }
+
+  // Refetch on mount and on navigation (opening a chat clears its badge server-side).
+  useEffect(() => {
+    cancelledRef.current = false;
     load();
-    const interval = setInterval(load, 10000);
+    const interval = setInterval(load, 15000);
     return () => {
-      cancelled = true;
+      cancelledRef.current = true;
       clearInterval(interval);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
+
+  // Instant updates: every new message broadcasts to the owner's inbox channel.
+  useEffect(() => {
+    if (!ownerId) return;
+    const supabase = supabaseBrowser();
+    const channel = supabase
+      .channel(`inbox:${ownerId}`)
+      .on("broadcast", { event: "new-message" }, () => load())
+      .subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerId]);
 
   if (chats === null) {
     return (
@@ -106,11 +130,15 @@ export default function ChatList() {
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                <p className="font-semibold text-[14px] flex items-center gap-1.5">
+                <p className={`text-[14px] flex items-center gap-1.5 ${
+                  chat.unread > 0 && !active ? "font-bold" : "font-semibold"
+                }`}>
                   {chat.guest_name}
                   <span className="text-xs">{countryFlag(chat.guest_country)}</span>
                 </p>
-                <p className="text-muted text-[13px] truncate">
+                <p className={`text-[13px] truncate ${
+                  chat.unread > 0 && !active ? "text-fg font-medium" : "text-muted"
+                }`}>
                   {chat.preview?.content ||
                     (chat.preview?.media_type === "image"
                       ? "Photo"
@@ -119,9 +147,16 @@ export default function ChatList() {
                       : "New chat")}
                 </p>
               </div>
-              <span className="text-muted text-[11px] shrink-0">
-                {formatTime(chat.last_message_at)}
-              </span>
+              <div className="flex flex-col items-end gap-1 shrink-0">
+                <span className="text-muted text-[11px]">
+                  {formatTime(chat.last_message_at)}
+                </span>
+                {chat.unread > 0 && !active && (
+                  <span className="min-w-5 h-5 px-1.5 rounded-full bg-accent text-white text-[11px] font-bold flex items-center justify-center fade-up">
+                    {chat.unread > 99 ? "99+" : chat.unread}
+                  </span>
+                )}
+              </div>
             </Link>
           </li>
         );

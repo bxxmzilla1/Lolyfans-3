@@ -50,7 +50,7 @@ export default function MessageBubble({
   onMediaClick: (m: Message) => void;
 }) {
   return (
-    <div className={`group flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
+    <div className={`group msg-in flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
       <div
         className={`max-w-[78%] rounded-3xl overflow-hidden ${
           mine ? "bubble-own rounded-br-lg" : "bg-card2 rounded-bl-lg"
@@ -105,7 +105,7 @@ export default function MessageBubble({
 
       <button
         onClick={() => onReply(message)}
-        className="opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity text-muted hover:text-fg p-1.5 shrink-0"
+        className="opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100 transition-opacity text-muted hover:text-fg p-1.5 shrink-0"
         aria-label="Reply"
         title="Reply"
       >

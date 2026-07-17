@@ -28,7 +28,9 @@ create table if not exists chats (
   guest_country text,
   guest_ip text,
   created_at timestamptz not null default now(),
-  last_message_at timestamptz not null default now()
+  last_message_at timestamptz not null default now(),
+  -- When the owner last opened this chat (drives unread badges)
+  last_read_at timestamptz not null default now()
 );
 
 -- Upgrade path: if the tables were created by the old single-owner schema,
@@ -36,6 +38,7 @@ create table if not exists chats (
 alter table invites add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 alter table chats add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 alter table chats add column if not exists guest_ip text;
+alter table chats add column if not exists last_read_at timestamptz not null default now();
 
 create index if not exists chats_owner_idx on chats (owner_id, last_message_at desc);
 create index if not exists chats_guest_ip_idx on chats (guest_ip);

@@ -30,6 +30,12 @@ export default async function OwnerChatPage({
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(500),
+    // Opening the chat marks it as read (clears the sidebar badge)
+    db
+      .from("chats")
+      .update({ last_read_at: new Date().toISOString() })
+      .eq("id", chatId)
+      .eq("owner_id", ownerId),
   ]);
   if (!chat) notFound();
 

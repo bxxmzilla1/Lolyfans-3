@@ -46,11 +46,34 @@ export default function ChatView({
     const channel = supabase
       .channel(`chat:${chatId}`)
       .on("broadcast", { event: "new-message" }, ({ payload }) => {
-        setMessages((prev) =>
-          prev.some((m) => m.id === (payload as Message).id)
-            ? prev
-            : [...prev, payload as Message]
-        );
+        const msg = payload as Message;
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === msg.id)) return prev;
+          // Our own message echoed back: replace the optimistic temp bubble
+          // instead of appending, so it never shows twice.
+          if (msg.sender === role) {
+            const tempIdx = prev.findIndex(
+              (m) =>
+                m.id.startsWith("temp-") &&
+                m.content === msg.content &&
+                m.media_path === msg.media_path
+            );
+            if (tempIdx !== -1) {
+              const copy = [...prev];
+              copy[tempIdx] = msg;
+              return copy;
+            }
+          } else if (role === "owner") {
+            // Reading the incoming message right now: mark the chat as read
+            // so the sidebar badge doesn't stick around.
+            fetch("/api/read", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ chatId }),
+            }).catch(() => {});
+          }
+          return [...prev, msg];
+        });
       })
       .subscribe();
 
