@@ -2,12 +2,47 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
-import { inviteUsable, countryAllowed, Invite } from "@/lib/invites";
+import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
 import { mediaUrl } from "@/lib/utils";
 import JoinForm from "@/components/JoinForm";
-import { IconUser } from "@/components/Icons";
+import { IconMapPin, IconUser } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
+
+function countryName(code: string): string {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code.toUpperCase()) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/** Visitor's "City, Country" via ipinfo.io, falling back to Vercel's geo headers. */
+async function visitorLocation(h: Headers): Promise<string | null> {
+  const ip = ipFromHeaders(h);
+  try {
+    const token = process.env.IPINFO_TOKEN;
+    const url = `https://ipinfo.io/${ip ? `${ip}/` : ""}json${token ? `?token=${token}` : ""}`;
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(2500),
+      cache: "no-store",
+    });
+    if (res.ok) {
+      const data = (await res.json()) as { city?: string; country?: string };
+      if (data.city && data.country) {
+        return `${data.city}, ${countryName(data.country)}`;
+      }
+    }
+  } catch {
+    // ipinfo unreachable or rate limited; use the header fallback below
+  }
+  const city = h.get("x-vercel-ip-city");
+  const country = h.get("x-vercel-ip-country");
+  if (city && country) {
+    return `${decodeURIComponent(city)}, ${countryName(country)}`;
+  }
+  return null;
+}
 
 export default async function InvitePage({
   params,
@@ -25,9 +60,11 @@ export default async function InvitePage({
     .single<Invite>();
 
   const usable = inviteUsable(invite);
+  const requestHeaders = await headers();
   const country =
-    (await headers()).get("x-vercel-ip-country")?.toUpperCase() || null;
+    requestHeaders.get("x-vercel-ip-country")?.toUpperCase() || null;
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;
+  const location = await visitorLocation(requestHeaders);
 
   const blockedReason = !usable.ok
     ? usable.reason
@@ -69,7 +106,6 @@ export default async function InvitePage({
               </div>
             )}
           </div>
-          <span className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-green-500 border-4 border-bg" />
         </div>
 
         <div className="text-center">
@@ -82,6 +118,12 @@ export default async function InvitePage({
               ? blockedReason
               : `${ownerName} invited you to a private chat. Pick a name and start chatting — no sign-up needed.`}
           </p>
+          {location && (
+            <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-card2 border border-line px-3 py-1.5 text-xs text-muted">
+              <IconMapPin className="w-3.5 h-3.5 text-accent" />
+              {location}
+            </p>
+          )}
         </div>
         {!blockedReason && <JoinForm code={code} />}
       </div>
