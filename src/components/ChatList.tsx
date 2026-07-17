@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { IconLink } from "./Icons";
@@ -28,6 +29,36 @@ function countryFlag(code: string | null): string {
 // so start from the last known data instead of a loading skeleton.
 let chatsCache: ChatRow[] | null = null;
 let ownerIdCache: string | null = null;
+
+// One shared realtime subscription for all mounted chat lists. The component
+// can be mounted twice at once (desktop sidebar + mobile list), and Supabase
+// forbids two subscriptions to the same channel topic on one client.
+let inboxChannel: RealtimeChannel | null = null;
+let inboxChannelOwner: string | null = null;
+const inboxListeners = new Set<() => void>();
+
+function subscribeInbox(ownerId: string, onEvent: () => void): () => void {
+  inboxListeners.add(onEvent);
+  if (!inboxChannel || inboxChannelOwner !== ownerId) {
+    const supabase = supabaseBrowser();
+    if (inboxChannel) supabase.removeChannel(inboxChannel);
+    inboxChannelOwner = ownerId;
+    inboxChannel = supabase
+      .channel(`inbox:${ownerId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        () => inboxListeners.forEach((listener) => listener())
+      )
+      .on("broadcast", { event: "new-message" }, () =>
+        inboxListeners.forEach((listener) => listener())
+      )
+      .subscribe();
+  }
+  return () => {
+    inboxListeners.delete(onEvent);
+  };
+}
 
 export default function ChatList() {
   const [chats, setChats] = useState<ChatRow[] | null>(chatsCache);
@@ -58,25 +89,13 @@ export default function ChatList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // Instant updates, two independent paths:
+  // Instant updates, two independent paths (shared across all mounted lists):
   // 1. postgres_changes: the database itself streams every INSERT on messages
   //    (RLS limits events to this owner's chats) — fires on every message, always.
   // 2. broadcast: pushed by the API route as a low-latency extra.
   useEffect(() => {
     if (!ownerId) return;
-    const supabase = supabaseBrowser();
-    const channel = supabase
-      .channel(`inbox:${ownerId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        () => load()
-      )
-      .on("broadcast", { event: "new-message" }, () => load())
-      .subscribe();
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return subscribeInbox(ownerId, load);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerId]);
 
