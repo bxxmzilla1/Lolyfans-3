@@ -19,6 +19,15 @@ create table if not exists invites (
   created_at timestamptz not null default now()
 );
 
+-- Unique-IP visits of an invite link page (drives the "clicks" stat)
+create table if not exists invite_visits (
+  invite_id uuid not null references invites(id) on delete cascade,
+  ip text not null,
+  created_at timestamptz not null default now(),
+  primary key (invite_id, ip)
+);
+alter table invite_visits enable row level security;
+
 -- One chat per guest that joined through an invite
 create table if not exists chats (
   id uuid primary key default gen_random_uuid(),

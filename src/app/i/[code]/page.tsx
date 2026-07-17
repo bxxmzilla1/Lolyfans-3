@@ -52,6 +52,16 @@ export default async function InvitePage({
     .eq("code", code)
     .single<Invite>();
 
+  // Count this visit as a link click (unique per IP; revisits are no-ops).
+  if (invite && visitorIp) {
+    await db
+      .from("invite_visits")
+      .upsert(
+        { invite_id: invite.id, ip: visitorIp },
+        { onConflict: "invite_id,ip", ignoreDuplicates: true }
+      );
+  }
+
   const usable = inviteUsable(invite);
   const country =
     requestHeaders.get("x-vercel-ip-country")?.toUpperCase() || null;

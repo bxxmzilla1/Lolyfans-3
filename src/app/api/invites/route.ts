@@ -8,7 +8,7 @@ export async function GET() {
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = supabaseAdmin();
-  const [invitesRes, chatsRes] = await Promise.all([
+  const [invitesRes, chatsRes, visitsRes] = await Promise.all([
     db
       .from("invites")
       .select("*")
@@ -19,19 +19,25 @@ export async function GET() {
       .select("id, invite_id, guest_country, guest_ip")
       .eq("owner_id", ownerId)
       .not("invite_id", "is", null),
+    // Unique-IP page visits per link ("clicks"), scoped to this owner's links
+    db
+      .from("invite_visits")
+      .select("invite_id, invites!inner(owner_id)")
+      .eq("invites.owner_id", ownerId),
   ]);
   if (invitesRes.error) {
     return NextResponse.json({ error: invitesRes.error.message }, { status: 500 });
   }
 
-  // Per link: how many people joined (deduplicated by IP — the same device
-  // rejoining doesn't count twice) and which countries they came from.
-  type Stats = { joins: number; countries: Record<string, number> };
+  // Per link: subscribers = people who created a chat (deduplicated by IP —
+  // the same device rejoining doesn't count twice), plus their countries.
+  type Stats = { joins: number; clicks: number; countries: Record<string, number> };
   const stats: Record<string, Stats> = {};
+  const blank = (): Stats => ({ joins: 0, clicks: 0, countries: {} });
   const seenIps: Record<string, Set<string>> = {};
   for (const chat of chatsRes.data ?? []) {
     const inviteId = chat.invite_id as string;
-    stats[inviteId] ??= { joins: 0, countries: {} };
+    stats[inviteId] ??= blank();
     seenIps[inviteId] ??= new Set();
     // Chats without a stored IP still count once each (keyed by chat id)
     const key = chat.guest_ip || `chat:${chat.id}`;
@@ -41,11 +47,16 @@ export async function GET() {
     const country = (chat.guest_country || "??").toUpperCase();
     stats[inviteId].countries[country] = (stats[inviteId].countries[country] ?? 0) + 1;
   }
+  for (const visit of visitsRes.data ?? []) {
+    const inviteId = visit.invite_id as string;
+    stats[inviteId] ??= blank();
+    stats[inviteId].clicks += 1; // rows are already unique per (invite, ip)
+  }
 
   return NextResponse.json({
     invites: (invitesRes.data ?? []).map((invite) => ({
       ...invite,
-      stats: stats[invite.id] ?? { joins: 0, countries: {} },
+      stats: stats[invite.id] ?? blank(),
     })),
   });
 }

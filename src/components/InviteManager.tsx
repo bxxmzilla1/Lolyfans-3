@@ -8,7 +8,7 @@ import Portal from "./Portal";
 import { IconEdit } from "./Icons";
 
 type InviteWithStats = Invite & {
-  stats: { joins: number; countries: Record<string, number> };
+  stats: { joins: number; clicks: number; countries: Record<string, number> };
 };
 
 export default function InviteManager() {
@@ -146,7 +146,8 @@ export default function InviteManager() {
               </p>
               <div className="flex items-center gap-1.5 shrink-0">
                 <span className="text-xs text-muted">
-                  {invite.stats.joins} join{invite.stats.joins === 1 ? "" : "s"}
+                  {invite.stats.clicks} click{invite.stats.clicks === 1 ? "" : "s"} ·{" "}
+                  {invite.stats.joins} subscriber{invite.stats.joins === 1 ? "" : "s"}
                 </span>
                 <button
                   onClick={() => {
