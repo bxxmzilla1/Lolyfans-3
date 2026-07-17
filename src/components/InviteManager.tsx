@@ -5,7 +5,7 @@ import type { Invite } from "@/lib/invites";
 import CountryPicker, { countryFlag, countryName } from "./CountryPicker";
 import ConfirmDialog from "./ConfirmDialog";
 import Portal from "./Portal";
-import { IconEdit, IconRefresh } from "./Icons";
+import { IconCheck, IconEdit, IconRefresh } from "./Icons";
 
 type InviteWithStats = Invite & {
   stats: { joins: number; clicks: number; countries: Record<string, number> };
@@ -22,6 +22,11 @@ export default function InviteManager() {
   const [renaming, setRenaming] = useState<InviteWithStats | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  // Multi-select for bulk country changes
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkCountries, setBulkCountries] = useState<string[]>([]);
+  const [applying, setApplying] = useState(false);
 
   async function load() {
     const res = await fetch("/api/invites");
@@ -84,6 +89,30 @@ export default function InviteManager() {
     setTimeout(() => setCopied(null), 1500);
   }
 
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function applyCountries() {
+    if (applying || selected.size === 0) return;
+    setApplying(true);
+    await fetch("/api/invites", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected], allowedCountries: bulkCountries }),
+    });
+    setApplying(false);
+    setSelectMode(false);
+    setSelected(new Set());
+    setBulkCountries([]);
+    load();
+  }
+
   async function saveRename() {
     if (!renaming) return;
     const id = renaming.id;
@@ -116,6 +145,22 @@ export default function InviteManager() {
             <IconRefresh className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
           </button>
+          {invites.length > 0 && (
+            <button
+              onClick={() => {
+                setSelectMode((v) => !v);
+                setSelected(new Set());
+                setBulkCountries([]);
+              }}
+              className={`px-4 rounded-xl font-semibold text-sm transition-colors ${
+                selectMode
+                  ? "bg-accent text-white"
+                  : "bg-card2 border border-line text-muted hover:text-fg"
+              }`}
+            >
+              {selectMode ? "Cancel" : "Select"}
+            </button>
+          )}
         </div>
       ) : (
         <div className="bg-card border border-line rounded-2xl p-4 space-y-4 fade-up">
@@ -151,13 +196,63 @@ export default function InviteManager() {
         </div>
       )}
 
+      {selectMode && (
+        <div className="bg-card border border-line rounded-2xl p-4 space-y-3 fade-up">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-accent">
+              {selected.size} link{selected.size === 1 ? "" : "s"} selected
+            </p>
+            <button
+              onClick={() =>
+                setSelected(
+                  selected.size === invites.length
+                    ? new Set()
+                    : new Set(invites.map((i) => i.id))
+                )
+              }
+              className="text-xs font-semibold text-muted hover:text-fg"
+            >
+              {selected.size === invites.length ? "Clear all" : "Select all"}
+            </button>
+          </div>
+          {selected.size === 0 ? (
+            <p className="text-xs text-muted">
+              Tap the links below, then choose which countries can use them.
+            </p>
+          ) : (
+            <>
+              <p className="text-sm font-semibold">
+                Countries allowed to chat with the selected links
+              </p>
+              <CountryPicker selected={bulkCountries} onChange={setBulkCountries} />
+              <button
+                onClick={applyCountries}
+                disabled={applying}
+                className="w-full bg-accent text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
+              >
+                {applying
+                  ? "Applying…"
+                  : bulkCountries.length === 0
+                  ? `Allow everyone for ${selected.size} link${selected.size === 1 ? "" : "s"}`
+                  : `Apply to ${selected.size} link${selected.size === 1 ? "" : "s"}`}
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       <ul className="space-y-3">
         {invites.map((invite) => (
           <li
             key={invite.id}
-            className={`bg-card border border-line rounded-2xl p-4 ${
-              invite.active ? "" : "opacity-50"
-            }`}
+            onClick={() => selectMode && toggleSelected(invite.id)}
+            className={`bg-card border rounded-2xl p-4 transition-colors ${
+              selectMode && selected.has(invite.id)
+                ? "border-accent ring-1 ring-accent cursor-pointer"
+                : selectMode
+                ? "border-line cursor-pointer hover:bg-card2/60"
+                : "border-line"
+            } ${invite.active ? "" : "opacity-50"}`}
           >
             <div className="flex items-center justify-between gap-2">
               <p className="font-semibold text-[15px] truncate">
@@ -168,17 +263,31 @@ export default function InviteManager() {
                   {invite.stats.clicks} click{invite.stats.clicks === 1 ? "" : "s"} ·{" "}
                   {invite.stats.joins} subscriber{invite.stats.joins === 1 ? "" : "s"}
                 </span>
-                <button
-                  onClick={() => {
-                    setRenaming(invite);
-                    setRenameValue(invite.label ?? "");
-                  }}
-                  aria-label="Rename link"
-                  title="Rename link"
-                  className="w-6 h-6 rounded-lg bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center"
-                >
-                  <IconEdit className="w-3 h-3" />
-                </button>
+                {selectMode ? (
+                  <span
+                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                      selected.has(invite.id)
+                        ? "bg-accent border-accent"
+                        : "border-line"
+                    }`}
+                  >
+                    {selected.has(invite.id) && (
+                      <IconCheck className="w-3 h-3 text-white" />
+                    )}
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setRenaming(invite);
+                      setRenameValue(invite.label ?? "");
+                    }}
+                    aria-label="Rename link"
+                    title="Rename link"
+                    className="w-6 h-6 rounded-lg bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center"
+                  >
+                    <IconEdit className="w-3 h-3" />
+                  </button>
+                )}
               </div>
             </div>
             <p className="text-muted text-xs mt-0.5 break-all">/i/{invite.code}</p>
@@ -209,26 +318,28 @@ export default function InviteManager() {
                   ))}
               </div>
             )}
-            <div className="flex gap-2 mt-3">
-              <button
-                onClick={() => copy(invite)}
-                className="flex-1 bg-accent text-white rounded-lg py-2 text-xs font-semibold"
-              >
-                {copied === invite.id ? "Copied!" : "Copy link"}
-              </button>
-              <button
-                onClick={() => toggleActive(invite)}
-                className="flex-1 bg-card2 border border-line rounded-lg py-2 text-xs font-semibold"
-              >
-                {invite.active ? "Disable" : "Enable"}
-              </button>
-              <button
-                onClick={() => setDeleting(invite)}
-                className="px-3 bg-card2 border border-line rounded-lg py-2 text-xs font-semibold text-red-400"
-              >
-                Delete
-              </button>
-            </div>
+            {!selectMode && (
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => copy(invite)}
+                  className="flex-1 bg-accent text-white rounded-lg py-2 text-xs font-semibold"
+                >
+                  {copied === invite.id ? "Copied!" : "Copy link"}
+                </button>
+                <button
+                  onClick={() => toggleActive(invite)}
+                  className="flex-1 bg-card2 border border-line rounded-lg py-2 text-xs font-semibold"
+                >
+                  {invite.active ? "Disable" : "Enable"}
+                </button>
+                <button
+                  onClick={() => setDeleting(invite)}
+                  className="px-3 bg-card2 border border-line rounded-lg py-2 text-xs font-semibold text-red-400"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
           </li>
         ))}
       </ul>

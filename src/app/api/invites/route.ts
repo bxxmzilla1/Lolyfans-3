@@ -93,18 +93,38 @@ export async function PATCH(req: NextRequest) {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id, active, label } = await req.json();
-  const updates: { active?: boolean; label?: string | null } = {};
+  const body = await req.json();
+  const { id, ids, active, label } = body;
+
+  const updates: {
+    active?: boolean;
+    label?: string | null;
+    allowed_countries?: string[] | null;
+  } = {};
   if (typeof active === "boolean") updates.active = active;
   if (label !== undefined) updates.label = String(label).trim() || null;
+  if (body.allowedCountries !== undefined) {
+    const codes: string[] = Array.isArray(body.allowedCountries)
+      ? body.allowedCountries
+          .map((c: string) => String(c).trim().toUpperCase())
+          .filter((c: string) => /^[A-Z]{2}$/.test(c))
+      : [];
+    updates.allowed_countries = codes.length > 0 ? codes : null;
+  }
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
+
+  // Single link or a multi-selected batch
+  const targetIds: string[] = Array.isArray(ids) ? ids : id ? [id] : [];
+  if (targetIds.length === 0) {
+    return NextResponse.json({ error: "id or ids required" }, { status: 400 });
   }
 
   const { error } = await supabaseAdmin()
     .from("invites")
     .update(updates)
-    .eq("id", id)
+    .in("id", targetIds)
     .eq("owner_id", ownerId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
