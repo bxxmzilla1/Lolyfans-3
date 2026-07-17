@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { getGuestChatId } from "@/lib/session";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import ChatView from "@/components/ChatView";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +8,13 @@ export const dynamic = "force-dynamic";
 export default async function GuestChatPage() {
   const chatId = await getGuestChatId();
   if (!chatId) redirect("/");
+
+  const { data: messages } = await supabaseAdmin()
+    .from("messages")
+    .select("*")
+    .eq("chat_id", chatId)
+    .order("created_at", { ascending: true })
+    .limit(500);
 
   const header = (
     <header className="border-b border-line px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
@@ -24,7 +32,12 @@ export default async function GuestChatPage() {
 
   return (
     <div className="h-dvh">
-      <ChatView chatId={chatId} role="guest" header={header} />
+      <ChatView
+        chatId={chatId}
+        role="guest"
+        header={header}
+        initialMessages={messages ?? []}
+      />
     </div>
   );
 }

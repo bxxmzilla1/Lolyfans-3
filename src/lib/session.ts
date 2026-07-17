@@ -30,11 +30,15 @@ export function verifyToken<T>(token: string | undefined | null): T | null {
   }
 }
 
-/** The signed-in account's user id, or null when not signed in. */
+/**
+ * The signed-in account's user id, or null when not signed in.
+ * Uses getClaims() which verifies the JWT locally (cached JWKS) instead of
+ * calling the Supabase auth server on every request.
+ */
 export async function getOwnerId(): Promise<string | null> {
   const supabase = await supabaseServer();
-  const { data } = await supabase.auth.getUser();
-  return data.user?.id ?? null;
+  const { data } = await supabase.auth.getClaims();
+  return (data?.claims?.sub as string | undefined) ?? null;
 }
 
 /** Chat id from the guest cookie (people who joined via an invite link). */

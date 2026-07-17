@@ -24,15 +24,17 @@ export async function GET(req: NextRequest) {
   const chatId = req.nextUrl.searchParams.get("chatId");
   if (!chatId) return NextResponse.json({ error: "chatId required" }, { status: 400 });
 
-  const role = await authorizeChat(chatId);
+  // Run the auth check and the query in parallel; data is only returned if authorized.
+  const [role, { data, error }] = await Promise.all([
+    authorizeChat(chatId),
+    supabaseAdmin()
+      .from("messages")
+      .select("*")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: true })
+      .limit(500),
+  ]);
   if (!role) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  const { data, error } = await supabaseAdmin()
-    .from("messages")
-    .select("*")
-    .eq("chat_id", chatId)
-    .order("created_at", { ascending: true })
-    .limit(500);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ messages: data, role });
@@ -65,8 +67,10 @@ export async function POST(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  await db.from("chats").update({ last_message_at: message.created_at }).eq("id", chatId);
-  await broadcast(`chat:${chatId}`, "new-message", message);
+  await Promise.all([
+    db.from("chats").update({ last_message_at: message.created_at }).eq("id", chatId),
+    broadcast(`chat:${chatId}`, "new-message", message),
+  ]);
 
   return NextResponse.json({ message });
 }

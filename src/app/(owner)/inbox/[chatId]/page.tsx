@@ -15,12 +15,21 @@ export default async function OwnerChatPage({
   if (!ownerId) redirect("/");
   const { chatId } = await params;
 
-  const { data: chat } = await supabaseAdmin()
-    .from("chats")
-    .select("*, invites(label)")
-    .eq("id", chatId)
-    .eq("owner_id", ownerId)
-    .single();
+  const db = supabaseAdmin();
+  const [{ data: chat }, { data: messages }] = await Promise.all([
+    db
+      .from("chats")
+      .select("*, invites(label)")
+      .eq("id", chatId)
+      .eq("owner_id", ownerId)
+      .single(),
+    db
+      .from("messages")
+      .select("*")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: true })
+      .limit(500),
+  ]);
   if (!chat) notFound();
 
   const header = (
@@ -43,5 +52,12 @@ export default async function OwnerChatPage({
     </header>
   );
 
-  return <ChatView chatId={chatId} role="owner" header={header} />;
+  return (
+    <ChatView
+      chatId={chatId}
+      role="owner"
+      header={header}
+      initialMessages={messages ?? []}
+    />
+  );
 }

@@ -24,12 +24,15 @@ export async function proxy(request: NextRequest) {
     }
   );
 
-  await supabase.auth.getUser();
+  // Verifies locally and refreshes the session cookie only when it expired.
+  await supabase.auth.getClaims();
   return response;
 }
 
 export const config = {
+  // Only page routes: API routes validate the JWT themselves, and static
+  // assets never need a session, so skipping them removes per-request work.
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|icons|manifest.webmanifest|sw.js).*)",
+    "/((?!api/|_next/static|_next/image|favicon.ico|icons|manifest.webmanifest|sw.js).*)",
   ],
 };

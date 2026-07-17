@@ -10,17 +10,18 @@ export default function ChatView({
   chatId,
   role,
   header,
+  initialMessages,
 }: {
   chatId: string;
   role: "owner" | "guest";
   header: React.ReactNode;
+  initialMessages?: Message[];
 }) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [text, setText] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [popupUrl, setPopupUrl] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<Message | null>(null);
-  const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -38,7 +39,8 @@ export default function ChatView({
   }, [chatId]);
 
   useEffect(() => {
-    load();
+    // Messages are server-rendered; only fetch on mount when none were provided.
+    if (!initialMessages) load();
     const supabase = supabaseBrowser();
     const channel = supabase
       .channel(`chat:${chatId}`)
@@ -57,6 +59,7 @@ export default function ChatView({
       supabase.removeChannel(channel);
       window.removeEventListener("focus", onFocus);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, load]);
 
   useEffect(() => {
@@ -66,29 +69,45 @@ export default function ChatView({
   async function send(mediaPath?: string, mediaType?: string) {
     const content = text.trim();
     if (!content && !mediaPath) return;
-    setSending(true);
+
+    // Optimistic: show the message immediately, reconcile with the server response.
+    const tempId = `temp-${Date.now()}`;
+    const replyToId = replyTo?.id ?? null;
+    const temp: Message = {
+      id: tempId,
+      chat_id: chatId,
+      sender: role,
+      content: content || null,
+      media_path: mediaPath || null,
+      media_type: (mediaType as Message["media_type"]) || null,
+      reply_to_id: replyToId,
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, temp]);
+    setText("");
+    setReplyTo(null);
+
     try {
       const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chatId,
-          content,
-          mediaPath,
-          mediaType,
-          replyToId: replyTo?.id,
-        }),
+        body: JSON.stringify({ chatId, content, mediaPath, mediaType, replyToId }),
       });
       if (res.ok) {
         const { message } = await res.json();
-        setMessages((prev) =>
-          prev.some((m) => m.id === message.id) ? prev : [...prev, message]
-        );
-        setText("");
-        setReplyTo(null);
+        setMessages((prev) => {
+          const withoutTemp = prev.filter((m) => m.id !== tempId);
+          return withoutTemp.some((m) => m.id === message.id)
+            ? withoutTemp
+            : [...withoutTemp, message];
+        });
+      } else {
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setText(content);
       }
-    } finally {
-      setSending(false);
+    } catch {
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setText(content);
     }
   }
 
@@ -106,7 +125,7 @@ export default function ChatView({
       const { path, token } = await res.json();
       const { error } = await supabaseBrowser()
         .storage.from("media")
-        .uploadToSignedUrl(path, token, file);
+        .uploadToSignedUrl(path, token, file, { cacheControl: "31536000" });
       if (!error) await send(path, kind);
     } finally {
       setUploading(false);
@@ -201,7 +220,7 @@ export default function ChatView({
           />
           <button
             onClick={() => send()}
-            disabled={sending || !text.trim()}
+            disabled={!text.trim()}
             className="px-4 py-2 text-accent font-semibold text-sm disabled:opacity-40 shrink-0"
           >
             Send

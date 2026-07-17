@@ -21,8 +21,12 @@ function countryFlag(code: string | null): string {
   );
 }
 
+// Module-level cache: navigating between pages re-mounts the list,
+// so start from the last known data instead of a loading skeleton.
+let chatsCache: ChatRow[] | null = null;
+
 export default function ChatList() {
-  const [chats, setChats] = useState<ChatRow[] | null>(null);
+  const [chats, setChats] = useState<ChatRow[] | null>(chatsCache);
   const pathname = usePathname();
 
   useEffect(() => {
@@ -31,6 +35,7 @@ export default function ChatList() {
       const res = await fetch("/api/chats");
       if (res.ok && !cancelled) {
         const { chats } = await res.json();
+        chatsCache = chats;
         setChats(chats);
       }
     }

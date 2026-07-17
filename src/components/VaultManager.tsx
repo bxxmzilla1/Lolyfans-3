@@ -89,7 +89,7 @@ export default function VaultManager() {
         const { path, token } = await res.json();
         const { error } = await supabaseBrowser()
           .storage.from("media")
-          .uploadToSignedUrl(path, token, file);
+          .uploadToSignedUrl(path, token, file, { cacheControl: "31536000" });
         if (!error) {
           await fetch("/api/vault/items", {
             method: "POST",
