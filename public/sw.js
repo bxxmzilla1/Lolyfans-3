@@ -1,9 +1,16 @@
-const CACHE = "lolyfans-v1";
-const SHELL = ["/", "/manifest.webmanifest", "/icons/icon.svg"];
+const CACHE = "lolyfans-v2";
+const STATIC_ASSETS = [
+  "/manifest.webmanifest",
+  "/icons/icon.svg",
+  "/icons/icon-maskable.svg",
+];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(SHELL)).then(() => self.skipWaiting())
+    caches
+      .open(CACHE)
+      .then((cache) => cache.addAll(STATIC_ASSETS))
+      .then(() => self.skipWaiting())
   );
 });
 
@@ -16,21 +23,53 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+const OFFLINE_HTML = `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Offline — Lolyfans</title>
+<style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
+background:#0c0a11;color:#f5f3f9;font-family:system-ui,sans-serif;text-align:center}
+p{color:#8f8a9d}b{background:linear-gradient(135deg,#c084fc,#7c3aed);
+-webkit-background-clip:text;background-clip:text;color:transparent;font-size:24px}</style>
+</head><body><div><b>Lolyfans</b><p>You're offline. Check your connection and try again.</p></div></body></html>`;
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
 
   const url = new URL(request.url);
-  // Never cache API calls or Supabase requests
-  if (url.pathname.startsWith("/api/") || url.origin !== self.location.origin) return;
+  if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/api/")) return;
 
-  event.respondWith(
-    fetch(request)
-      .then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(request, copy));
-        return response;
-      })
-      .catch(() => caches.match(request).then((cached) => cached || caches.match("/")))
-  );
+  // Pages: always go to the network (they can be redirects and must never be
+  // cached — cached redirects break installed PWAs). Show a friendly page offline.
+  if (request.mode === "navigate") {
+    event.respondWith(
+      fetch(request).catch(
+        () =>
+          new Response(OFFLINE_HTML, {
+            status: 503,
+            headers: { "Content-Type": "text/html" },
+          })
+      )
+    );
+    return;
+  }
+
+  // Static assets: cache-first (hashed Next.js files and app icons are immutable).
+  if (url.pathname.startsWith("/_next/static/") || STATIC_ASSETS.includes(url.pathname)) {
+    event.respondWith(
+      caches.match(request).then(
+        (cached) =>
+          cached ||
+          fetch(request).then((response) => {
+            if (response.ok && !response.redirected) {
+              const copy = response.clone();
+              caches.open(CACHE).then((cache) => cache.put(request, copy));
+            }
+            return response;
+          })
+      )
+    );
+  }
+  // Everything else falls through to the network untouched.
 });
