@@ -286,6 +286,29 @@ export default function ChatList() {
     <div>
       {/* Category tabs + multi-select — desktop web view only */}
       <div className="hidden lg:block px-3 pb-2 space-y-2">
+        {/* Always-visible actions: never scroll away with the category tabs */}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setNewCatOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted hover:text-fg transition-colors"
+          >
+            <IconPlus className="w-3.5 h-3.5" />
+            New category
+          </button>
+          <button
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelected(new Set());
+            }}
+            className={`ml-auto px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              selectMode
+                ? "bg-accent text-white"
+                : "bg-card2 border border-line text-muted hover:text-fg"
+            }`}
+          >
+            {selectMode ? "Cancel" : "Select"}
+          </button>
+        </div>
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveCat("all")}
@@ -323,27 +346,6 @@ export default function ChatList() {
               )}
             </span>
           ))}
-          <button
-            onClick={() => setNewCatOpen(true)}
-            aria-label="New category"
-            title="New category"
-            className="w-7 h-7 rounded-full bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center shrink-0"
-          >
-            <IconPlus className="w-3.5 h-3.5" />
-          </button>
-          <button
-            onClick={() => {
-              setSelectMode((v) => !v);
-              setSelected(new Set());
-            }}
-            className={`ml-auto px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
-              selectMode
-                ? "bg-accent text-white"
-                : "bg-card2 border border-line text-muted hover:text-fg"
-            }`}
-          >
-            {selectMode ? "Cancel" : "Select"}
-          </button>
         </div>
 
         {selectMode && (
