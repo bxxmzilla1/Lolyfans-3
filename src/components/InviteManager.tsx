@@ -30,8 +30,12 @@ export default function InviteManager() {
     }
   }
 
+  // Live stats: refresh every second while this panel is open so clicks and
+  // subscribers tick up in real time.
   useEffect(() => {
     load();
+    const interval = setInterval(load, 1000);
+    return () => clearInterval(interval);
   }, []);
 
   async function create() {
