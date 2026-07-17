@@ -1,5 +1,6 @@
 "use client";
 
+import Portal from "./Portal";
 import { IconTrash } from "./Icons";
 
 /** Themed replacement for the browser's confirm() dialog. */
@@ -17,6 +18,7 @@ export default function ConfirmDialog({
   onCancel: () => void;
 }) {
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={onCancel}
@@ -48,5 +50,6 @@ export default function ConfirmDialog({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

@@ -8,6 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
+import Portal from "./Portal";
 
 type ChatRow = {
   id: string;
@@ -505,6 +506,7 @@ export default function ChatList() {
       )}
 
       {newCatOpen && (
+        <Portal>
         <div
           className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setNewCatOpen(false)}
@@ -547,9 +549,11 @@ export default function ChatList() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {renaming && (
+        <Portal>
         <div
           className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setRenaming(null)}
@@ -596,6 +600,7 @@ export default function ChatList() {
             </div>
           </div>
         </div>
+        </Portal>
       )}
 
       {deletingCat && (

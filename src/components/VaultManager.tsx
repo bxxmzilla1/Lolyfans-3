@@ -15,6 +15,7 @@ import {
 } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
 import ConfirmDialog from "./ConfirmDialog";
+import Portal from "./Portal";
 
 type Album = {
   id: string;
@@ -258,6 +259,7 @@ export default function VaultManager() {
         </div>
 
         {newAlbumOpen && (
+          <Portal>
           <div
             className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
             onClick={() => setNewAlbumOpen(false)}
@@ -300,6 +302,7 @@ export default function VaultManager() {
               </div>
             </div>
           </div>
+          </Portal>
         )}
 
         <ul className="space-y-2">
@@ -596,6 +599,7 @@ export default function VaultManager() {
       )}
 
       {viewer && (
+        <Portal>
         <div
           className="fixed inset-0 z-50 bg-black/90 flex flex-col items-center justify-center p-4 gap-4"
           onClick={() => setViewer(null)}
@@ -634,6 +638,7 @@ export default function VaultManager() {
             </button>
           </div>
         </div>
+        </Portal>
       )}
 
       {confirmAction && (

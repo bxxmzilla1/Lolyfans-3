@@ -7,13 +7,47 @@ export async function GET() {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data, error } = await supabaseAdmin()
-    .from("invites")
-    .select("*")
-    .eq("owner_id", ownerId)
-    .order("created_at", { ascending: false });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ invites: data });
+  const db = supabaseAdmin();
+  const [invitesRes, chatsRes] = await Promise.all([
+    db
+      .from("invites")
+      .select("*")
+      .eq("owner_id", ownerId)
+      .order("created_at", { ascending: false }),
+    db
+      .from("chats")
+      .select("id, invite_id, guest_country, guest_ip")
+      .eq("owner_id", ownerId)
+      .not("invite_id", "is", null),
+  ]);
+  if (invitesRes.error) {
+    return NextResponse.json({ error: invitesRes.error.message }, { status: 500 });
+  }
+
+  // Per link: how many people joined (deduplicated by IP — the same device
+  // rejoining doesn't count twice) and which countries they came from.
+  type Stats = { joins: number; countries: Record<string, number> };
+  const stats: Record<string, Stats> = {};
+  const seenIps: Record<string, Set<string>> = {};
+  for (const chat of chatsRes.data ?? []) {
+    const inviteId = chat.invite_id as string;
+    stats[inviteId] ??= { joins: 0, countries: {} };
+    seenIps[inviteId] ??= new Set();
+    // Chats without a stored IP still count once each (keyed by chat id)
+    const key = chat.guest_ip || `chat:${chat.id}`;
+    if (seenIps[inviteId].has(key)) continue;
+    seenIps[inviteId].add(key);
+    stats[inviteId].joins += 1;
+    const country = (chat.guest_country || "??").toUpperCase();
+    stats[inviteId].countries[country] = (stats[inviteId].countries[country] ?? 0) + 1;
+  }
+
+  return NextResponse.json({
+    invites: (invitesRes.data ?? []).map((invite) => ({
+      ...invite,
+      stats: stats[invite.id] ?? { joins: 0, countries: {} },
+    })),
+  });
 }
 
 export async function POST(req: NextRequest) {
@@ -48,10 +82,17 @@ export async function PATCH(req: NextRequest) {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id, active } = await req.json();
+  const { id, active, label } = await req.json();
+  const updates: { active?: boolean; label?: string | null } = {};
+  if (typeof active === "boolean") updates.active = active;
+  if (label !== undefined) updates.label = String(label).trim() || null;
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
+  }
+
   const { error } = await supabaseAdmin()
     .from("invites")
-    .update({ active })
+    .update(updates)
     .eq("id", id)
     .eq("owner_id", ownerId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });

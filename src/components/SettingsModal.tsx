@@ -6,6 +6,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
 import InviteManager from "./InviteManager";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
+import Portal from "./Portal";
 import { IconLink, IconLogout, IconUser } from "./Icons";
 
 type Section = "profile" | "links";
@@ -165,6 +166,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
+    <Portal>
     <div className="fixed inset-0 z-50 bg-bg flex flex-col fade-up">
       <header className="shrink-0 border-b border-line px-5 py-4 flex items-center justify-between bg-card/80 backdrop-blur">
         <div>
@@ -231,5 +233,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+    </Portal>
   );
 }

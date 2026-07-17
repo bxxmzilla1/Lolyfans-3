@@ -4,15 +4,23 @@ import { useEffect, useState } from "react";
 import type { Invite } from "@/lib/invites";
 import CountryPicker, { countryFlag, countryName } from "./CountryPicker";
 import ConfirmDialog from "./ConfirmDialog";
+import Portal from "./Portal";
+import { IconEdit } from "./Icons";
+
+type InviteWithStats = Invite & {
+  stats: { joins: number; countries: Record<string, number> };
+};
 
 export default function InviteManager() {
-  const [invites, setInvites] = useState<Invite[]>([]);
+  const [invites, setInvites] = useState<InviteWithStats[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [label, setLabel] = useState("");
   const [countries, setCountries] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Invite | null>(null);
+  const [renaming, setRenaming] = useState<InviteWithStats | null>(null);
+  const [renameValue, setRenameValue] = useState("");
 
   async function load() {
     const res = await fetch("/api/invites");
@@ -66,6 +74,19 @@ export default function InviteManager() {
     navigator.clipboard.writeText(url);
     setCopied(invite.id);
     setTimeout(() => setCopied(null), 1500);
+  }
+
+  async function saveRename() {
+    if (!renaming) return;
+    const id = renaming.id;
+    const newLabel = renameValue.trim();
+    setRenaming(null);
+    await fetch("/api/invites", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, label: newLabel }),
+    });
+    load();
   }
 
   return (
@@ -123,9 +144,22 @@ export default function InviteManager() {
               <p className="font-semibold text-[15px] truncate">
                 {invite.label || "Invite link"}
               </p>
-              <span className="text-xs text-muted shrink-0">
-                {invite.uses} join{invite.uses === 1 ? "" : "s"}
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs text-muted">
+                  {invite.stats.joins} join{invite.stats.joins === 1 ? "" : "s"}
+                </span>
+                <button
+                  onClick={() => {
+                    setRenaming(invite);
+                    setRenameValue(invite.label ?? "");
+                  }}
+                  aria-label="Rename link"
+                  title="Rename link"
+                  className="w-6 h-6 rounded-lg bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center"
+                >
+                  <IconEdit className="w-3 h-3" />
+                </button>
+              </div>
             </div>
             <p className="text-muted text-xs mt-0.5 break-all">/i/{invite.code}</p>
             {invite.allowed_countries && invite.allowed_countries.length > 0 ? (
@@ -138,6 +172,22 @@ export default function InviteManager() {
               </p>
             ) : (
               <p className="text-xs mt-1.5 text-muted">🌍 Everyone</p>
+            )}
+            {invite.stats.joins > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {Object.entries(invite.stats.countries)
+                  .sort((a, b) => b[1] - a[1])
+                  .map(([code, count]) => (
+                    <span
+                      key={code}
+                      title={code === "??" ? "Unknown country" : countryName(code)}
+                      className="inline-flex items-center gap-1 rounded-full bg-card2 border border-line px-2 py-0.5 text-[11px]"
+                    >
+                      {code === "??" ? "🌐" : countryFlag(code)}
+                      <span className="text-muted">{count}</span>
+                    </span>
+                  ))}
+              </div>
             )}
             <div className="flex gap-2 mt-3">
               <button
@@ -170,6 +220,52 @@ export default function InviteManager() {
           onConfirm={() => remove(deleting)}
           onCancel={() => setDeleting(null)}
         />
+      )}
+
+      {renaming && (
+        <Portal>
+        <div
+          className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setRenaming(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-xs bg-card border border-line rounded-2xl p-4 space-y-3 fade-up"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl ig-gradient glow-accent flex items-center justify-center shrink-0">
+                <IconEdit className="w-4.5 h-4.5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-bold">Rename link</p>
+                <p className="text-muted text-xs truncate">/i/{renaming.code}</p>
+              </div>
+            </div>
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveRename()}
+              placeholder="Link name (e.g. Twitter bio)"
+              className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRenaming(null)}
+                className="flex-1 bg-card2 border border-line rounded-xl py-2.5 text-sm font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveRename}
+                className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+        </Portal>
       )}
     </div>
   );

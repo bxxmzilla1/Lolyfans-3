@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Portal from "./Portal";
 import { IconShield } from "./Icons";
 
 // Remembered for the rest of the page session once verified,
@@ -51,6 +52,7 @@ export default function AdminCodeDialog({
   }
 
   return (
+    <Portal>
     <div
       className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
       onClick={onCancel}
@@ -94,5 +96,6 @@ export default function AdminCodeDialog({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
