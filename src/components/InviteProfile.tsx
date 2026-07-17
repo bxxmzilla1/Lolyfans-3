@@ -1,14 +1,16 @@
 "use client";
 
-import { IconUser } from "./Icons";
+import { IconUser, IconVerified } from "./Icons";
 
-/** Invite page profile: always shown as online with the green dot. */
+/** Invite page profile: avatar with an online dot and the inviter's name. */
 export default function InviteProfile({
   name,
   avatarUrl,
+  verified,
 }: {
   name: string;
   avatarUrl: string | null;
+  verified?: boolean;
 }) {
   return (
     <>
@@ -31,8 +33,10 @@ export default function InviteProfile({
       </div>
 
       <div className="text-center -mt-2">
-        <h1 className="text-2xl font-bold">{name}</h1>
-        <p className="text-green-400 text-xs font-medium mt-1">Online</p>
+        <h1 className="text-2xl font-bold flex items-center justify-center gap-1.5">
+          {name}
+          {verified && <IconVerified className="w-5 h-5 text-[#1d9bf0]" />}
+        </h1>
       </div>
     </>
   );

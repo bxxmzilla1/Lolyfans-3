@@ -3,7 +3,7 @@ import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
-import { visitorLocation } from "@/lib/geo";
+import { visitorGeoParts } from "@/lib/geo";
 import { mediaUrl } from "@/lib/utils";
 import JoinForm from "@/components/JoinForm";
 import InviteProfile from "@/components/InviteProfile";
@@ -67,7 +67,9 @@ export default async function InvitePage({
   const country =
     requestHeaders.get("x-vercel-ip-country")?.toUpperCase() || null;
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;
-  const location = await visitorLocation(requestHeaders);
+  const geo = await visitorGeoParts(requestHeaders);
+  const location =
+    geo.city && geo.country ? `${geo.city}, ${geo.country}` : geo.city || geo.country;
 
   const blockedReason = !usable.ok
     ? usable.reason
@@ -75,21 +77,39 @@ export default async function InvitePage({
     ? "This chat link is not available in your country."
     : null;
 
-  // The profile of whoever created this link
+  // The profile of whoever created this link + their invite page settings
   let ownerName = "Lolyfans";
   let avatarPath: string | null = null;
   let ownerTheme: "light" | "dark" = "dark";
+  let verified = false;
+  let descriptionTemplate = "";
+  let buttonText = "";
   if (invite) {
     const { data: ownerUser } = await db.auth.admin.getUserById(invite.owner_id);
     const meta = (ownerUser?.user?.user_metadata ?? {}) as {
       display_name?: string;
       avatar_path?: string;
       theme?: string;
+      invite_verified?: boolean;
+      invite_description?: string;
+      invite_button_text?: string;
     };
     ownerName = meta.display_name || "Lolyfans";
     avatarPath = meta.avatar_path || null;
     ownerTheme = meta.theme === "light" ? "light" : "dark";
+    verified = !!meta.invite_verified;
+    descriptionTemplate = meta.invite_description || "";
+    buttonText = meta.invite_button_text || "";
   }
+
+  // Build the shown description, swapping CITY / COUNTRY for the visitor's
+  // real location (from ipinfo). Falls back to a default line.
+  const description = (
+    descriptionTemplate ||
+    `${ownerName} invited you to a private chat. Pick a name and start chatting — no sign-up needed.`
+  )
+    .replace(/COUNTRY/g, geo.country || "your country")
+    .replace(/CITY/g, geo.city || "your city");
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
@@ -112,13 +132,12 @@ export default async function InvitePage({
         <InviteProfile
           name={ownerName}
           avatarUrl={avatarPath ? mediaUrl(avatarPath) : null}
+          verified={verified}
         />
 
         <div className="text-center -mt-2">
-          <p className="text-muted text-sm">
-            {blockedReason
-              ? blockedReason
-              : `${ownerName} invited you to a private chat. Pick a name and start chatting — no sign-up needed.`}
+          <p className="text-muted text-sm whitespace-pre-wrap">
+            {blockedReason ? blockedReason : description}
           </p>
         </div>
         {!blockedReason && (
@@ -126,6 +145,7 @@ export default async function InvitePage({
             code={code}
             inviterName={ownerName}
             avatarUrl={avatarPath ? mediaUrl(avatarPath) : null}
+            buttonText={buttonText}
           />
         )}
       </div>

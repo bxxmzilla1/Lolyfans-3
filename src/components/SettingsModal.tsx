@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
 import InviteManager from "./InviteManager";
+import InvitePageEditor from "./InvitePageEditor";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
 import ThemeToggle from "./ThemeToggle";
-import { IconLink, IconLogout, IconUser } from "./Icons";
+import { IconEdit, IconLink, IconLogout, IconUser } from "./Icons";
 
-type Section = "profile" | "links";
+type Section = "profile" | "links" | "editor";
 
 function ProfileSection() {
   const [displayName, setDisplayName] = useState("");
@@ -208,6 +209,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         >
           <IconLink className="w-3.5 h-3.5" /> Invite links
         </button>
+        <button
+          onClick={() => setSection("editor")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "editor"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconEdit className="w-3.5 h-3.5" /> Invite Page Editor
+        </button>
       </div>
 
       {askAdmin && (
@@ -224,10 +235,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="flex-1 overflow-y-auto p-5 lg:p-8">
         <div
           className={`mx-auto w-full ${
-            section === "profile" ? "max-w-2xl" : "max-w-6xl"
+            section === "profile" ? "max-w-2xl" : section === "editor" ? "max-w-4xl" : "max-w-6xl"
           }`}
         >
-          {section === "profile" ? <ProfileSection /> : <InviteManager />}
+          {section === "profile" ? (
+            <ProfileSection />
+          ) : section === "editor" ? (
+            <InvitePageEditor />
+          ) : (
+            <InviteManager />
+          )}
         </div>
       </div>
 

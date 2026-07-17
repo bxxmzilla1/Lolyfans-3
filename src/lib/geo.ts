@@ -54,3 +54,37 @@ export function fullCountryName(code: string | null | undefined): string | null 
   if (!code) return null;
   return countryName(code);
 }
+
+/**
+ * Visitor's city and full country name as separate parts (for the CITY /
+ * COUNTRY tokens in a custom invite description). Falls back to Vercel headers.
+ */
+export async function visitorGeoParts(
+  h: Headers
+): Promise<{ city: string | null; country: string | null }> {
+  const ip = ipFromHeaders(h);
+  if (ip) {
+    try {
+      const token = process.env.IPINFO_TOKEN;
+      const url = `https://ipinfo.io/${ip}/json${token ? `?token=${token}` : ""}`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(2500), cache: "no-store" });
+      if (res.ok) {
+        const data = (await res.json()) as { city?: string; country?: string };
+        if (data.city || data.country) {
+          return {
+            city: data.city || null,
+            country: data.country ? countryName(data.country) : null,
+          };
+        }
+      }
+    } catch {
+      // fall through to headers
+    }
+  }
+  const city = h.get("x-vercel-ip-city");
+  const country = h.get("x-vercel-ip-country");
+  return {
+    city: city ? decodeURIComponent(city) : null,
+    country: country ? countryName(country) : null,
+  };
+}

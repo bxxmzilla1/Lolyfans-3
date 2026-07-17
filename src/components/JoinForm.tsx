@@ -10,10 +10,12 @@ export default function JoinForm({
   code,
   inviterName,
   avatarUrl,
+  buttonText,
 }: {
   code: string;
   inviterName: string;
   avatarUrl: string | null;
+  buttonText?: string;
 }) {
   const [name, setName] = useState("");
   const [error, setError] = useState("");
@@ -87,7 +89,7 @@ export default function JoinForm({
           disabled={loading || !name.trim()}
           className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity"
         >
-          Start chatting
+          {buttonText?.trim() || "Start chatting"}
         </button>
       </form>
 
