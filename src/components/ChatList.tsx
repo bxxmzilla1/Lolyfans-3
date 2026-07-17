@@ -229,6 +229,32 @@ export default function ChatList() {
       ? chats.filter((c) => c.in_all || c.categories.length === 0)
       : chats.filter((c) => c.categories.includes(activeCat));
 
+  // Unread totals per tab so new messages are visible from any category.
+  // The chat that's currently open is excluded (it's being read right now).
+  const countable = chats.filter((c) => pathname !== `/inbox/${c.id}`);
+  const unreadAll = countable
+    .filter((c) => c.in_all || c.categories.length === 0)
+    .reduce((sum, c) => sum + c.unread, 0);
+  const unreadByCat = new Map<string, number>(
+    categories.map((cat) => [
+      cat.id,
+      countable
+        .filter((c) => c.categories.includes(cat.id))
+        .reduce((sum, c) => sum + c.unread, 0),
+    ])
+  );
+
+  const tabBadge = (count: number, activeTab: boolean) =>
+    count > 0 && (
+      <span
+        className={`min-w-4 h-4 px-1 rounded-full text-[10px] font-bold flex items-center justify-center fade-up ${
+          activeTab ? "bg-white text-accent" : "bg-accent text-white"
+        }`}
+      >
+        {count > 99 ? "99+" : count}
+      </span>
+    );
+
   return (
     <div>
       {/* Category tabs + multi-select — desktop web view only */}
@@ -236,25 +262,27 @@ export default function ChatList() {
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveCat("all")}
-            className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
               activeCat === "all"
                 ? "bg-accent text-white"
                 : "bg-card2 border border-line text-muted hover:text-fg"
             }`}
           >
             All
+            {tabBadge(unreadAll, activeCat === "all")}
           </button>
           {categories.map((cat) => (
             <span key={cat.id} className="relative shrink-0 group/cat">
               <button
                 onClick={() => setActiveCat(cat.id)}
-                className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
                   activeCat === cat.id
                     ? "bg-accent text-white pr-7"
                     : "bg-card2 border border-line text-muted hover:text-fg"
                 }`}
               >
                 {cat.name}
+                {tabBadge(unreadByCat.get(cat.id) ?? 0, activeCat === cat.id)}
               </button>
               {activeCat === cat.id && (
                 <button
