@@ -32,7 +32,8 @@ export default function OwnerEscapeHatch() {
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ code }),
             }).catch(() => {});
-            router.push("/");
+            // resume=0 skips the IP-based auto-resume on the landing page
+            router.push("/?resume=0");
             router.refresh();
           }}
           onCancel={() => setAsking(false)}
