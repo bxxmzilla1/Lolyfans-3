@@ -60,7 +60,7 @@ export default async function GuestChatPage() {
 
   return (
     <div className="h-dvh">
-      <GuestPresence chatId={chatId} />
+      <GuestPresence chatId={chatId} ownerId={chat.owner_id} />
       <OwnerEscapeHatch />
       <ChatView
         chatId={chatId}

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
+import { subscribeGuestPresence } from "@/lib/guestPresence";
 import { IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
@@ -96,6 +97,9 @@ export default function ChatList() {
   const [renameValue, setRenameValue] = useState("");
   // Chat pending deletion — the admin code must be entered to confirm.
   const [deletingChat, setDeletingChat] = useState<ChatRow | null>(null);
+  // Guests currently viewing their chat, and whether to show only them.
+  const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
+  const [onlineOnly, setOnlineOnly] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const cancelledRef = useRef(false);
@@ -155,6 +159,12 @@ export default function ChatList() {
     if (!ownerId) return;
     return subscribeInbox(ownerId, load);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownerId]);
+
+  // Live online status for guests (green dots + the "Online" filter).
+  useEffect(() => {
+    if (!ownerId) return;
+    return subscribeGuestPresence(ownerId, setOnlineIds);
   }, [ownerId]);
 
   async function createCategory() {
@@ -272,10 +282,13 @@ export default function ChatList() {
   }
 
   // Main section: chats marked for "All" plus safety net for uncategorized ones
-  const visibleChats =
+  const visibleChats = (
     activeCat === "all"
       ? chats.filter((c) => c.in_all || c.categories.length === 0)
-      : chats.filter((c) => c.categories.includes(activeCat));
+      : chats.filter((c) => c.categories.includes(activeCat))
+  ).filter((c) => !onlineOnly || onlineIds.has(c.id));
+
+  const onlineCount = chats.filter((c) => onlineIds.has(c.id)).length;
 
   // Unread totals per tab so new messages are visible from any category.
   // The chat that's currently open is excluded (it's being read right now).
@@ -315,6 +328,21 @@ export default function ChatList() {
           >
             <IconPlus className="w-3.5 h-3.5" />
             New category
+          </button>
+          <button
+            onClick={() => setOnlineOnly((v) => !v)}
+            title="Show only guests who are online"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              onlineOnly
+                ? "bg-green-500/20 border border-green-500/40 text-green-400"
+                : "bg-card2 border border-line text-muted hover:text-fg"
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${onlineOnly ? "bg-green-500" : "bg-green-500/70"}`} />
+            Online
+            {onlineCount > 0 && (
+              <span className="text-[10px] opacity-80">{onlineCount}</span>
+            )}
           </button>
           <button
             onClick={() => {
@@ -426,7 +454,9 @@ export default function ChatList() {
 
       {visibleChats.length === 0 ? (
         <p className="px-5 py-8 text-center text-muted text-sm">
-          No chats in this category yet. Use Select to add some.
+          {onlineOnly
+            ? "No one is online right now."
+            : "No chats in this category yet. Use Select to add some."}
         </p>
       ) : (
         <ul className="px-2 space-y-0.5">
@@ -455,10 +485,18 @@ export default function ChatList() {
                   {active && !selectMode && (
                     <span className="absolute left-0 top-1/2 -translate-y-1/2 h-7 w-1 rounded-full bg-accent" />
                   )}
-                  <div className="ig-ring shrink-0">
-                    <div className="w-11 h-11 rounded-full bg-bg flex items-center justify-center text-base font-bold uppercase">
-                      {displayName.slice(0, 1)}
+                  <div className="relative shrink-0">
+                    <div className="ig-ring">
+                      <div className="w-11 h-11 rounded-full bg-bg flex items-center justify-center text-base font-bold uppercase">
+                        {displayName.slice(0, 1)}
+                      </div>
                     </div>
+                    {onlineIds.has(chat.id) && (
+                      <span
+                        className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-green-500 border-2 border-card"
+                        title="Online now"
+                      />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-[14px] flex items-center gap-1.5 min-w-0 ${

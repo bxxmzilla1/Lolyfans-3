@@ -75,7 +75,7 @@ export default async function OwnerChatPage({
               <span className="shrink-0">·</span>
             </>
           )}
-          <GuestPresenceStatus chatId={chatId} />
+          <GuestPresenceStatus chatId={chatId} ownerId={ownerId} />
         </p>
       </div>
     </header>
