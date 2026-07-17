@@ -4,6 +4,7 @@ import { getOwnerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { locationFromIp, fullCountryName } from "@/lib/geo";
 import ChatView from "@/components/ChatView";
+import GuestPresenceStatus from "@/components/GuestPresenceStatus";
 import { IconBack, IconMapPin } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
@@ -64,15 +65,17 @@ export default async function OwnerChatPage({
             </span>
           )}
         </p>
-        <p className="text-muted text-xs truncate flex items-center gap-1">
+        <p className="text-muted text-xs truncate flex items-center gap-1.5">
           {guestLocation && (
             <>
-              <IconMapPin className="w-3 h-3 text-accent shrink-0" />
-              <span className="truncate">{guestLocation}</span>
+              <span className="flex items-center gap-1 min-w-0">
+                <IconMapPin className="w-3 h-3 text-accent shrink-0" />
+                <span className="truncate">{guestLocation}</span>
+              </span>
               <span className="shrink-0">·</span>
             </>
           )}
-          <span className="truncate">{chat.invites?.label || "Invite link"}</span>
+          <GuestPresenceStatus chatId={chatId} />
         </p>
       </div>
     </header>
