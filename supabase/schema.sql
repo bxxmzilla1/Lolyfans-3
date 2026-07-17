@@ -39,6 +39,10 @@ alter table invites add column if not exists owner_id uuid references auth.users
 alter table chats add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 alter table chats add column if not exists guest_ip text;
 alter table chats add column if not exists last_read_at timestamptz not null default now();
+-- Owner-chosen display name (the guest's original name stays visible subtly)
+alter table chats add column if not exists custom_name text;
+-- Whether the chat shows in the main "All" section (unchecked when categorized)
+alter table chats add column if not exists in_all boolean not null default true;
 
 create index if not exists chats_owner_idx on chats (owner_id, last_message_at desc);
 create index if not exists chats_guest_ip_idx on chats (guest_ip);

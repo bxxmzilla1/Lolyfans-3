@@ -46,11 +46,18 @@ export default async function OwnerChatPage({
       </Link>
       <div className="ig-ring">
         <div className="w-9 h-9 rounded-full bg-bg flex items-center justify-center font-bold uppercase text-sm">
-          {chat.guest_name.slice(0, 1)}
+          {(chat.custom_name || chat.guest_name).slice(0, 1)}
         </div>
       </div>
       <div className="min-w-0">
-        <p className="font-semibold text-[15px] truncate">{chat.guest_name}</p>
+        <p className="font-semibold text-[15px] truncate">
+          {chat.custom_name || chat.guest_name}
+          {chat.custom_name && (
+            <span className="text-muted text-xs font-normal ml-1.5">
+              {chat.guest_name}
+            </span>
+          )}
+        </p>
         <p className="text-muted text-xs truncate">
           {chat.guest_country ? `${chat.guest_country} · ` : ""}
           {chat.invites?.label || "Invite link"}

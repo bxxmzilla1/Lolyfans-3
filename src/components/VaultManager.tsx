@@ -156,6 +156,26 @@ export default function VaultManager() {
     });
   }
 
+  function deleteSelected() {
+    if (selected.size === 0) return;
+    const ids = [...selected];
+    setConfirmAction({
+      title: "Delete files",
+      message: `Delete ${ids.length} file${ids.length === 1 ? "" : "s"} permanently? This can't be undone.`,
+      run: async () => {
+        await fetch("/api/vault/items", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+        });
+        setSelectMode(false);
+        setSelected(new Set());
+        loadItems();
+        loadAlbums();
+      },
+    });
+  }
+
   /** Check/uncheck an album for every selected item. */
   async function toggleAlbumForSelected(albumId: string) {
     if (selected.size === 0) return;
@@ -373,6 +393,15 @@ export default function VaultManager() {
           <p className="text-xs font-semibold text-accent">
             {selected.size} selected — everything always stays in All
           </p>
+          {selected.size > 0 && (
+            <button
+              onClick={deleteSelected}
+              className="w-full flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg py-2 text-sm font-semibold hover:bg-red-500/20 transition-colors"
+            >
+              <IconTrash className="w-4 h-4" />
+              Delete selected
+            </button>
+          )}
           {albums.length === 0 ? (
             <p className="text-xs text-muted">
               No albums yet. Create one to show media in it.

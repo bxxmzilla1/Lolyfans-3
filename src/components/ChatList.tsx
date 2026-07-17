@@ -6,14 +6,16 @@ import { usePathname } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
-import { IconCheck, IconFolder, IconLink, IconPlus } from "./Icons";
+import { IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 
 type ChatRow = {
   id: string;
   guest_name: string;
+  custom_name: string | null;
   guest_country: string | null;
   last_message_at: string;
+  in_all: boolean;
   invites: { label: string | null; code: string } | null;
   preview: { content: string | null; media_type: string | null } | null;
   unread: number;
@@ -76,6 +78,8 @@ export default function ChatList() {
   const [newCatOpen, setNewCatOpen] = useState(false);
   const [newCatName, setNewCatName] = useState("");
   const [deletingCat, setDeletingCat] = useState<Category | null>(null);
+  const [renaming, setRenaming] = useState<ChatRow | null>(null);
+  const [renameValue, setRenameValue] = useState("");
   const pathname = usePathname();
   const cancelledRef = useRef(false);
 
@@ -154,17 +158,30 @@ export default function ChatList() {
     });
   }
 
-  /** Check/uncheck a category for every selected chat. */
+  /** Check/uncheck a category (or the built-in "all") for every selected chat. */
   async function toggleCategoryForSelected(categoryId: string) {
     if (selected.size === 0 || !chats) return;
     const ids = [...selected];
-    const allIn = ids.every(
-      (id) => chats.find((c) => c.id === id)?.categories.includes(categoryId)
-    );
+    const isIn = (chat: ChatRow | undefined) =>
+      categoryId === "all" ? !!chat?.in_all : !!chat?.categories.includes(categoryId);
+    const allIn = ids.every((id) => isIn(chats.find((c) => c.id === id)));
     await fetch("/api/categories", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chatIds: ids, categoryId, member: !allIn }),
+    });
+    load();
+  }
+
+  async function saveRename() {
+    if (!renaming) return;
+    const chatId = renaming.id;
+    const customName = renameValue.trim();
+    setRenaming(null);
+    await fetch("/api/chats", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId, customName }),
     });
     load();
   }
@@ -206,9 +223,10 @@ export default function ChatList() {
     );
   }
 
+  // Main section: chats marked for "All" plus safety net for uncategorized ones
   const visibleChats =
     activeCat === "all"
-      ? chats
+      ? chats.filter((c) => c.in_all || c.categories.length === 0)
       : chats.filter((c) => c.categories.includes(activeCat));
 
   return (
@@ -278,21 +296,20 @@ export default function ChatList() {
             <p className="text-xs font-semibold text-accent">
               {selected.size} chat{selected.size === 1 ? "" : "s"} selected
             </p>
-            {categories.length === 0 ? (
+            {selected.size === 0 ? (
               <p className="text-xs text-muted">
-                No categories yet. Create one with the + button above.
-              </p>
-            ) : selected.size === 0 ? (
-              <p className="text-xs text-muted">
-                Tap chats below, then check their categories.
+                Tap chats below, then check where they show.
               </p>
             ) : (
               <ul className="space-y-1">
-                {categories.map((cat) => {
+                {[{ id: "all", name: "All (main section)" }, ...categories].map((cat) => {
                   const ids = [...selected];
-                  const inCount = ids.filter((id) =>
-                    chats.find((c) => c.id === id)?.categories.includes(cat.id)
-                  ).length;
+                  const inCount = ids.filter((id) => {
+                    const chat = chats.find((c) => c.id === id);
+                    return cat.id === "all"
+                      ? !!chat?.in_all
+                      : !!chat?.categories.includes(cat.id);
+                  }).length;
                   const allIn = inCount === ids.length;
                   const someIn = inCount > 0 && !allIn;
                   return (
@@ -313,7 +330,11 @@ export default function ChatList() {
                           {allIn && <IconCheck className="w-3 h-3 text-white" />}
                           {someIn && <span className="w-2 h-0.5 bg-white rounded" />}
                         </span>
-                        <IconFolder className="w-4 h-4 text-accent shrink-0" />
+                        {cat.id === "all" ? (
+                          <IconGrid className="w-4 h-4 text-accent shrink-0" />
+                        ) : (
+                          <IconFolder className="w-4 h-4 text-accent shrink-0" />
+                        )}
                         <span className="text-sm font-medium truncate">{cat.name}</span>
                       </button>
                     </li>
@@ -334,8 +355,9 @@ export default function ChatList() {
           {visibleChats.map((chat) => {
             const active = pathname === `/inbox/${chat.id}`;
             const checked = selected.has(chat.id);
+            const displayName = chat.custom_name || chat.guest_name;
             return (
-              <li key={chat.id}>
+              <li key={chat.id} className="group/row relative">
                 <Link
                   href={`/inbox/${chat.id}`}
                   onClick={(e) => {
@@ -357,15 +379,20 @@ export default function ChatList() {
                   )}
                   <div className="ig-ring shrink-0">
                     <div className="w-11 h-11 rounded-full bg-bg flex items-center justify-center text-base font-bold uppercase">
-                      {chat.guest_name.slice(0, 1)}
+                      {displayName.slice(0, 1)}
                     </div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-[14px] flex items-center gap-1.5 ${
+                    <p className={`text-[14px] flex items-center gap-1.5 min-w-0 ${
                       chat.unread > 0 && !active ? "font-bold" : "font-semibold"
                     }`}>
-                      {chat.guest_name}
-                      <span className="text-xs">{countryFlag(chat.guest_country)}</span>
+                      <span className="truncate">{displayName}</span>
+                      {chat.custom_name && (
+                        <span className="text-muted text-[11px] font-normal truncate">
+                          {chat.guest_name}
+                        </span>
+                      )}
+                      <span className="text-xs shrink-0">{countryFlag(chat.guest_country)}</span>
                     </p>
                     <p className={`text-[13px] truncate ${
                       chat.unread > 0 && !active ? "text-fg font-medium" : "text-muted"
@@ -401,6 +428,19 @@ export default function ChatList() {
                     )}
                   </div>
                 </Link>
+                {!selectMode && (
+                  <button
+                    onClick={() => {
+                      setRenaming(chat);
+                      setRenameValue(chat.custom_name ?? "");
+                    }}
+                    aria-label={`Rename ${displayName}`}
+                    title="Rename"
+                    className="hidden lg:group-hover/row:flex absolute right-2 top-2 w-6 h-6 rounded-lg bg-card2 border border-line text-muted hover:text-fg items-center justify-center"
+                  >
+                    <IconEdit className="w-3 h-3" />
+                  </button>
+                )}
               </li>
             );
           })}
@@ -446,6 +486,55 @@ export default function ChatList() {
                 className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
               >
                 Create
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {renaming && (
+        <div
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setRenaming(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-xs bg-card border border-line rounded-2xl p-4 space-y-3 fade-up"
+          >
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl ig-gradient glow-accent flex items-center justify-center shrink-0">
+                <IconEdit className="w-4.5 h-4.5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-bold">Rename chat</p>
+                <p className="text-muted text-xs truncate">
+                  Original name: {renaming.guest_name}
+                </p>
+              </div>
+            </div>
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveRename()}
+              placeholder={renaming.guest_name}
+              className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+            />
+            <p className="text-muted text-xs">
+              Leave empty to go back to the original name.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setRenaming(null)}
+                className="flex-1 bg-card2 border border-line rounded-xl py-2.5 text-sm font-semibold"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveRename}
+                className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold"
+              >
+                Save
               </button>
             </div>
           </div>

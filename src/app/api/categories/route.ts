@@ -42,6 +42,19 @@ export async function PATCH(req: NextRequest) {
   }
 
   const db = supabaseAdmin();
+
+  // "all" is a built-in pseudo-category: it toggles whether the chats
+  // appear in the main chat section.
+  if (categoryId === "all") {
+    const { error } = await db
+      .from("chats")
+      .update({ in_all: !!member })
+      .in("id", chatIds)
+      .eq("owner_id", ownerId);
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  }
+
   const [{ data: category }, { data: owned }] = await Promise.all([
     db.from("chat_categories").select("id").eq("id", categoryId).eq("owner_id", ownerId).single(),
     db.from("chats").select("id").in("id", chatIds).eq("owner_id", ownerId),
@@ -51,12 +64,16 @@ export async function PATCH(req: NextRequest) {
   if (ownedIds.length === 0) return NextResponse.json({ error: "No chats" }, { status: 404 });
 
   if (member) {
-    const { error } = await db
-      .from("chat_category_members")
-      .upsert(
-        ownedIds.map((chat_id) => ({ chat_id, category_id: categoryId })),
-        { onConflict: "chat_id,category_id", ignoreDuplicates: true }
-      );
+    const [{ error }] = await Promise.all([
+      db
+        .from("chat_category_members")
+        .upsert(
+          ownedIds.map((chat_id) => ({ chat_id, category_id: categoryId })),
+          { onConflict: "chat_id,category_id", ignoreDuplicates: true }
+        ),
+      // Categorized chats leave the main section until "All" is re-checked
+      db.from("chats").update({ in_all: false }).in("id", ownedIds).eq("owner_id", ownerId),
+    ]);
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   } else {
     const { error } = await db

@@ -1,0 +1,200 @@
+"use client";
+
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabase/browser";
+import { mediaUrl } from "@/lib/utils";
+import InviteManager from "./InviteManager";
+import { IconLink, IconLogout, IconUser } from "./Icons";
+
+type Section = "profile" | "links";
+
+function ProfileSection() {
+  const [displayName, setDisplayName] = useState("");
+  const [email, setEmail] = useState("");
+  const [avatarPath, setAvatarPath] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    supabaseBrowser()
+      .auth.getUser()
+      .then(({ data }) => {
+        const user = data.user;
+        if (!user) return;
+        setEmail(user.email ?? "");
+        setDisplayName((user.user_metadata?.display_name as string) ?? "");
+        setAvatarPath((user.user_metadata?.avatar_path as string) ?? null);
+      });
+  }, []);
+
+  async function uploadAvatar(file: File) {
+    setUploading(true);
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, scope: "avatar" }),
+      });
+      if (!res.ok) return;
+      const { path, token } = await res.json();
+      const supabase = supabaseBrowser();
+      const { error } = await supabase.storage
+        .from("media")
+        .uploadToSignedUrl(path, token, file, { cacheControl: "31536000" });
+      if (!error) {
+        await supabase.auth.updateUser({ data: { avatar_path: path } });
+        setAvatarPath(path);
+      }
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function saveName() {
+    setSaving(true);
+    try {
+      await supabaseBrowser().auth.updateUser({
+        data: { display_name: displayName.trim() },
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-4">
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="relative shrink-0 group/avatar"
+          aria-label="Change profile picture"
+        >
+          <div className="ig-ring">
+            {avatarPath ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={mediaUrl(avatarPath)}
+                alt="Profile"
+                className="w-20 h-20 rounded-full object-cover bg-bg"
+              />
+            ) : (
+              <div className="w-20 h-20 rounded-full bg-bg flex items-center justify-center">
+                <IconUser className="w-8 h-8 text-muted" />
+              </div>
+            )}
+          </div>
+          <span className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex items-center justify-center text-white text-[11px] font-semibold">
+            {uploading ? "…" : "Change"}
+          </span>
+        </button>
+        <div className="min-w-0">
+          <p className="font-semibold truncate">{displayName || "Your profile"}</p>
+          <p className="text-muted text-xs truncate">{email}</p>
+        </div>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => e.target.files?.[0] && uploadAvatar(e.target.files[0])}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <label className="text-sm font-semibold">Display name</label>
+        <input
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && saveName()}
+          placeholder="Your name"
+          className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+        />
+        <button
+          onClick={saveName}
+          disabled={saving}
+          className="w-full bg-accent text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
+        >
+          {saved ? "Saved!" : saving ? "Saving…" : "Save profile"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function SettingsModal({ onClose }: { onClose: () => void }) {
+  const [section, setSection] = useState<Section>("profile");
+  const router = useRouter();
+
+  async function logout() {
+    await supabaseBrowser().auth.signOut();
+    await fetch("/api/auth/logout", { method: "POST" });
+    router.push("/");
+    router.refresh();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-md bg-card border border-line rounded-2xl flex flex-col max-h-[85vh] fade-up"
+      >
+        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+          <p className="font-bold text-lg">Settings</p>
+          <button
+            onClick={onClose}
+            aria-label="Close settings"
+            className="w-8 h-8 rounded-lg bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="flex gap-1.5 px-5 pt-4">
+          <button
+            onClick={() => setSection("profile")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+              section === "profile"
+                ? "bg-accent text-white"
+                : "bg-card2 border border-line text-muted hover:text-fg"
+            }`}
+          >
+            <IconUser className="w-3.5 h-3.5" /> Profile
+          </button>
+          <button
+            onClick={() => setSection("links")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+              section === "links"
+                ? "bg-accent text-white"
+                : "bg-card2 border border-line text-muted hover:text-fg"
+            }`}
+          >
+            <IconLink className="w-3.5 h-3.5" /> Invite links
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-5">
+          {section === "profile" ? <ProfileSection /> : <InviteManager />}
+        </div>
+
+        <div className="border-t border-line p-3">
+          <button
+            onClick={logout}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-red-400 hover:bg-card2 transition-colors"
+          >
+            <IconLogout className="w-4.5 h-4.5" /> Log out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

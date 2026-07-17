@@ -107,22 +107,29 @@ export async function DELETE(req: NextRequest) {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id } = await req.json();
+  // Accepts a single id or an array of ids (multi-select delete)
+  const { id, ids } = await req.json();
+  const targetIds: string[] = Array.isArray(ids) ? ids : id ? [id] : [];
+  if (targetIds.length === 0) {
+    return NextResponse.json({ error: "id or ids required" }, { status: 400 });
+  }
+
   const db = supabaseAdmin();
-  const { data: item } = await db
+  const { data: items } = await db
     .from("vault_items")
     .select("media_path")
-    .eq("id", id)
-    .eq("owner_id", ownerId)
-    .single();
+    .in("id", targetIds)
+    .eq("owner_id", ownerId);
   const { error } = await db
     .from("vault_items")
     .delete()
-    .eq("id", id)
+    .in("id", targetIds)
     .eq("owner_id", ownerId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  if (item?.media_path) {
-    await db.storage.from("media").remove([item.media_path]);
+
+  const paths = (items ?? []).map((i) => i.media_path).filter(Boolean);
+  if (paths.length > 0) {
+    await db.storage.from("media").remove(paths);
   }
   return NextResponse.json({ ok: true });
 }

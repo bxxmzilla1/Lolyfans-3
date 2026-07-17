@@ -169,6 +169,24 @@ export function IconVolumeMute({ className }: IconProps) {
   );
 }
 
+export function IconUser({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </Svg>
+  );
+}
+
+export function IconEdit({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+      <path d="m15 5 4 4" />
+    </Svg>
+  );
+}
+
 export function IconUnlock({ className }: IconProps) {
   return (
     <Svg className={className}>

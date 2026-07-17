@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 
@@ -49,4 +49,21 @@ export async function GET() {
       unread: unread[c.id] ?? 0,
     })),
   });
+}
+
+/** Rename a chat (owner's custom display name; null clears it). */
+export async function PATCH(req: NextRequest) {
+  const ownerId = await getOwnerId();
+  if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { chatId, customName } = await req.json();
+  if (!chatId) return NextResponse.json({ error: "chatId required" }, { status: 400 });
+
+  const { error } = await supabaseAdmin()
+    .from("chats")
+    .update({ custom_name: customName?.trim() || null })
+    .eq("id", chatId)
+    .eq("owner_id", ownerId);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json({ ok: true });
 }
