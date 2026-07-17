@@ -14,6 +14,7 @@ import {
   IconTrash,
 } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
+import ConfirmDialog from "./ConfirmDialog";
 
 type Album = {
   id: string;
@@ -42,6 +43,11 @@ export default function VaultManager() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [newAlbumOpen, setNewAlbumOpen] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState("");
+  const [confirmAction, setConfirmAction] = useState<{
+    title: string;
+    message: string;
+    run: () => void;
+  } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadAlbums = useCallback(async () => {
@@ -92,15 +98,20 @@ export default function VaultManager() {
     loadAlbums();
   }
 
-  async function deleteAlbum(album: Album) {
-    if (!confirm(`Delete album "${album.name}"? Its files stay in All.`)) return;
-    await fetch("/api/vault/albums", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: album.id }),
+  function deleteAlbum(album: Album) {
+    setConfirmAction({
+      title: "Delete album",
+      message: `Delete album "${album.name}"? Its files stay in All.`,
+      run: async () => {
+        await fetch("/api/vault/albums", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: album.id }),
+        });
+        setOpenAlbum(null);
+        loadAlbums();
+      },
     });
-    setOpenAlbum(null);
-    loadAlbums();
   }
 
   async function handleFiles(files: FileList) {
@@ -161,16 +172,21 @@ export default function VaultManager() {
     loadAlbums();
   }
 
-  async function deleteItem(item: Item) {
-    if (!confirm("Delete this file permanently?")) return;
-    await fetch("/api/vault/items", {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: item.id }),
+  function deleteItem(item: Item) {
+    setConfirmAction({
+      title: "Delete file",
+      message: "Delete this file permanently? This can't be undone.",
+      run: async () => {
+        await fetch("/api/vault/items", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: item.id }),
+        });
+        setViewer(null);
+        loadItems();
+        loadAlbums();
+      },
     });
-    setViewer(null);
-    loadItems();
-    loadAlbums();
   }
 
   const uploadInput = (
@@ -528,6 +544,18 @@ export default function VaultManager() {
             </button>
           </div>
         </div>
+      )}
+
+      {confirmAction && (
+        <ConfirmDialog
+          title={confirmAction.title}
+          message={confirmAction.message}
+          onConfirm={() => {
+            confirmAction.run();
+            setConfirmAction(null);
+          }}
+          onCancel={() => setConfirmAction(null)}
+        />
       )}
     </div>
   );

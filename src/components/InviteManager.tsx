@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import type { Invite } from "@/lib/invites";
 import CountryPicker, { countryFlag, countryName } from "./CountryPicker";
+import ConfirmDialog from "./ConfirmDialog";
 
 export default function InviteManager() {
   const [invites, setInvites] = useState<Invite[]>([]);
@@ -11,6 +12,7 @@ export default function InviteManager() {
   const [countries, setCountries] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<Invite | null>(null);
 
   async function load() {
     const res = await fetch("/api/invites");
@@ -50,7 +52,7 @@ export default function InviteManager() {
   }
 
   async function remove(invite: Invite) {
-    if (!confirm("Delete this invite link? Existing chats stay.")) return;
+    setDeleting(null);
     await fetch("/api/invites", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
@@ -151,7 +153,7 @@ export default function InviteManager() {
                 {invite.active ? "Disable" : "Enable"}
               </button>
               <button
-                onClick={() => remove(invite)}
+                onClick={() => setDeleting(invite)}
                 className="px-3 bg-card2 border border-line rounded-lg py-2 text-xs font-semibold text-red-400"
               >
                 Delete
@@ -160,6 +162,15 @@ export default function InviteManager() {
           </li>
         ))}
       </ul>
+
+      {deleting && (
+        <ConfirmDialog
+          title="Delete invite link"
+          message="Delete this invite link? Existing chats stay."
+          onConfirm={() => remove(deleting)}
+          onCancel={() => setDeleting(null)}
+        />
+      )}
     </div>
   );
 }

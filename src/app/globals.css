@@ -86,6 +86,13 @@ body::before {
   border-radius: 3px;
 }
 
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 input,
 textarea {
   outline: none;

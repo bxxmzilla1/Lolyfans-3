@@ -11,7 +11,7 @@ export async function GET() {
   const db = supabaseAdmin();
   const { data: chats, error } = await db
     .from("chats")
-    .select("*, invites(label, code)")
+    .select("*, invites(label, code), chat_category_members(category_id)")
     .eq("owner_id", ownerId)
     .order("last_message_at", { ascending: false });
 
@@ -40,8 +40,11 @@ export async function GET() {
 
   return NextResponse.json({
     ownerId,
-    chats: (chats ?? []).map((c) => ({
+    chats: (chats ?? []).map(({ chat_category_members, ...c }) => ({
       ...c,
+      categories: ((chat_category_members ?? []) as { category_id: string }[]).map(
+        (m) => m.category_id
+      ),
       preview: previews[c.id] ?? null,
       unread: unread[c.id] ?? 0,
     })),

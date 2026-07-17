@@ -96,6 +96,23 @@ on conflict do nothing;
 
 alter table vault_item_albums enable row level security;
 
+-- Custom inbox categories (tabs); a chat can belong to any number of them
+create table if not exists chat_categories (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  name text not null,
+  created_at timestamptz not null default now()
+);
+
+create table if not exists chat_category_members (
+  chat_id uuid not null references chats(id) on delete cascade,
+  category_id uuid not null references chat_categories(id) on delete cascade,
+  primary key (chat_id, category_id)
+);
+
+alter table chat_categories enable row level security;
+alter table chat_category_members enable row level security;
+
 -- All access goes through the app's API routes (service role key),
 -- so RLS is enabled with no public policies: the anon key can't touch data.
 alter table invites enable row level security;
