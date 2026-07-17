@@ -84,6 +84,7 @@ export default function MessageBubble({
           <VideoPlayer
             src={mediaUrl(message.media_path)}
             videoClassName="max-h-80"
+            fullscreenOnPlay
           />
         )}
 

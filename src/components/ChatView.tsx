@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { fileKind, mediaUrl } from "@/lib/utils";
+import { fileKind, mediaUrl, MediaKind } from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
 import LinkPopup from "./LinkPopup";
 import { IconChat, IconPlus, IconSend } from "./Icons";
@@ -24,6 +24,8 @@ export default function ChatView({
   const [popupUrl, setPopupUrl] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<Message | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [attachment, setAttachment] = useState<{ path: string; type: MediaKind } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -90,7 +92,10 @@ export default function ChatView({
     scrollToBottom();
   }, [messages.length, scrollToBottom]);
 
-  async function send(mediaPath?: string, mediaType?: string) {
+  async function send(mediaPathArg?: string, mediaTypeArg?: string) {
+    const mediaPath = mediaPathArg ?? attachment?.path;
+    const mediaType = mediaTypeArg ?? attachment?.type;
+    const usedAttachment = !mediaPathArg ? attachment : null;
     const content = text.trim();
     if (!content && !mediaPath) return;
 
@@ -110,6 +115,7 @@ export default function ChatView({
     setMessages((prev) => [...prev, temp]);
     setText("");
     setReplyTo(null);
+    setAttachment(null);
 
     try {
       const res = await fetch("/api/messages", {
@@ -128,10 +134,35 @@ export default function ChatView({
       } else {
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
         setText(content);
+        if (usedAttachment) setAttachment(usedAttachment);
       }
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setText(content);
+      if (usedAttachment) setAttachment(usedAttachment);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    if (e.dataTransfer.types.includes("application/x-lolyfans-vault")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      setDragOver(true);
+    }
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    setDragOver(false);
+    const data = e.dataTransfer.getData("application/x-lolyfans-vault");
+    if (!data) return;
+    e.preventDefault();
+    try {
+      const { path, type } = JSON.parse(data);
+      if (path && (type === "image" || type === "video")) {
+        setAttachment({ path, type });
+      }
+    } catch {
+      // Not a vault item, ignore
     }
   }
 
@@ -160,8 +191,21 @@ export default function ChatView({
   const byId = new Map(messages.map((m) => [m.id, m]));
 
   return (
-    <div className="flex flex-col h-full max-w-3xl mx-auto w-full">
+    <div
+      className="relative flex flex-col h-full max-w-3xl mx-auto w-full"
+      onDragOver={handleDragOver}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={handleDrop}
+    >
       {header}
+
+      {dragOver && (
+        <div className="absolute inset-2 z-30 rounded-2xl border-2 border-dashed border-accent bg-accent/10 flex items-center justify-center pointer-events-none">
+          <p className="bg-accent text-white text-sm font-semibold rounded-xl px-4 py-2">
+            Drop to attach
+          </p>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3">
         {messages.length === 0 && (
@@ -208,6 +252,40 @@ export default function ChatView({
         </div>
       )}
 
+      {attachment && (
+        <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line flex items-center gap-3 fade-up">
+          {attachment.type === "image" ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={mediaUrl(attachment.path)}
+              alt=""
+              className="w-12 h-12 rounded-lg object-cover shrink-0"
+            />
+          ) : (
+            <video
+              src={`${mediaUrl(attachment.path)}#t=0.001`}
+              muted
+              playsInline
+              preload="metadata"
+              className="w-12 h-12 rounded-lg object-cover shrink-0"
+            />
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-accent">
+              {attachment.type === "image" ? "Photo" : "Video"} from vault
+            </p>
+            <p className="text-xs text-muted">Add a message below, then send</p>
+          </div>
+          <button
+            onClick={() => setAttachment(null)}
+            className="text-muted text-sm px-1"
+            aria-label="Remove attachment"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="flex items-end gap-2 bg-card2/80 border border-line rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
@@ -244,7 +322,7 @@ export default function ChatView({
           />
           <button
             onClick={() => send()}
-            disabled={!text.trim()}
+            disabled={!text.trim() && !attachment}
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-40 flex items-center justify-center active:opacity-80 transition-opacity"
             aria-label="Send"
           >

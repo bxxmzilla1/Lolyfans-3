@@ -286,7 +286,16 @@ export default function VaultManager() {
             <button
               key={item.id}
               onClick={() => setViewer(item)}
-              className="relative aspect-square bg-card2 overflow-hidden rounded-md group"
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.setData(
+                  "application/x-lolyfans-vault",
+                  JSON.stringify({ path: item.media_path, type: item.media_type })
+                );
+                e.dataTransfer.effectAllowed = "copy";
+              }}
+              title="Click to view · drag into a chat to send"
+              className="relative aspect-square bg-card2 overflow-hidden rounded-md group cursor-grab active:cursor-grabbing"
             >
               {item.media_type === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element

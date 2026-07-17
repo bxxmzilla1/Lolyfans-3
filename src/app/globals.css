@@ -153,6 +153,12 @@ textarea {
 }
 
 /* Fullscreen video fills the screen */
+.video-wrap:fullscreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
 :fullscreen video {
   max-height: 100vh !important;
   height: 100%;
