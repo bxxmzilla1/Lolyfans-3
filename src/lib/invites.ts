@@ -18,6 +18,13 @@ export function getRequestCountry(req: NextRequest): string | null {
   return req.headers.get("x-vercel-ip-country")?.toUpperCase() || null;
 }
 
+/** Visitor IP from proxy headers. Null when unknown (e.g. localhost). */
+export function ipFromHeaders(h: Headers): string | null {
+  const fwd = h.get("x-forwarded-for");
+  if (fwd) return fwd.split(",")[0].trim() || null;
+  return h.get("x-real-ip");
+}
+
 export function inviteUsable(invite: Invite | null | undefined): { ok: boolean; reason: string } {
   if (!invite || !invite.active) return { ok: false, reason: "This invite link is no longer active" };
   if (invite.expires_at && new Date(invite.expires_at) < new Date()) {

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createToken, GUEST_COOKIE, cookieOptions } from "@/lib/session";
-import { getRequestCountry, inviteUsable, countryAllowed } from "@/lib/invites";
+import { getRequestCountry, ipFromHeaders, inviteUsable, countryAllowed } from "@/lib/invites";
 
 export async function POST(req: NextRequest) {
   const { code, name } = await req.json();
@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
       invite_id: invite!.id,
       guest_name: guestName,
       guest_country: country,
+      guest_ip: ipFromHeaders(req.headers),
     })
     .select()
     .single();

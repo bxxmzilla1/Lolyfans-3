@@ -26,6 +26,7 @@ create table if not exists chats (
   invite_id uuid references invites(id) on delete set null,
   guest_name text not null,
   guest_country text,
+  guest_ip text,
   created_at timestamptz not null default now(),
   last_message_at timestamptz not null default now()
 );
@@ -34,8 +35,10 @@ create table if not exists chats (
 -- they exist without owner_id. Add it here (no-op on fresh databases).
 alter table invites add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 alter table chats add column if not exists owner_id uuid references auth.users(id) on delete cascade;
+alter table chats add column if not exists guest_ip text;
 
 create index if not exists chats_owner_idx on chats (owner_id, last_message_at desc);
+create index if not exists chats_guest_ip_idx on chats (guest_ip);
 
 create table if not exists messages (
   id uuid primary key default gen_random_uuid(),

@@ -1,12 +1,35 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getOwnerId, getGuestChatId } from "@/lib/session";
+import { ipFromHeaders } from "@/lib/invites";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import AuthForm from "@/components/AuthForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function Home() {
+export default async function Home({
+  searchParams,
+}: {
+  searchParams: Promise<{ resume?: string }>;
+}) {
   if (await getOwnerId()) redirect("/inbox");
   if (await getGuestChatId()) redirect("/chat");
+
+  // Returning guest without a cookie? Match their IP to a previous invite chat.
+  const { resume } = await searchParams;
+  if (resume !== "0") {
+    const ip = ipFromHeaders(await headers());
+    if (ip) {
+      const { data: chat } = await supabaseAdmin()
+        .from("chats")
+        .select("id")
+        .eq("guest_ip", ip)
+        .order("last_message_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (chat) redirect("/api/resume");
+    }
+  }
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6">
