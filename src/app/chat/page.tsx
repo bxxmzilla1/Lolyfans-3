@@ -3,6 +3,7 @@ import { getGuestChatId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
+import OwnerEscapeHatch from "@/components/OwnerEscapeHatch";
 
 export const dynamic = "force-dynamic";
 
@@ -40,6 +41,7 @@ export default async function GuestChatPage() {
 
   return (
     <div className="h-dvh">
+      <OwnerEscapeHatch />
       <ChatView
         chatId={chatId}
         role="guest"
