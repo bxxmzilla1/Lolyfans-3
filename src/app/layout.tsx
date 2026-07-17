@@ -41,9 +41,10 @@ export default function RootLayout({
       <head>
         <script
           // Applies the saved theme before first paint so there's no flash of
-          // the wrong colors (runs on every page, including the invite link).
+          // the wrong colors. Guest-facing pages (invite links and the guest
+          // chat) default to light so they never flash a black screen.
           dangerouslySetInnerHTML={{
-            __html: `try{var t=localStorage.getItem('theme');if(t==='light'){document.documentElement.classList.add('light');}}catch(e){}`,
+            __html: `(function(){var g=location.pathname.slice(0,3)==='/i/'||location.pathname.slice(0,5)==='/chat';var t=null;try{t=localStorage.getItem('theme');}catch(e){}if(t==='light'||(g&&t!=='dark')){document.documentElement.classList.add('light');}})();`,
           }}
         />
       </head>

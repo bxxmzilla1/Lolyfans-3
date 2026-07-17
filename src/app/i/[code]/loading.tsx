@@ -5,13 +5,6 @@
 export default function InviteLoading() {
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
-      {/* Default the skeleton to light (matching the guest-facing pages); the
-          real page swaps in the inviter's chosen theme when it arrives. */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `try{if(localStorage.getItem('theme')!=='dark'){document.documentElement.classList.add('light');}}catch(e){document.documentElement.classList.add('light');}`,
-        }}
-      />
       <div className="w-full max-w-sm flex flex-col items-center gap-6">
         <div className="relative">
           <div className="w-[100px] h-[100px] rounded-full bg-card2 animate-pulse" />

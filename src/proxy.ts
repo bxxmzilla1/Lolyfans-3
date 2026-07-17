@@ -3,6 +3,14 @@ import { NextResponse, type NextRequest } from "next/server";
 
 /** Keeps the Supabase auth session fresh on every request. */
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  // Guest-facing pages never carry an owner session — skip the auth work
+  // entirely so invite links respond as fast as possible.
+  if (pathname.startsWith("/i/") || pathname.startsWith("/chat")) {
+    return NextResponse.next({ request });
+  }
+
   let response = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -29,7 +37,7 @@ export async function proxy(request: NextRequest) {
 
   // Signed-in owners opening "/" (the PWA start URL) go straight to the inbox
   // without rendering the sign-in page first — one less server round trip.
-  if (data?.claims && request.nextUrl.pathname === "/") {
+  if (data?.claims && pathname === "/") {
     const redirect = NextResponse.redirect(new URL("/inbox", request.url));
     response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
     return redirect;
