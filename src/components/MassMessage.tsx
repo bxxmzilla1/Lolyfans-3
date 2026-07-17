@@ -1,10 +1,10 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { fileKind } from "@/lib/utils";
+import { fileKind, mediaUrl } from "@/lib/utils";
 import Portal from "./Portal";
-import { IconCheck, IconFolder, IconSend, IconUser } from "./Icons";
+import { IconCheck, IconFolder, IconPlay, IconSend } from "./Icons";
 
 type ChatRow = {
   id: string;
@@ -13,6 +13,8 @@ type ChatRow = {
   categories: string[];
 };
 type Category = { id: string; name: string };
+type VaultItem = { id: string; media_path: string; media_type: "image" | "video" };
+type VaultPick = { path: string; type: "image" | "video" };
 
 export default function MassMessage({
   chats,
@@ -32,6 +34,8 @@ export default function MassMessage({
   const [userSearch, setUserSearch] = useState("");
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [vaultPick, setVaultPick] = useState<VaultPick | null>(null);
+  const [vaultOpen, setVaultOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
@@ -75,11 +79,12 @@ export default function MassMessage({
   function pickFile(f: File) {
     if (!fileKind(f)) return;
     setFile(f);
+    setVaultPick(null); // a device upload and a vault pick are mutually exclusive
   }
 
   async function send() {
     if (sending || recipients.length === 0) return;
-    if (!text.trim() && !file) {
+    if (!text.trim() && !file && !vaultPick) {
       setError("Write a message or attach media.");
       return;
     }
@@ -88,7 +93,11 @@ export default function MassMessage({
     try {
       let mediaPath: string | null = null;
       let mediaType: string | null = null;
-      if (file) {
+      if (vaultPick) {
+        // Already in storage — reference it directly, no upload needed.
+        mediaPath = vaultPick.path;
+        mediaType = vaultPick.type;
+      } else if (file) {
         const kind = fileKind(file);
         const res = await fetch("/api/upload", {
           method: "POST",
@@ -127,7 +136,15 @@ export default function MassMessage({
     }
   }
 
-  const previewUrl = file ? URL.createObjectURL(file) : null;
+  const mediaPreview = useMemo(() => {
+    if (file) {
+      return { url: URL.createObjectURL(file), type: fileKind(file) };
+    }
+    if (vaultPick) {
+      return { url: mediaUrl(vaultPick.path), type: vaultPick.type };
+    }
+    return null;
+  }, [file, vaultPick]);
 
   return (
     <Portal>
@@ -286,24 +303,27 @@ export default function MassMessage({
               <p className="text-[11px] font-semibold uppercase tracking-widest text-muted">
                 Message
               </p>
-              {previewUrl && (
+              {mediaPreview && (
                 <div className="relative inline-block">
-                  {fileKind(file!) === "image" ? (
+                  {mediaPreview.type === "image" ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={previewUrl}
+                      src={mediaPreview.url}
                       alt=""
                       className="max-h-40 rounded-xl border border-line"
                     />
                   ) : (
                     <video
-                      src={previewUrl}
+                      src={mediaPreview.url}
                       className="max-h-40 rounded-xl border border-line"
                       muted
                     />
                   )}
                   <button
-                    onClick={() => setFile(null)}
+                    onClick={() => {
+                      setFile(null);
+                      setVaultPick(null);
+                    }}
                     className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-card border border-line text-muted hover:text-fg flex items-center justify-center text-xs"
                   >
                     ✕
@@ -324,12 +344,20 @@ export default function MassMessage({
                 hidden
                 onChange={(e) => e.target.files?.[0] && pickFile(e.target.files[0])}
               />
-              <button
-                onClick={() => fileRef.current?.click()}
-                className="text-sm font-semibold text-accent hover:opacity-80"
-              >
-                {file ? "Change media" : "+ Attach image or video"}
-              </button>
+              <div className="flex flex-wrap gap-4">
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  className="text-sm font-semibold text-accent hover:opacity-80"
+                >
+                  {file ? "Change upload" : "+ Upload from device"}
+                </button>
+                <button
+                  onClick={() => setVaultOpen(true)}
+                  className="text-sm font-semibold text-accent hover:opacity-80"
+                >
+                  {vaultPick ? "Change vault pick" : "+ Choose from vault"}
+                </button>
+              </div>
               {error && <p className="text-red-400 text-sm">{error}</p>}
             </section>
           </div>
@@ -351,7 +379,149 @@ export default function MassMessage({
             </button>
           </div>
         </div>
+
+        {vaultOpen && (
+          <VaultPicker
+            onPick={(item) => {
+              setVaultPick({ path: item.media_path, type: item.media_type });
+              setFile(null);
+              setVaultOpen(false);
+            }}
+            onClose={() => setVaultOpen(false)}
+          />
+        )}
       </div>
     </Portal>
+  );
+}
+
+/** Full-screen picker that lists vault albums and their media to attach one. */
+function VaultPicker({
+  onPick,
+  onClose,
+}: {
+  onPick: (item: VaultItem) => void;
+  onClose: () => void;
+}) {
+  const [albums, setAlbums] = useState<{ id: string; name: string }[]>([]);
+  const [albumId, setAlbumId] = useState<string | null>(null); // null = All
+  const [items, setItems] = useState<VaultItem[] | null>(null);
+  const [typeFilter, setTypeFilter] = useState<"all" | "image" | "video">("all");
+
+  useEffect(() => {
+    fetch("/api/vault/albums")
+      .then((r) => (r.ok ? r.json() : { albums: [] }))
+      .then((d) => setAlbums(d.albums ?? []));
+  }, []);
+
+  useEffect(() => {
+    setItems(null);
+    const query = albumId ? `?albumId=${albumId}` : "";
+    fetch(`/api/vault/items${query}`)
+      .then((r) => (r.ok ? r.json() : { items: [] }))
+      .then((d) => setItems(d.items ?? []));
+  }, [albumId]);
+
+  const visible = (items ?? []).filter(
+    (i) => typeFilter === "all" || i.media_type === typeFilter
+  );
+
+  return (
+    <div className="absolute inset-0 z-10 bg-bg flex flex-col fade-up">
+      <header className="shrink-0 border-b border-line px-5 py-4 flex items-center justify-between bg-card/80 backdrop-blur">
+        <p className="font-bold text-lg">Choose from vault</p>
+        <button
+          onClick={onClose}
+          aria-label="Close vault picker"
+          className="w-9 h-9 rounded-xl bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center"
+        >
+          ✕
+        </button>
+      </header>
+
+      <div className="shrink-0 px-5 pt-4 space-y-2 border-b border-line pb-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+          <button
+            onClick={() => setAlbumId(null)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
+              albumId === null
+                ? "bg-accent text-white"
+                : "bg-card2 border border-line text-muted hover:text-fg"
+            }`}
+          >
+            All
+          </button>
+          {albums.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => setAlbumId(a.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 transition-colors ${
+                albumId === a.id
+                  ? "bg-accent text-white"
+                  : "bg-card2 border border-line text-muted hover:text-fg"
+              }`}
+            >
+              {a.name}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1.5">
+          {(["all", "image", "video"] as const).map((f) => (
+            <button
+              key={f}
+              onClick={() => setTypeFilter(f)}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-colors ${
+                typeFilter === f
+                  ? "bg-accent text-white"
+                  : "bg-card2 border border-line text-muted hover:text-fg"
+              }`}
+            >
+              {f === "all" ? "All" : f === "image" ? "Photos" : "Videos"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        {items === null ? (
+          <p className="py-10 text-center text-muted text-sm">Loading…</p>
+        ) : visible.length === 0 ? (
+          <p className="py-10 text-center text-muted text-sm">Nothing here yet.</p>
+        ) : (
+          <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5">
+            {visible.map((item) => (
+              <button
+                key={item.id}
+                onClick={() => onPick(item)}
+                className="relative aspect-square bg-card2 overflow-hidden rounded-md group"
+              >
+                {item.media_type === "image" ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={mediaUrl(item.media_path)}
+                    alt=""
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    loading="lazy"
+                  />
+                ) : (
+                  <>
+                    <video
+                      src={`${mediaUrl(item.media_path)}#t=0.001`}
+                      className="w-full h-full object-cover"
+                      muted
+                      playsInline
+                      preload="metadata"
+                    />
+                    <span className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center">
+                      <IconPlay className="w-3.5 h-3.5 text-white translate-x-px" />
+                    </span>
+                  </>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
