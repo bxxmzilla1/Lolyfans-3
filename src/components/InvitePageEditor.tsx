@@ -80,7 +80,7 @@ export default function InvitePageEditor() {
 
   const previewDescription = (
     description.trim() ||
-    `${displayName || "Lolyfans"} invited you to a private chat. Pick a name and start chatting — no sign-up needed.`
+    `${displayName || "Lolyfans"} invited you to a private chat. Start chatting — no sign-up needed.`
   )
     .replace(/COUNTRY/g, "United States")
     .replace(/CITY/g, "Los Angeles");
@@ -133,7 +133,7 @@ export default function InvitePageEditor() {
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             rows={4}
-            placeholder={`${displayName || "Lolyfans"} invited you to a private chat. Pick a name and start chatting — no sign-up needed.`}
+            placeholder={`${displayName || "Lolyfans"} invited you to a private chat. Start chatting — no sign-up needed.`}
             className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none resize-y"
           />
           <p className="text-muted text-xs">

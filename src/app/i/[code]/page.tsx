@@ -8,7 +8,6 @@ import { mediaUrl } from "@/lib/utils";
 import JoinForm from "@/components/JoinForm";
 import InviteProfile from "@/components/InviteProfile";
 import InviteTheme from "@/components/InviteTheme";
-import { IconMapPin } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -68,8 +67,6 @@ export default async function InvitePage({
     requestHeaders.get("x-vercel-ip-country")?.toUpperCase() || null;
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;
   const geo = await visitorGeoParts(requestHeaders);
-  const location =
-    geo.city && geo.country ? `${geo.city}, ${geo.country}` : geo.city || geo.country;
 
   const blockedReason = !usable.ok
     ? usable.reason
@@ -106,7 +103,7 @@ export default async function InvitePage({
   // real location (from ipinfo). Falls back to a default line.
   const description = (
     descriptionTemplate ||
-    `${ownerName} invited you to a private chat. Pick a name and start chatting — no sign-up needed.`
+    `${ownerName} invited you to a private chat. Start chatting — no sign-up needed.`
   )
     .replace(/COUNTRY/g, geo.country || "your country")
     .replace(/CITY/g, geo.city || "your city");
@@ -123,12 +120,6 @@ export default async function InvitePage({
       />
       <InviteTheme theme={ownerTheme} />
       <div className="w-full max-w-sm flex flex-col items-center gap-6">
-        {location && (
-          <p className="inline-flex items-center gap-1.5 rounded-full bg-card2 border border-line px-3 py-1.5 text-xs text-muted">
-            <IconMapPin className="w-3.5 h-3.5 text-accent" />
-            {location}
-          </p>
-        )}
         <InviteProfile
           name={ownerName}
           avatarUrl={avatarPath ? mediaUrl(avatarPath) : null}

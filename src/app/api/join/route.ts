@@ -5,9 +5,12 @@ import { getRequestCountry, ipFromHeaders, inviteUsable, countryAllowed } from "
 
 export async function POST(req: NextRequest) {
   const { code, name } = await req.json();
-  const guestName = String(name || "").trim().slice(0, 40);
-  if (!code || !guestName) {
-    return NextResponse.json({ error: "Name is required" }, { status: 400 });
+  // Visitors no longer type a name — give them an auto-generated nickname.
+  const guestName =
+    String(name || "").trim().slice(0, 40) ||
+    `Guest ${Math.floor(1000 + Math.random() * 9000)}`;
+  if (!code) {
+    return NextResponse.json({ error: "Invalid link" }, { status: 400 });
   }
 
   const db = supabaseAdmin();

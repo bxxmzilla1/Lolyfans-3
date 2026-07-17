@@ -17,7 +17,6 @@ export default function JoinForm({
   avatarUrl: string | null;
   buttonText?: string;
 }) {
-  const [name, setName] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [stage, setStage] = useState<Stage>("idle");
@@ -35,7 +34,7 @@ export default function JoinForm({
     const res = await fetch("/api/join", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, name }),
+      body: JSON.stringify({ code }),
     });
     if (!res.ok) {
       setLoading(false);
@@ -76,17 +75,10 @@ export default function JoinForm({
   return (
     <>
       <form onSubmit={submit} className="w-full flex flex-col gap-3">
-        <input
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Your name"
-          maxLength={40}
-          className="w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors"
-        />
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}
         <button
           type="submit"
-          disabled={loading || !name.trim()}
+          disabled={loading}
           className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity"
         >
           {buttonText?.trim() || "Start chatting"}
