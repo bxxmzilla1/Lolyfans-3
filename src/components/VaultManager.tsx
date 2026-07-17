@@ -31,6 +31,18 @@ type Item = {
   albums: string[];
 };
 
+type TypeFilter = "all" | "image" | "video";
+
+function formatDuration(seconds: number): string {
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return h > 0
+    ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
+    : `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default function VaultManager() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [total, setTotal] = useState(0);
@@ -41,6 +53,9 @@ export default function VaultManager() {
   const [viewer, setViewer] = useState<Item | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  // Video lengths read from each thumbnail's metadata, keyed by item id
+  const [durations, setDurations] = useState<Record<string, number>>({});
   const [newAlbumOpen, setNewAlbumOpen] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState("");
   const [confirmAction, setConfirmAction] = useState<{
@@ -82,6 +97,7 @@ export default function VaultManager() {
     setItems([]);
     setSelectMode(false);
     setSelected(new Set());
+    setTypeFilter("all");
     loadItems();
   }, [loadItems]);
 
@@ -345,6 +361,10 @@ export default function VaultManager() {
 
   // ---------- Single album view ----------
   const albumName = openAlbum === "all" ? "All" : openAlbum.name;
+  const imageCount = items.filter((i) => i.media_type === "image").length;
+  const videoCount = items.length - imageCount;
+  const visibleItems =
+    typeFilter === "all" ? items : items.filter((i) => i.media_type === typeFilter);
 
   return (
     <div className="space-y-4">
@@ -457,6 +477,30 @@ export default function VaultManager() {
       </button>
       {uploadInput}
 
+      {items.length > 0 && (
+        <div className="flex gap-1.5">
+          {(
+            [
+              { id: "all", label: `All (${items.length})` },
+              { id: "image", label: `Photos (${imageCount})` },
+              { id: "video", label: `Videos (${videoCount})` },
+            ] as { id: TypeFilter; label: string }[]
+          ).map((f) => (
+            <button
+              key={f.id}
+              onClick={() => setTypeFilter(f.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                typeFilter === f.id
+                  ? "bg-accent text-white"
+                  : "bg-card2 border border-line text-muted hover:text-fg"
+              }`}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {items.length === 0 ? (
         <div className="py-10 text-center flex flex-col items-center gap-3">
           <div className="w-14 h-14 rounded-2xl ig-gradient glow-accent flex items-center justify-center">
@@ -465,9 +509,13 @@ export default function VaultManager() {
           <p className="font-semibold">Nothing here yet</p>
           <p className="text-muted text-sm">Upload photos and videos to this album.</p>
         </div>
+      ) : visibleItems.length === 0 ? (
+        <p className="py-8 text-center text-muted text-sm">
+          No {typeFilter === "image" ? "photos" : "videos"} in this album.
+        </p>
       ) : (
         <div className="grid grid-cols-3 gap-1">
-          {items.map((item) => (
+          {visibleItems.map((item) => (
             <button
               key={item.id}
               onClick={() => (selectMode ? toggleSelected(item.id) : setViewer(item))}
@@ -510,10 +558,23 @@ export default function VaultManager() {
                     muted
                     playsInline
                     preload="metadata"
+                    onLoadedMetadata={(e) => {
+                      const { duration } = e.currentTarget;
+                      if (Number.isFinite(duration)) {
+                        setDurations((prev) =>
+                          prev[item.id] === duration ? prev : { ...prev, [item.id]: duration }
+                        );
+                      }
+                    }}
                   />
                   <span className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center">
                     <IconPlay className="w-3.5 h-3.5 text-white translate-x-px" />
                   </span>
+                  {durations[item.id] !== undefined && (
+                    <span className="absolute bottom-1 right-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white tabular-nums">
+                      {formatDuration(durations[item.id])}
+                    </span>
+                  )}
                 </>
               )}
               {selectMode && (
