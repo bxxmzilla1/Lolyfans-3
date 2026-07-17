@@ -5,6 +5,7 @@
   --card: #131019;
   --card-2: #1a1524;
   --line: #262033;
+  --line-strong: #3d3454;
   --fg: #f5f3f9;
   --muted: #8f8a9d;
   --accent: #8b5cf6;
@@ -22,6 +23,7 @@ html.light {
   --card: #ffffff;
   --card-2: #efeaf8;
   --line: #e0d9ef;
+  --line-strong: #c3b7dd;
   --fg: #1a1524;
   --muted: #6b6577;
   --accent: #7c3aed;
@@ -39,6 +41,7 @@ html.light {
   --color-card: var(--card);
   --color-card2: var(--card-2);
   --color-line: var(--line);
+  --color-line2: var(--line-strong);
   --color-fg: var(--fg);
   --color-muted: var(--muted);
   --color-accent: var(--accent);

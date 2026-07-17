@@ -15,7 +15,7 @@ export default function GuestChatHeader({
   location?: string | null;
 }) {
   return (
-    <header className="border-b border-line px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
+    <header className="border-b border-line2 px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
       <div className="relative shrink-0">
         <div className="ig-ring">
           {avatarPath ? (

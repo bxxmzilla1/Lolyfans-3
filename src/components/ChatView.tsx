@@ -464,7 +464,7 @@ export default function ChatView({
       )}
 
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <div className="flex items-end gap-2 bg-card2/80 border border-line rounded-2xl px-2 py-1.5 backdrop-blur">
+        <div className="flex items-end gap-2 bg-card2/80 border border-line2 rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
