@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
-import { IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus } from "./Icons";
+import { IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
+import AdminCodeDialog from "./AdminCodeDialog";
 import Portal from "./Portal";
 
 type ChatRow = {
@@ -93,7 +94,10 @@ export default function ChatList() {
   const [deletingCat, setDeletingCat] = useState<Category | null>(null);
   const [renaming, setRenaming] = useState<ChatRow | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  // Chat pending deletion — the admin code must be entered to confirm.
+  const [deletingChat, setDeletingChat] = useState<ChatRow | null>(null);
   const pathname = usePathname();
+  const router = useRouter();
   const cancelledRef = useRef(false);
 
   async function load() {
@@ -212,6 +216,22 @@ export default function ChatList() {
       body: JSON.stringify({ chatId, customName }),
     });
     load();
+  }
+
+  async function deleteChat(code: string) {
+    if (!deletingChat) return;
+    const chatId = deletingChat.id;
+    setDeletingChat(null);
+    const res = await fetch("/api/chats", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId, code }),
+    });
+    if (res.ok) {
+      // If the deleted chat is open, step back to the empty inbox.
+      if (pathname === `/inbox/${chatId}`) router.push("/inbox");
+      load();
+    }
   }
 
   if (chats === null) {
@@ -598,9 +618,30 @@ export default function ChatList() {
                 Save
               </button>
             </div>
+            <button
+              onClick={() => {
+                setDeletingChat(renaming);
+                setRenaming(null);
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl py-2.5 text-sm font-semibold hover:bg-red-500/20 transition-colors"
+            >
+              <IconTrash className="w-4 h-4" />
+              Delete chat
+            </button>
           </div>
         </div>
         </Portal>
+      )}
+
+      {deletingChat && (
+        <AdminCodeDialog
+          title="Delete chat"
+          message={`Enter the admin code to permanently delete this chat with ${
+            deletingChat.custom_name || deletingChat.guest_name
+          }. This can't be undone.`}
+          onVerified={(code) => deleteChat(code)}
+          onCancel={() => setDeletingChat(null)}
+        />
       )}
 
       {deletingCat && (

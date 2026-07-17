@@ -84,3 +84,44 @@ export async function PATCH(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }
+
+/** Delete a chat (and its messages via cascade). Requires the admin code. */
+export async function DELETE(req: NextRequest) {
+  const ownerId = await getOwnerId();
+  if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const expected = process.env.ADMIN_CODE;
+  if (!expected) {
+    return NextResponse.json(
+      { error: "Admin code is not configured. Set ADMIN_CODE in the environment." },
+      { status: 503 }
+    );
+  }
+
+  const { chatId, code } = await req.json();
+  if (!chatId) return NextResponse.json({ error: "chatId required" }, { status: 400 });
+  if (code !== expected) {
+    return NextResponse.json({ error: "Invalid admin code" }, { status: 403 });
+  }
+
+  const db = supabaseAdmin();
+  // Scrub the guest's IP so the deleted chat can't be auto-resumed by device
+  const { data: chat } = await db
+    .from("chats")
+    .select("guest_ip")
+    .eq("id", chatId)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+
+  const { error } = await db
+    .from("chats")
+    .delete()
+    .eq("id", chatId)
+    .eq("owner_id", ownerId);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (chat?.guest_ip) {
+    await db.from("chats").update({ guest_ip: null }).eq("guest_ip", chat.guest_ip);
+  }
+  return NextResponse.json({ ok: true });
+}
