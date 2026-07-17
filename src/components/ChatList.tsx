@@ -58,12 +58,20 @@ export default function ChatList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
-  // Instant updates: every new message broadcasts to the owner's inbox channel.
+  // Instant updates, two independent paths:
+  // 1. postgres_changes: the database itself streams every INSERT on messages
+  //    (RLS limits events to this owner's chats) — fires on every message, always.
+  // 2. broadcast: pushed by the API route as a low-latency extra.
   useEffect(() => {
     if (!ownerId) return;
     const supabase = supabaseBrowser();
     const channel = supabase
       .channel(`inbox:${ownerId}`)
+      .on(
+        "postgres_changes",
+        { event: "INSERT", schema: "public", table: "messages" },
+        () => load()
+      )
       .on("broadcast", { event: "new-message" }, () => load())
       .subscribe();
     return () => {

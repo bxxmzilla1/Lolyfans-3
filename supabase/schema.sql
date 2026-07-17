@@ -86,6 +86,31 @@ alter table messages enable row level security;
 alter table vault_albums enable row level security;
 alter table vault_items enable row level security;
 
+-- Realtime: stream message inserts straight from the database so the owner's
+-- chat sidebar refreshes instantly on every new message.
+do $$
+begin
+  alter publication supabase_realtime add table messages;
+exception
+  when duplicate_object then null;
+end $$;
+
+-- RLS policies that let a signed-in owner receive realtime events (and read)
+-- only for their own chats. Guests and the public still have no access.
+drop policy if exists "Owners can read their chats" on chats;
+create policy "Owners can read their chats" on chats
+  for select using (owner_id = (select auth.uid()));
+
+drop policy if exists "Owners can read messages in their chats" on messages;
+create policy "Owners can read messages in their chats" on messages
+  for select using (
+    exists (
+      select 1 from chats
+      where chats.id = messages.chat_id
+        and chats.owner_id = (select auth.uid())
+    )
+  );
+
 -- Public storage bucket for chat media and vault files
 insert into storage.buckets (id, name, public)
 values ('media', 'media', true)
