@@ -2,38 +2,13 @@
 
 import { useEffect, useState } from "react";
 import type { Invite } from "@/lib/invites";
-
-const COMMON_COUNTRIES: [string, string][] = [
-  ["US", "United States"],
-  ["GB", "United Kingdom"],
-  ["CA", "Canada"],
-  ["AU", "Australia"],
-  ["DE", "Germany"],
-  ["FR", "France"],
-  ["ES", "Spain"],
-  ["IT", "Italy"],
-  ["NL", "Netherlands"],
-  ["BR", "Brazil"],
-  ["MX", "Mexico"],
-  ["JP", "Japan"],
-  ["KR", "South Korea"],
-  ["PH", "Philippines"],
-  ["SG", "Singapore"],
-  ["AE", "UAE"],
-];
-
-function flag(code: string): string {
-  return String.fromCodePoint(
-    ...[...code.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)
-  );
-}
+import CountryPicker, { countryFlag, countryName } from "./CountryPicker";
 
 export default function InviteManager() {
   const [invites, setInvites] = useState<Invite[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [label, setLabel] = useState("");
   const [countries, setCountries] = useState<string[]>([]);
-  const [customCountry, setCustomCountry] = useState("");
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
 
@@ -48,20 +23,6 @@ export default function InviteManager() {
   useEffect(() => {
     load();
   }, []);
-
-  function toggleCountry(code: string) {
-    setCountries((prev) =>
-      prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
-    );
-  }
-
-  function addCustomCountry() {
-    const code = customCountry.trim().toUpperCase();
-    if (/^[A-Z]{2}$/.test(code) && !countries.includes(code)) {
-      setCountries((prev) => [...prev, code]);
-    }
-    setCustomCountry("");
-  }
 
   async function create() {
     setCreating(true);
@@ -124,53 +85,10 @@ export default function InviteManager() {
           />
 
           <div>
-            <p className="text-sm font-semibold mb-1">Country restriction</p>
-            <p className="text-xs text-muted mb-2">
-              Leave empty to allow the whole world, or pick the only countries
-              that can open this link.
+            <p className="text-sm font-semibold mb-2">
+              Countries allowed to chat with this link
             </p>
-            <div className="flex flex-wrap gap-1.5">
-              {COMMON_COUNTRIES.map(([code, name]) => (
-                <button
-                  key={code}
-                  onClick={() => toggleCountry(code)}
-                  className={`px-2.5 py-1.5 rounded-full text-xs font-medium border transition-colors ${
-                    countries.includes(code)
-                      ? "bg-accent border-accent text-white"
-                      : "bg-card2 border-line text-muted"
-                  }`}
-                >
-                  {flag(code)} {name}
-                </button>
-              ))}
-              {countries
-                .filter((c) => !COMMON_COUNTRIES.some(([code]) => code === c))
-                .map((code) => (
-                  <button
-                    key={code}
-                    onClick={() => toggleCountry(code)}
-                    className="px-2.5 py-1.5 rounded-full text-xs font-medium border bg-accent border-accent text-white"
-                  >
-                    {flag(code)} {code}
-                  </button>
-                ))}
-            </div>
-            <div className="flex gap-2 mt-2">
-              <input
-                value={customCountry}
-                onChange={(e) => setCustomCountry(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && addCustomCountry()}
-                placeholder="Other country code (e.g. SE)"
-                maxLength={2}
-                className="flex-1 bg-card2 border border-line rounded-xl px-3 py-2 text-sm placeholder:text-muted uppercase"
-              />
-              <button
-                onClick={addCustomCountry}
-                className="px-4 rounded-xl bg-card2 border border-line text-sm font-medium"
-              >
-                Add
-              </button>
-            </div>
+            <CountryPicker selected={countries} onChange={setCountries} />
           </div>
 
           <div className="flex gap-2">
@@ -209,12 +127,15 @@ export default function InviteManager() {
             </div>
             <p className="text-muted text-xs mt-0.5 break-all">/i/{invite.code}</p>
             {invite.allowed_countries && invite.allowed_countries.length > 0 ? (
-              <p className="text-xs mt-1.5">
-                {invite.allowed_countries.map((c) => flag(c)).join(" ")}{" "}
+              <p
+                className="text-xs mt-1.5"
+                title={invite.allowed_countries.map((c) => countryName(c)).join(", ")}
+              >
+                {invite.allowed_countries.map((c) => countryFlag(c)).join(" ")}{" "}
                 <span className="text-muted">only</span>
               </p>
             ) : (
-              <p className="text-xs mt-1.5 text-muted">🌍 Worldwide</p>
+              <p className="text-xs mt-1.5 text-muted">🌍 Everyone</p>
             )}
             <div className="flex gap-2 mt-3">
               <button
