@@ -10,7 +10,7 @@ export async function GET() {
   const [{ data, error }, { count }] = await Promise.all([
     db
       .from("vault_albums")
-      .select("*, vault_items(count)")
+      .select("*, vault_item_albums(count)")
       .eq("owner_id", ownerId)
       .order("created_at", { ascending: false }),
     db

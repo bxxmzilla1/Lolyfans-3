@@ -18,15 +18,16 @@ import VideoPlayer from "./VideoPlayer";
 type Album = {
   id: string;
   name: string;
-  vault_items: { count: number }[];
+  vault_item_albums: { count: number }[];
 };
 
 type Item = {
   id: string;
-  album_id: string | null;
   media_path: string;
   media_type: "image" | "video";
   created_at: string;
+  // Album ids this item is shown in (it always appears in "All")
+  albums: string[];
 };
 
 export default function VaultManager() {
@@ -39,6 +40,8 @@ export default function VaultManager() {
   const [viewer, setViewer] = useState<Item | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [newAlbumOpen, setNewAlbumOpen] = useState(false);
+  const [newAlbumName, setNewAlbumName] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadAlbums = useCallback(async () => {
@@ -55,8 +58,13 @@ export default function VaultManager() {
     const query = openAlbum === "all" ? "" : `?albumId=${openAlbum.id}`;
     const res = await fetch(`/api/vault/items${query}`);
     if (res.ok) {
-      const { items } = await res.json();
+      const { items } = (await res.json()) as { items: Item[] };
       setItems(items);
+      // Drop selections for items no longer visible in this view
+      setSelected((prev) => {
+        const visible = new Set(items.map((i) => i.id));
+        return new Set([...prev].filter((id) => visible.has(id)));
+      });
     }
   }, [openAlbum]);
 
@@ -72,8 +80,10 @@ export default function VaultManager() {
   }, [loadItems]);
 
   async function createAlbum() {
-    const name = prompt("Album name");
-    if (!name?.trim()) return;
+    const name = newAlbumName.trim();
+    if (!name) return;
+    setNewAlbumOpen(false);
+    setNewAlbumName("");
     await fetch("/api/vault/albums", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -135,15 +145,18 @@ export default function VaultManager() {
     });
   }
 
-  async function moveSelected(albumId: string | null) {
+  /** Check/uncheck an album for every selected item. */
+  async function toggleAlbumForSelected(albumId: string) {
     if (selected.size === 0) return;
+    const ids = [...selected];
+    const allIn = ids.every(
+      (id) => items.find((i) => i.id === id)?.albums.includes(albumId)
+    );
     await fetch("/api/vault/items", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [...selected], albumId }),
+      body: JSON.stringify({ ids, albumId, member: !allIn }),
     });
-    setSelectMode(false);
-    setSelected(new Set());
     loadItems();
     loadAlbums();
   }
@@ -184,13 +197,58 @@ export default function VaultManager() {
             {uploading ? "Uploading…" : "+ Upload media"}
           </button>
           <button
-            onClick={createAlbum}
+            onClick={() => setNewAlbumOpen(true)}
             className="px-4 bg-card2 border border-line rounded-xl font-semibold text-sm"
           >
             New album
           </button>
           {uploadInput}
         </div>
+
+        {newAlbumOpen && (
+          <div
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setNewAlbumOpen(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-xs bg-card border border-line rounded-2xl p-4 space-y-3 fade-up"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl ig-gradient glow-accent flex items-center justify-center shrink-0">
+                  <IconFolder className="w-4.5 h-4.5 text-white" />
+                </div>
+                <p className="font-bold">New album</p>
+              </div>
+              <input
+                autoFocus
+                value={newAlbumName}
+                onChange={(e) => setNewAlbumName(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && createAlbum()}
+                placeholder="Album name"
+                className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setNewAlbumOpen(false);
+                    setNewAlbumName("");
+                  }}
+                  className="flex-1 bg-card2 border border-line rounded-xl py-2.5 text-sm font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={createAlbum}
+                  disabled={!newAlbumName.trim()}
+                  className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                >
+                  Create
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         <ul className="space-y-2">
           <li>
@@ -211,7 +269,7 @@ export default function VaultManager() {
             </button>
           </li>
           {albums.map((album) => {
-            const count = album.vault_items?.[0]?.count ?? 0;
+            const count = album.vault_item_albums?.[0]?.count ?? 0;
             return (
               <li key={album.id}>
                 <button
@@ -299,30 +357,49 @@ export default function VaultManager() {
           <p className="text-xs font-semibold text-accent">
             {selected.size} selected — everything always stays in All
           </p>
-          <div className="flex flex-wrap gap-2">
-            <select
-              value=""
-              disabled={selected.size === 0}
-              onChange={(e) => e.target.value && moveSelected(e.target.value)}
-              className="flex-1 min-w-0 bg-card2 border border-line rounded-lg px-3 py-2 text-sm disabled:opacity-50"
-            >
-              <option value="" disabled>
-                Show in album…
-              </option>
-              {albums.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
-            <button
-              onClick={() => moveSelected(null)}
-              disabled={selected.size === 0}
-              className="bg-card2 border border-line rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-50"
-            >
-              Remove from albums
-            </button>
-          </div>
+          {albums.length === 0 ? (
+            <p className="text-xs text-muted">
+              No albums yet. Create one to show media in it.
+            </p>
+          ) : selected.size === 0 ? (
+            <p className="text-xs text-muted">
+              Tap media below, then check the albums it should show in.
+            </p>
+          ) : (
+            <ul className="space-y-1">
+              {albums.map((album) => {
+                const ids = [...selected];
+                const inCount = ids.filter((id) =>
+                  items.find((i) => i.id === id)?.albums.includes(album.id)
+                ).length;
+                const allIn = inCount === ids.length;
+                const someIn = inCount > 0 && !allIn;
+                return (
+                  <li key={album.id}>
+                    <button
+                      onClick={() => toggleAlbumForSelected(album.id)}
+                      className="w-full flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-card2 transition-colors text-left"
+                    >
+                      <span
+                        className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                          allIn
+                            ? "bg-accent border-accent"
+                            : someIn
+                            ? "bg-accent/40 border-accent"
+                            : "border-line"
+                        }`}
+                      >
+                        {allIn && <IconCheck className="w-3 h-3 text-white" />}
+                        {someIn && <span className="w-2 h-0.5 bg-white rounded" />}
+                      </span>
+                      <IconFolder className="w-4 h-4 text-accent shrink-0" />
+                      <span className="text-sm font-medium truncate">{album.name}</span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
         </div>
       )}
 

@@ -82,6 +82,20 @@ alter table vault_items add column if not exists owner_id uuid references auth.u
 
 create index if not exists vault_items_owner_idx on vault_items (owner_id, created_at desc);
 
+-- An item can be shown in any number of albums (it always stays in "All").
+create table if not exists vault_item_albums (
+  item_id uuid not null references vault_items(id) on delete cascade,
+  album_id uuid not null references vault_albums(id) on delete cascade,
+  primary key (item_id, album_id)
+);
+
+-- Migrate the old single-album assignments into the join table (no-op when empty)
+insert into vault_item_albums (item_id, album_id)
+select id, album_id from vault_items where album_id is not null
+on conflict do nothing;
+
+alter table vault_item_albums enable row level security;
+
 -- All access goes through the app's API routes (service role key),
 -- so RLS is enabled with no public policies: the anon key can't touch data.
 alter table invites enable row level security;
