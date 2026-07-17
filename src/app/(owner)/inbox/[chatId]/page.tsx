@@ -2,8 +2,9 @@ import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOwnerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { locationFromIp, fullCountryName } from "@/lib/geo";
 import ChatView from "@/components/ChatView";
-import { IconBack } from "@/components/Icons";
+import { IconBack, IconMapPin } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,11 @@ export default async function OwnerChatPage({
   ]);
   if (!chat) notFound();
 
+  // Where the guest is chatting from: precise City, Country from their IP,
+  // falling back to the country stored when they joined.
+  const guestLocation =
+    (await locationFromIp(chat.guest_ip)) ?? fullCountryName(chat.guest_country);
+
   const header = (
     <header className="border-b border-line px-3 py-2.5 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
       <Link href="/inbox" className="lg:hidden text-fg p-1" aria-label="Back">
@@ -58,9 +64,15 @@ export default async function OwnerChatPage({
             </span>
           )}
         </p>
-        <p className="text-muted text-xs truncate">
-          {chat.guest_country ? `${chat.guest_country} · ` : ""}
-          {chat.invites?.label || "Invite link"}
+        <p className="text-muted text-xs truncate flex items-center gap-1">
+          {guestLocation && (
+            <>
+              <IconMapPin className="w-3 h-3 text-accent shrink-0" />
+              <span className="truncate">{guestLocation}</span>
+              <span className="shrink-0">·</span>
+            </>
+          )}
+          <span className="truncate">{chat.invites?.label || "Invite link"}</span>
         </p>
       </div>
     </header>
