@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { visitorLocation } from "@/lib/geo";
@@ -16,7 +17,10 @@ export default async function GuestChatPage() {
   if (!chatId) redirect("/");
 
   const db = supabaseAdmin();
-  const [{ data: messages }, { data: chat }] = await Promise.all([
+  const requestHeaders = await headers();
+
+  // Messages, chat, and the guest's location all load at the same time.
+  const [{ data: messages }, { data: chat }, location] = await Promise.all([
     db
       .from("messages")
       .select("*")
@@ -25,25 +29,24 @@ export default async function GuestChatPage() {
       .order("created_at", { ascending: true })
       .limit(500),
     db.from("chats").select("owner_id, guest_ip").eq("id", chatId).maybeSingle(),
+    visitorLocation(requestHeaders),
   ]);
   // Chat was deleted: skip the IP resume so we land on the sign-in page, not a loop
   if (!chat) redirect("/?resume=0");
 
-  const requestHeaders = await headers();
-
   // Keep the remembered IP fresh so this device finds its chat again even
   // after clearing history or switching browsers (IPs drift over time).
+  // Done after the response so it never delays the page.
   const currentIp = ipFromHeaders(requestHeaders);
   if (currentIp && chat.guest_ip !== currentIp) {
-    await db.from("chats").update({ guest_ip: currentIp }).eq("id", chatId);
+    after(async () => {
+      await db.from("chats").update({ guest_ip: currentIp }).eq("id", chatId);
+    });
   }
 
-  // The owner's profile (name + picture) from their auth account, plus the
-  // guest's own location shown as if the inviter is in the same place.
-  const [{ data: ownerUser }, location] = await Promise.all([
-    db.auth.admin.getUserById(chat.owner_id),
-    visitorLocation(requestHeaders),
-  ]);
+  // The owner's profile (name + picture) from their auth account; the guest's
+  // own location is shown as if the inviter is in the same place.
+  const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
   const meta = (ownerUser?.user?.user_metadata ?? {}) as {
     display_name?: string;
     avatar_path?: string;

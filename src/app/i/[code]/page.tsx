@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
@@ -20,53 +21,52 @@ export default async function InvitePage({
   const db = supabaseAdmin();
   const requestHeaders = await headers();
 
-  // Only resume an existing chat; a cookie left from a deleted chat must not
-  // block a fresh invite (it would otherwise bounce the visitor to sign-in).
   const guestChatId = await getGuestChatId();
-  if (guestChatId) {
-    const { data: existing } = await db
-      .from("chats")
-      .select("id")
-      .eq("id", guestChatId)
-      .maybeSingle();
-    if (existing) redirect("/chat");
-  }
-
-  // No cookie (cleared history, different browser on the same device):
-  // the device is remembered by IP, so drop them back into their chat.
   const visitorIp = ipFromHeaders(requestHeaders);
-  if (visitorIp) {
-    const { data: previous } = await db
-      .from("chats")
-      .select("id")
-      .eq("guest_ip", visitorIp)
-      .order("last_message_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (previous) redirect("/api/resume");
-  }
 
-  const { data: invite } = await db
-    .from("invites")
-    .select("*")
-    .eq("code", code)
-    .single<Invite>();
+  // Everything the page needs, fetched at once instead of one after another.
+  const [cookieChat, ipChat, inviteRes, geo] = await Promise.all([
+    // Only resume an existing chat; a cookie left from a deleted chat must not
+    // block a fresh invite (it would otherwise bounce the visitor to sign-in).
+    guestChatId
+      ? db.from("chats").select("id").eq("id", guestChatId).maybeSingle()
+      : Promise.resolve(null),
+    // No cookie (cleared history, different browser on the same device):
+    // the device is remembered by IP, so drop them back into their chat.
+    visitorIp
+      ? db
+          .from("chats")
+          .select("id")
+          .eq("guest_ip", visitorIp)
+          .order("last_message_at", { ascending: false })
+          .limit(1)
+          .maybeSingle()
+      : Promise.resolve(null),
+    db.from("invites").select("*").eq("code", code).single<Invite>(),
+    visitorGeoParts(requestHeaders),
+  ]);
+  if (cookieChat?.data) redirect("/chat");
+  if (ipChat?.data) redirect("/api/resume");
+
+  const invite = inviteRes.data;
 
   // Count this visit as a link click (unique per IP; revisits are no-ops).
+  // Runs after the response is sent so it never delays the page.
   if (invite && visitorIp) {
-    await db
-      .from("invite_visits")
-      .upsert(
-        { invite_id: invite.id, ip: visitorIp },
-        { onConflict: "invite_id,ip", ignoreDuplicates: true }
-      );
+    after(async () => {
+      await db
+        .from("invite_visits")
+        .upsert(
+          { invite_id: invite.id, ip: visitorIp },
+          { onConflict: "invite_id,ip", ignoreDuplicates: true }
+        );
+    });
   }
 
   const usable = inviteUsable(invite);
   const country =
     requestHeaders.get("x-vercel-ip-country")?.toUpperCase() || null;
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;
-  const geo = await visitorGeoParts(requestHeaders);
 
   const blockedReason = !usable.ok
     ? usable.reason

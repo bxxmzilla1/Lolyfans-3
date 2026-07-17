@@ -8,28 +8,46 @@ function countryName(code: string): string {
   }
 }
 
+type GeoParts = { city: string | null; country: string | null };
+
+// Warm serverless instances answer repeat lookups (same guest reloading the
+// chat) instantly instead of hitting ipinfo every time.
+const geoCache = new Map<string, GeoParts>();
+
+async function ipinfoLookup(ip: string): Promise<GeoParts | null> {
+  const cached = geoCache.get(ip);
+  if (cached) return cached;
+  try {
+    const token = process.env.IPINFO_TOKEN;
+    const url = `https://ipinfo.io/${ip}/json${token ? `?token=${token}` : ""}`;
+    // Short timeout: a slow ipinfo response must not hold the page hostage.
+    const res = await fetch(url, { signal: AbortSignal.timeout(1200), cache: "no-store" });
+    if (res.ok) {
+      const data = (await res.json()) as { city?: string; country?: string };
+      if (data.city || data.country) {
+        const parts: GeoParts = {
+          city: data.city || null,
+          country: data.country ? countryName(data.country) : null,
+        };
+        if (geoCache.size > 5000) geoCache.clear();
+        geoCache.set(ip, parts);
+        return parts;
+      }
+    }
+  } catch {
+    // ipinfo unreachable, rate limited, or timed out
+  }
+  return null;
+}
+
 /**
  * "City, Country" for a given IP via ipinfo.io. Returns null when it can't be
  * resolved (no IP, private/localhost address, or ipinfo unreachable).
  */
 export async function locationFromIp(ip: string | null): Promise<string | null> {
   if (!ip) return null;
-  try {
-    const token = process.env.IPINFO_TOKEN;
-    const url = `https://ipinfo.io/${ip}/json${token ? `?token=${token}` : ""}`;
-    const res = await fetch(url, {
-      signal: AbortSignal.timeout(2500),
-      cache: "no-store",
-    });
-    if (res.ok) {
-      const data = (await res.json()) as { city?: string; country?: string };
-      if (data.city && data.country) {
-        return `${data.city}, ${countryName(data.country)}`;
-      }
-    }
-  } catch {
-    // ipinfo unreachable or rate limited
-  }
+  const parts = await ipinfoLookup(ip);
+  if (parts?.city && parts.country) return `${parts.city}, ${parts.country}`;
   return null;
 }
 
@@ -59,27 +77,11 @@ export function fullCountryName(code: string | null | undefined): string | null 
  * Visitor's city and full country name as separate parts (for the CITY /
  * COUNTRY tokens in a custom invite description). Falls back to Vercel headers.
  */
-export async function visitorGeoParts(
-  h: Headers
-): Promise<{ city: string | null; country: string | null }> {
+export async function visitorGeoParts(h: Headers): Promise<GeoParts> {
   const ip = ipFromHeaders(h);
   if (ip) {
-    try {
-      const token = process.env.IPINFO_TOKEN;
-      const url = `https://ipinfo.io/${ip}/json${token ? `?token=${token}` : ""}`;
-      const res = await fetch(url, { signal: AbortSignal.timeout(2500), cache: "no-store" });
-      if (res.ok) {
-        const data = (await res.json()) as { city?: string; country?: string };
-        if (data.city || data.country) {
-          return {
-            city: data.city || null,
-            country: data.country ? countryName(data.country) : null,
-          };
-        }
-      }
-    } catch {
-      // fall through to headers
-    }
+    const parts = await ipinfoLookup(ip);
+    if (parts) return parts;
   }
   const city = h.get("x-vercel-ip-city");
   const country = h.get("x-vercel-ip-country");
