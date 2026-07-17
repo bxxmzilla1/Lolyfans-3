@@ -10,6 +10,28 @@
   --accent: #8b5cf6;
   --accent-press: #7c3aed;
   --ig-gradient: linear-gradient(135deg, #c084fc 0%, #8b5cf6 55%, #7c3aed 100%);
+  --glow-1: rgba(139, 92, 246, 0.14);
+  --glow-2: rgba(124, 58, 237, 0.1);
+  --glow-3: rgba(192, 132, 252, 0.06);
+  --track: rgba(255, 255, 255, 0.25);
+  color-scheme: dark;
+}
+
+html.light {
+  --bg: #f5f3fb;
+  --card: #ffffff;
+  --card-2: #efeaf8;
+  --line: #e0d9ef;
+  --fg: #1a1524;
+  --muted: #6b6577;
+  --accent: #7c3aed;
+  --accent-press: #6d28d9;
+  --ig-gradient: linear-gradient(135deg, #a855f7 0%, #8b5cf6 55%, #7c3aed 100%);
+  --glow-1: rgba(139, 92, 246, 0.12);
+  --glow-2: rgba(124, 58, 237, 0.08);
+  --glow-3: rgba(168, 85, 247, 0.06);
+  --track: rgba(0, 0, 0, 0.14);
+  color-scheme: light;
 }
 
 @theme inline {
@@ -43,9 +65,9 @@ body::before {
   z-index: -1;
   pointer-events: none;
   background:
-    radial-gradient(680px 340px at 88% -6%, rgba(139, 92, 246, 0.14), transparent 62%),
-    radial-gradient(560px 300px at -4% 104%, rgba(124, 58, 237, 0.1), transparent 62%),
-    radial-gradient(420px 240px at 50% 0%, rgba(192, 132, 252, 0.06), transparent 60%);
+    radial-gradient(680px 340px at 88% -6%, var(--glow-1), transparent 62%),
+    radial-gradient(560px 300px at -4% 104%, var(--glow-2), transparent 62%),
+    radial-gradient(420px 240px at 50% 0%, var(--glow-3), transparent 60%);
 }
 
 .ig-gradient {
@@ -161,7 +183,7 @@ textarea {
   background: linear-gradient(
     to right,
     var(--accent) var(--fill, 0%),
-    rgba(255, 255, 255, 0.25) var(--fill, 0%)
+    var(--track) var(--fill, 0%)
   );
   cursor: pointer;
 }

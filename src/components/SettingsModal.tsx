@@ -7,6 +7,7 @@ import { mediaUrl, resizeImage } from "@/lib/utils";
 import InviteManager from "./InviteManager";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
+import ThemeToggle from "./ThemeToggle";
 import { IconLink, IconLogout, IconUser } from "./Icons";
 
 type Section = "profile" | "links";
@@ -128,6 +129,10 @@ function ProfileSection() {
         >
           {saved ? "Saved!" : saving ? "Saving…" : "Save profile"}
         </button>
+      </div>
+
+      <div className="border-t border-line pt-6">
+        <ThemeToggle />
       </div>
     </div>
   );
