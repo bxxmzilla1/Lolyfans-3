@@ -2,6 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
+import { visitorLocation } from "@/lib/geo";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
@@ -27,15 +28,21 @@ export default async function GuestChatPage() {
   // Chat was deleted: skip the IP resume so we land on the sign-in page, not a loop
   if (!chat) redirect("/?resume=0");
 
+  const requestHeaders = await headers();
+
   // Keep the remembered IP fresh so this device finds its chat again even
   // after clearing history or switching browsers (IPs drift over time).
-  const currentIp = ipFromHeaders(await headers());
+  const currentIp = ipFromHeaders(requestHeaders);
   if (currentIp && chat.guest_ip !== currentIp) {
     await db.from("chats").update({ guest_ip: currentIp }).eq("id", chatId);
   }
 
-  // The owner's profile (name + picture) from their auth account
-  const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
+  // The owner's profile (name + picture) from their auth account, plus the
+  // guest's own location shown as if the inviter is in the same place.
+  const [{ data: ownerUser }, location] = await Promise.all([
+    db.auth.admin.getUserById(chat.owner_id),
+    visitorLocation(requestHeaders),
+  ]);
   const meta = (ownerUser?.user?.user_metadata ?? {}) as {
     display_name?: string;
     avatar_path?: string;
@@ -46,6 +53,7 @@ export default async function GuestChatPage() {
       ownerId={chat.owner_id}
       name={meta.display_name || "Lolyfans"}
       avatarPath={meta.avatar_path || null}
+      location={location}
     />
   );
 

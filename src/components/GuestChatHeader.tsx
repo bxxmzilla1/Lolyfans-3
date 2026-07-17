@@ -1,16 +1,18 @@
 "use client";
 
 import { mediaUrl } from "@/lib/utils";
-import { IconUser } from "./Icons";
+import { IconMapPin, IconUser } from "./Icons";
 
 /** Guest-side chat header: the owner's profile, always shown as online. */
 export default function GuestChatHeader({
   name,
   avatarPath,
+  location,
 }: {
   ownerId?: string;
   name: string;
   avatarPath: string | null;
+  location?: string | null;
 }) {
   return (
     <header className="border-b border-line px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
@@ -33,7 +35,15 @@ export default function GuestChatHeader({
       </div>
       <div className="min-w-0">
         <p className="font-bold text-[15px] leading-tight truncate">{name}</p>
-        <p className="text-xs text-green-400">Online Now</p>
+        <div className="flex items-center gap-2">
+          <p className="text-xs text-green-400">Online Now</p>
+          {location && (
+            <span className="inline-flex items-center gap-0.5 text-xs text-muted truncate">
+              <IconMapPin className="w-3 h-3 text-accent shrink-0" />
+              {location}
+            </span>
+          )}
+        </div>
       </div>
     </header>
   );

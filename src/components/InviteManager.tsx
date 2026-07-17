@@ -180,10 +180,10 @@ export default function InviteManager() {
                   .map(([code, count]) => (
                     <span
                       key={code}
-                      title={code === "??" ? "Unknown country" : countryName(code)}
-                      className="inline-flex items-center gap-1 rounded-full bg-card2 border border-line px-2 py-0.5 text-[11px]"
+                      className="inline-flex items-center gap-1.5 rounded-full bg-card2 border border-line px-2.5 py-0.5 text-[11px]"
                     >
                       {code === "??" ? "🌐" : countryFlag(code)}
+                      <span>{code === "??" ? "Unknown" : countryName(code)}</span>
                       <span className="text-muted">{count}</span>
                     </span>
                   ))}
