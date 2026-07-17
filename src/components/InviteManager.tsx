@@ -5,7 +5,7 @@ import type { Invite } from "@/lib/invites";
 import CountryPicker, { countryFlag, countryName } from "./CountryPicker";
 import ConfirmDialog from "./ConfirmDialog";
 import Portal from "./Portal";
-import { IconEdit } from "./Icons";
+import { IconEdit, IconRefresh } from "./Icons";
 
 type InviteWithStats = Invite & {
   stats: { joins: number; clicks: number; countries: Record<string, number> };
@@ -21,6 +21,7 @@ export default function InviteManager() {
   const [deleting, setDeleting] = useState<Invite | null>(null);
   const [renaming, setRenaming] = useState<InviteWithStats | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
 
   async function load() {
     const res = await fetch("/api/invites");
@@ -30,12 +31,15 @@ export default function InviteManager() {
     }
   }
 
-  // Live stats: refresh every second while this panel is open so clicks and
-  // subscribers tick up in real time.
+  async function refresh() {
+    if (refreshing) return;
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  }
+
   useEffect(() => {
     load();
-    const interval = setInterval(load, 1000);
-    return () => clearInterval(interval);
   }, []);
 
   async function create() {
@@ -96,12 +100,23 @@ export default function InviteManager() {
   return (
     <div className="space-y-4">
       {!showForm ? (
-        <button
-          onClick={() => setShowForm(true)}
-          className="w-full bg-accent text-white font-semibold rounded-xl py-3 active:opacity-80 transition-opacity"
-        >
-          + New invite link
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex-1 bg-accent text-white font-semibold rounded-xl py-3 active:opacity-80 transition-opacity"
+          >
+            + New invite link
+          </button>
+          <button
+            onClick={refresh}
+            disabled={refreshing}
+            title="Refresh stats"
+            className="flex items-center gap-2 px-4 bg-card2 border border-line rounded-xl font-semibold text-sm text-muted hover:text-fg transition-colors disabled:opacity-50"
+          >
+            <IconRefresh className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
+            Refresh
+          </button>
+        </div>
       ) : (
         <div className="bg-card border border-line rounded-2xl p-4 space-y-4 fade-up">
           <input
