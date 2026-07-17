@@ -50,6 +50,15 @@ body {
   height: 100%;
 }
 
+/* Online indicators need a deeper green to stand out on light backgrounds */
+html.light .text-green-400,
+html.light .text-green-500 {
+  color: #15803d;
+}
+html.light .bg-green-500 {
+  background-color: #16a34a;
+}
+
 body {
   background: var(--bg);
   color: var(--fg);

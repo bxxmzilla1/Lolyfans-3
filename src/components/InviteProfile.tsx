@@ -32,7 +32,7 @@ export default function InviteProfile({
 
       <div className="text-center -mt-2">
         <h1 className="text-2xl font-bold">{name}</h1>
-        <p className="text-green-400 text-xs font-medium mt-1">Online Now</p>
+        <p className="text-green-400 text-xs font-medium mt-1">Online</p>
       </div>
     </>
   );

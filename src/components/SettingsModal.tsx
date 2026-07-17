@@ -222,7 +222,11 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       )}
 
       <div className="flex-1 overflow-y-auto p-5 lg:p-8">
-        <div className="mx-auto w-full max-w-2xl">
+        <div
+          className={`mx-auto w-full ${
+            section === "profile" ? "max-w-2xl" : "max-w-6xl"
+          }`}
+        >
           {section === "profile" ? <ProfileSection /> : <InviteManager />}
         </div>
       </div>
