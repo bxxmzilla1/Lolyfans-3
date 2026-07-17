@@ -50,10 +50,21 @@ export default async function InvitePage({
 }: {
   params: Promise<{ code: string }>;
 }) {
-  if (await getGuestChatId()) redirect("/chat");
   const { code } = await params;
-
   const db = supabaseAdmin();
+
+  // Only resume an existing chat; a cookie left from a deleted chat must not
+  // block a fresh invite (it would otherwise bounce the visitor to sign-in).
+  const guestChatId = await getGuestChatId();
+  if (guestChatId) {
+    const { data: existing } = await db
+      .from("chats")
+      .select("id")
+      .eq("id", guestChatId)
+      .maybeSingle();
+    if (existing) redirect("/chat");
+  }
+
   const { data: invite } = await db
     .from("invites")
     .select("*")
