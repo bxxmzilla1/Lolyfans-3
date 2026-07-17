@@ -24,22 +24,26 @@ export default function JoinForm({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
     setError("");
+    // Show the request overlay right away so the button label never changes
+    // (swapping its text mid-press glitches in some in-app browsers).
+    setStage("waiting");
     const res = await fetch("/api/join", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ code, name }),
     });
-    setLoading(false);
     if (!res.ok) {
+      setLoading(false);
+      setStage("idle");
       const data = await res.json().catch(() => null);
       setError(data?.error || "Could not join this chat");
       return;
     }
 
     // Chat request sequence: wait for the inviter to "respond", then enter.
-    setStage("waiting");
     const waitMs = 3000 + Math.random() * 2000; // 3-5s
     timersRef.current.push(
       setTimeout(() => {
@@ -83,7 +87,7 @@ export default function JoinForm({
           disabled={loading || !name.trim()}
           className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity"
         >
-          {loading ? "Sending request…" : "Start chatting"}
+          Start chatting
         </button>
       </form>
 
