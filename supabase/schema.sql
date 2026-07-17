@@ -30,6 +30,11 @@ create table if not exists chats (
   last_message_at timestamptz not null default now()
 );
 
+-- Upgrade path: if the tables were created by the old single-owner schema,
+-- they exist without owner_id. Add it here (no-op on fresh databases).
+alter table invites add column if not exists owner_id uuid references auth.users(id) on delete cascade;
+alter table chats add column if not exists owner_id uuid references auth.users(id) on delete cascade;
+
 create index if not exists chats_owner_idx on chats (owner_id, last_message_at desc);
 
 create table if not exists messages (
@@ -61,6 +66,9 @@ create table if not exists vault_items (
   media_type text not null check (media_type in ('image', 'video')),
   created_at timestamptz not null default now()
 );
+
+alter table vault_albums add column if not exists owner_id uuid references auth.users(id) on delete cascade;
+alter table vault_items add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 
 create index if not exists vault_items_owner_idx on vault_items (owner_id, created_at desc);
 
