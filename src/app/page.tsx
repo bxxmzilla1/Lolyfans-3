@@ -27,9 +27,11 @@ export default async function Home({
     if (existing) redirect("/chat");
   }
 
-  // Returning guest without a usable cookie? Match their IP to a previous chat.
+  // Returning guest without a usable cookie (none at all, or one pointing at a
+  // deleted chat)? The device is remembered by IP — match it to a previous
+  // chat so typing the bare domain always reopens the same conversation.
   const { resume } = await searchParams;
-  if (resume !== "0" && !guestChatId) {
+  if (resume !== "0") {
     const ip = ipFromHeaders(await headers());
     if (ip) {
       const { data: chat } = await supabaseAdmin()
