@@ -1,0 +1,20 @@
+import InviteManager from "@/components/InviteManager";
+
+export const dynamic = "force-dynamic";
+
+export default function InvitesPage() {
+  return (
+    <div className="flex flex-col h-full">
+      <header className="border-b border-line px-4 py-3 shrink-0">
+        <div className="max-w-3xl mx-auto w-full">
+          <h1 className="text-xl font-bold">Invite links</h1>
+        </div>
+      </header>
+      <div className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto w-full p-4 pb-24 lg:pb-6">
+          <InviteManager />
+        </div>
+      </div>
+    </div>
+  );
+}

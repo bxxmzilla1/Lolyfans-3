@@ -35,6 +35,19 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Soft ambient gradient glow behind everything */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(640px 320px at 88% -6%, rgba(150, 47, 191, 0.16), transparent 62%),
+    radial-gradient(560px 300px at -4% 104%, rgba(214, 41, 118, 0.11), transparent 62%),
+    radial-gradient(420px 240px at 50% 0%, rgba(79, 91, 213, 0.08), transparent 60%);
+}
+
 .ig-gradient {
   background: var(--ig-gradient);
 }

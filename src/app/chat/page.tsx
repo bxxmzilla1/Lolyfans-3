@@ -22,5 +22,9 @@ export default async function GuestChatPage() {
     </header>
   );
 
-  return <ChatView chatId={chatId} role="guest" header={header} />;
+  return (
+    <div className="h-dvh">
+      <ChatView chatId={chatId} role="guest" header={header} />
+    </div>
+  );
 }

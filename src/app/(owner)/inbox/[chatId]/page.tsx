@@ -1,4 +1,4 @@
-import { redirect, notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { getOwnerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -25,7 +25,7 @@ export default async function OwnerChatPage({
 
   const header = (
     <header className="border-b border-line px-3 py-2.5 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
-      <Link href="/inbox" className="text-fg text-xl px-1" aria-label="Back">
+      <Link href="/inbox" className="lg:hidden text-fg text-xl px-1" aria-label="Back">
         ‹
       </Link>
       <div className="ig-ring">

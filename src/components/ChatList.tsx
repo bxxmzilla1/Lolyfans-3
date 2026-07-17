@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { formatTime } from "@/lib/utils";
 
 type ChatRow = {
@@ -22,6 +23,7 @@ function countryFlag(code: string | null): string {
 
 export default function ChatList() {
   const [chats, setChats] = useState<ChatRow[] | null>(null);
+  const pathname = usePathname();
 
   useEffect(() => {
     let cancelled = false;
@@ -83,7 +85,11 @@ export default function ChatList() {
         <li key={chat.id}>
           <Link
             href={`/inbox/${chat.id}`}
-            className="flex items-center gap-3 px-4 py-3 hover:bg-card transition-colors"
+            className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+              pathname === `/inbox/${chat.id}`
+                ? "bg-card2 border-r-2 border-accent"
+                : "hover:bg-card"
+            }`}
           >
             <div className="ig-ring shrink-0">
               <div className="w-13 h-13 rounded-full bg-bg flex items-center justify-center text-lg font-bold uppercase">

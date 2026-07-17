@@ -117,7 +117,7 @@ export default function ChatView({
   const byId = new Map(messages.map((m) => [m.id, m]));
 
   return (
-    <div className="flex flex-col h-dvh max-w-2xl mx-auto w-full">
+    <div className="flex flex-col h-full max-w-3xl mx-auto w-full">
       {header}
 
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3">
