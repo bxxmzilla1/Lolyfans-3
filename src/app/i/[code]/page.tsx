@@ -52,6 +52,7 @@ export default async function InvitePage({
 }) {
   const { code } = await params;
   const db = supabaseAdmin();
+  const requestHeaders = await headers();
 
   // Only resume an existing chat; a cookie left from a deleted chat must not
   // block a fresh invite (it would otherwise bounce the visitor to sign-in).
@@ -65,6 +66,20 @@ export default async function InvitePage({
     if (existing) redirect("/chat");
   }
 
+  // No cookie (cleared history, different browser on the same device):
+  // the device is remembered by IP, so drop them back into their chat.
+  const visitorIp = ipFromHeaders(requestHeaders);
+  if (visitorIp) {
+    const { data: previous } = await db
+      .from("chats")
+      .select("id")
+      .eq("guest_ip", visitorIp)
+      .order("last_message_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (previous) redirect("/api/resume");
+  }
+
   const { data: invite } = await db
     .from("invites")
     .select("*")
@@ -72,7 +87,6 @@ export default async function InvitePage({
     .single<Invite>();
 
   const usable = inviteUsable(invite);
-  const requestHeaders = await headers();
   const country =
     requestHeaders.get("x-vercel-ip-country")?.toUpperCase() || null;
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;

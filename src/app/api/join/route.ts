@@ -30,6 +30,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // This device already has a chat (matched by IP)? Put them back into it
+  // instead of creating a duplicate.
+  const ip = ipFromHeaders(req.headers);
+  if (ip) {
+    const { data: previous } = await db
+      .from("chats")
+      .select("id, guest_name")
+      .eq("guest_ip", ip)
+      .order("last_message_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (previous) {
+      const res = NextResponse.json({ ok: true, chatId: previous.id });
+      res.cookies.set(
+        GUEST_COOKIE,
+        createToken({ chatId: previous.id, name: previous.guest_name }),
+        cookieOptions
+      );
+      return res;
+    }
+  }
+
   const { data: chat, error } = await db
     .from("chats")
     .insert({
@@ -37,7 +59,7 @@ export async function POST(req: NextRequest) {
       invite_id: invite!.id,
       guest_name: guestName,
       guest_country: country,
-      guest_ip: ipFromHeaders(req.headers),
+      guest_ip: ip,
     })
     .select()
     .single();
