@@ -91,6 +91,12 @@ export default async function InvitePage({
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
       <div className="w-full max-w-sm flex flex-col items-center gap-6">
+        {location && (
+          <p className="inline-flex items-center gap-1.5 rounded-full bg-card2 border border-line px-3 py-1.5 text-xs text-muted">
+            <IconMapPin className="w-3.5 h-3.5 text-accent" />
+            {location}
+          </p>
+        )}
         <div className="relative">
           <div className="ig-ring">
             {avatarPath ? (
@@ -118,12 +124,6 @@ export default async function InvitePage({
               ? blockedReason
               : `${ownerName} invited you to a private chat. Pick a name and start chatting — no sign-up needed.`}
           </p>
-          {location && (
-            <p className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-card2 border border-line px-3 py-1.5 text-xs text-muted">
-              <IconMapPin className="w-3.5 h-3.5 text-accent" />
-              {location}
-            </p>
-          )}
         </div>
         {!blockedReason && <JoinForm code={code} />}
       </div>
