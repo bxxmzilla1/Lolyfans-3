@@ -1,0 +1,89 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0a0c;
+  --card: #141417;
+  --card-2: #1c1c21;
+  --line: #26262c;
+  --fg: #fafafa;
+  --muted: #9b9ba3;
+  --accent: #0095f6;
+  --accent-press: #1877f2;
+  --ig-gradient: linear-gradient(45deg, #feda75, #fa7e1e, #d62976, #962fbf, #4f5bd5);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-card2: var(--card-2);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --font-sans: var(--font-geist-sans);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.ig-gradient {
+  background: var(--ig-gradient);
+}
+
+.ig-gradient-text {
+  background: var(--ig-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.ig-ring {
+  position: relative;
+  background: var(--ig-gradient);
+  padding: 2px;
+  border-radius: 9999px;
+}
+
+/* Chat bubble for own messages */
+.bubble-own {
+  background: linear-gradient(135deg, #962fbf, #d62976);
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 3px;
+}
+
+input,
+textarea {
+  outline: none;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.fade-up {
+  animation: fade-up 0.18s ease-out;
+}
