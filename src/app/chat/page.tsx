@@ -20,9 +20,10 @@ export default async function GuestChatPage() {
       .eq("hidden", false)
       .order("created_at", { ascending: true })
       .limit(500),
-    db.from("chats").select("owner_id").eq("id", chatId).single(),
+    db.from("chats").select("owner_id").eq("id", chatId).maybeSingle(),
   ]);
-  if (!chat) redirect("/");
+  // Chat was deleted: skip the IP resume so we land on the sign-in page, not a loop
+  if (!chat) redirect("/?resume=0");
 
   // The owner's profile (name + picture) from their auth account
   const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);

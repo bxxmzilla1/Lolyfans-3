@@ -14,11 +14,22 @@ export default async function Home({
   searchParams: Promise<{ resume?: string }>;
 }) {
   if (await getOwnerId()) redirect("/inbox");
-  if (await getGuestChatId()) redirect("/chat");
 
-  // Returning guest without a cookie? Match their IP to a previous invite chat.
+  // Only resume the guest chat if the cookie points at a chat that still exists.
+  // (A cookie left over from a deleted chat would otherwise ping-pong with /chat.)
+  const guestChatId = await getGuestChatId();
+  if (guestChatId) {
+    const { data: existing } = await supabaseAdmin()
+      .from("chats")
+      .select("id")
+      .eq("id", guestChatId)
+      .maybeSingle();
+    if (existing) redirect("/chat");
+  }
+
+  // Returning guest without a usable cookie? Match their IP to a previous chat.
   const { resume } = await searchParams;
-  if (resume !== "0") {
+  if (resume !== "0" && !guestChatId) {
     const ip = ipFromHeaders(await headers());
     if (ip) {
       const { data: chat } = await supabaseAdmin()

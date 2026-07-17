@@ -1,4 +1,4 @@
-const CACHE = "lolyfans-v3";
+const CACHE = "lolyfans-v4";
 const STATIC_ASSETS = [
   "/manifest.webmanifest",
   "/icons/icon.svg",
@@ -32,17 +32,6 @@ p{color:#8f8a9d}b{background:linear-gradient(135deg,#c084fc,#7c3aed);
 -webkit-background-clip:text;background-clip:text;color:transparent;font-size:24px}</style>
 </head><body><div><b>Lolyfans</b><p>You're offline. Check your connection and try again.</p></div></body></html>`;
 
-// Only page HTML that rendered normally (a real 200, not a redirect) is safe to
-// cache — cached redirects break installed PWAs.
-function cacheable(response) {
-  return (
-    response &&
-    response.ok &&
-    !response.redirected &&
-    response.type === "basic"
-  );
-}
-
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -51,34 +40,18 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
 
-  // Pages: stale-while-revalidate. Paint the last cached shell instantly, then
-  // refresh from the network in the background. Live data (messages, chat list)
-  // is re-fetched by the client, so a momentarily stale shell is fine.
+  // Pages: always hit the network so auth redirects are never cached or replayed
+  // (cached/redirected navigations break installed PWAs and can cause redirect
+  // loops). Only fall back to an offline page when the network is unavailable.
   if (request.mode === "navigate") {
     event.respondWith(
-      caches.open(CACHE).then(async (cache) => {
-        const cached = await cache.match(request);
-        const network = fetch(request)
-          .then((response) => {
-            if (cacheable(response)) cache.put(request, response.clone());
-            return response;
-          })
-          .catch(() => null);
-
-        if (cached) {
-          // Update in the background; return the cached shell right away.
-          event.waitUntil(network);
-          return cached;
-        }
-        const fresh = await network;
-        return (
-          fresh ||
+      fetch(request).catch(
+        () =>
           new Response(OFFLINE_HTML, {
             status: 503,
             headers: { "Content-Type": "text/html" },
           })
-        );
-      })
+      )
     );
     return;
   }
