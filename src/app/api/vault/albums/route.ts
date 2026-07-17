@@ -6,13 +6,20 @@ export async function GET() {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { data, error } = await supabaseAdmin()
-    .from("vault_albums")
-    .select("*, vault_items(count)")
-    .eq("owner_id", ownerId)
-    .order("created_at", { ascending: false });
+  const db = supabaseAdmin();
+  const [{ data, error }, { count }] = await Promise.all([
+    db
+      .from("vault_albums")
+      .select("*, vault_items(count)")
+      .eq("owner_id", ownerId)
+      .order("created_at", { ascending: false }),
+    db
+      .from("vault_items")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_id", ownerId),
+  ]);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ albums: data });
+  return NextResponse.json({ albums: data, total: count ?? 0 });
 }
 
 export async function POST(req: NextRequest) {

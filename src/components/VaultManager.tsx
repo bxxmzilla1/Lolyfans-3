@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl } from "@/lib/utils";
-import { IconLock } from "./Icons";
+import {
+  IconBack,
+  IconChevronRight,
+  IconFolder,
+  IconGrid,
+  IconLock,
+  IconPlay,
+  IconTrash,
+} from "./Icons";
+import VideoPlayer from "./VideoPlayer";
 
 type Album = {
   id: string;
@@ -21,8 +30,10 @@ type Item = {
 
 export default function VaultManager() {
   const [albums, setAlbums] = useState<Album[]>([]);
+  const [total, setTotal] = useState(0);
+  // null = album list view, "all" = the built-in All album, otherwise an album
+  const [openAlbum, setOpenAlbum] = useState<"all" | Album | null>(null);
   const [items, setItems] = useState<Item[]>([]);
-  const [activeAlbum, setActiveAlbum] = useState<string | null>(null); // null = All
   const [uploading, setUploading] = useState(false);
   const [viewer, setViewer] = useState<Item | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -30,25 +41,28 @@ export default function VaultManager() {
   const loadAlbums = useCallback(async () => {
     const res = await fetch("/api/vault/albums");
     if (res.ok) {
-      const { albums } = await res.json();
+      const { albums, total } = await res.json();
       setAlbums(albums);
+      setTotal(total);
     }
   }, []);
 
   const loadItems = useCallback(async () => {
-    const query = activeAlbum ? `?albumId=${activeAlbum}` : "";
+    if (!openAlbum) return;
+    const query = openAlbum === "all" ? "" : `?albumId=${openAlbum.id}`;
     const res = await fetch(`/api/vault/items${query}`);
     if (res.ok) {
       const { items } = await res.json();
       setItems(items);
     }
-  }, [activeAlbum]);
+  }, [openAlbum]);
 
   useEffect(() => {
     loadAlbums();
   }, [loadAlbums]);
 
   useEffect(() => {
+    setItems([]);
     loadItems();
   }, [loadItems]);
 
@@ -63,19 +77,19 @@ export default function VaultManager() {
     loadAlbums();
   }
 
-  async function deleteAlbum(id: string) {
-    if (!confirm("Delete this album? Items inside are kept in All.")) return;
+  async function deleteAlbum(album: Album) {
+    if (!confirm(`Delete album "${album.name}"? Its files stay in All.`)) return;
     await fetch("/api/vault/albums", {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
+      body: JSON.stringify({ id: album.id }),
     });
-    if (activeAlbum === id) setActiveAlbum(null);
+    setOpenAlbum(null);
     loadAlbums();
-    loadItems();
   }
 
   async function handleFiles(files: FileList) {
+    const albumId = openAlbum && openAlbum !== "all" ? openAlbum.id : null;
     setUploading(true);
     try {
       for (const file of Array.from(files)) {
@@ -95,11 +109,7 @@ export default function VaultManager() {
           await fetch("/api/vault/items", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              mediaPath: path,
-              mediaType: kind,
-              albumId: activeAlbum,
-            }),
+            body: JSON.stringify({ mediaPath: path, mediaType: kind, albumId }),
           });
         }
       }
@@ -134,72 +144,141 @@ export default function VaultManager() {
     loadAlbums();
   }
 
+  const uploadInput = (
+    <input
+      ref={fileRef}
+      type="file"
+      accept="image/*,video/*"
+      multiple
+      hidden
+      onChange={(e) => e.target.files?.length && handleFiles(e.target.files)}
+    />
+  );
+
+  // ---------- Album list view ----------
+  if (!openAlbum) {
+    return (
+      <div className="space-y-4">
+        <div className="flex gap-2">
+          <button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="flex-1 bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
+          >
+            {uploading ? "Uploading…" : "+ Upload media"}
+          </button>
+          <button
+            onClick={createAlbum}
+            className="px-4 bg-card2 border border-line rounded-xl font-semibold text-sm"
+          >
+            New album
+          </button>
+          {uploadInput}
+        </div>
+
+        <ul className="space-y-2">
+          <li>
+            <button
+              onClick={() => setOpenAlbum("all")}
+              className="w-full flex items-center gap-3 bg-card border border-line rounded-2xl px-4 py-3.5 hover:bg-card2 transition-colors text-left"
+            >
+              <div className="w-10 h-10 rounded-xl ig-gradient flex items-center justify-center shrink-0">
+                <IconGrid className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-[15px]">All</p>
+                <p className="text-muted text-xs">
+                  {total} item{total === 1 ? "" : "s"}
+                </p>
+              </div>
+              <IconChevronRight className="w-4.5 h-4.5 text-muted shrink-0" />
+            </button>
+          </li>
+          {albums.map((album) => {
+            const count = album.vault_items?.[0]?.count ?? 0;
+            return (
+              <li key={album.id}>
+                <button
+                  onClick={() => setOpenAlbum(album)}
+                  className="w-full flex items-center gap-3 bg-card border border-line rounded-2xl px-4 py-3.5 hover:bg-card2 transition-colors text-left"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-card2 border border-line flex items-center justify-center shrink-0">
+                    <IconFolder className="w-5 h-5 text-accent" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-[15px] truncate">{album.name}</p>
+                    <p className="text-muted text-xs">
+                      {count} item{count === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  <IconChevronRight className="w-4.5 h-4.5 text-muted shrink-0" />
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+
+        {albums.length === 0 && total === 0 && (
+          <div className="py-10 text-center flex flex-col items-center gap-3">
+            <div className="w-14 h-14 rounded-2xl ig-gradient glow-accent flex items-center justify-center">
+              <IconLock className="w-6 h-6 text-white" />
+            </div>
+            <p className="font-semibold">Vault is empty</p>
+            <p className="text-muted text-sm">
+              Upload photos and videos to keep them safe here.
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ---------- Single album view ----------
+  const albumName = openAlbum === "all" ? "All" : openAlbum.name;
+
   return (
     <div className="space-y-4">
-      <div className="flex gap-2">
+      <div className="flex items-center gap-2.5">
         <button
-          onClick={() => fileRef.current?.click()}
-          disabled={uploading}
-          className="flex-1 bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
+          onClick={() => setOpenAlbum(null)}
+          aria-label="Back to albums"
+          className="w-9 h-9 rounded-xl bg-card2 border border-line flex items-center justify-center text-fg hover:bg-line transition-colors shrink-0"
         >
-          {uploading ? "Uploading…" : "+ Upload media"}
+          <IconBack className="w-4.5 h-4.5" />
         </button>
-        <button
-          onClick={createAlbum}
-          className="px-4 bg-card2 border border-line rounded-xl font-semibold text-sm"
-        >
-          New album
-        </button>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*,video/*"
-          multiple
-          hidden
-          onChange={(e) => e.target.files?.length && handleFiles(e.target.files)}
-        />
+        <div className="flex-1 min-w-0">
+          <p className="font-bold text-[15px] truncate">{albumName}</p>
+          <p className="text-muted text-xs">
+            {items.length} item{items.length === 1 ? "" : "s"}
+          </p>
+        </div>
+        {openAlbum !== "all" && (
+          <button
+            onClick={() => deleteAlbum(openAlbum)}
+            aria-label="Delete album"
+            className="w-9 h-9 rounded-xl bg-card2 border border-line flex items-center justify-center text-red-400 hover:bg-line transition-colors shrink-0"
+          >
+            <IconTrash className="w-4.5 h-4.5" />
+          </button>
+        )}
       </div>
 
-      <div className="flex gap-2 overflow-x-auto pb-1">
-        <button
-          onClick={() => setActiveAlbum(null)}
-          className={`px-3.5 py-1.5 rounded-full text-sm font-medium border shrink-0 transition-colors ${
-            activeAlbum === null
-              ? "ig-gradient text-white border-transparent"
-              : "bg-card2 border-line text-muted"
-          }`}
-        >
-          All
-        </button>
-        {albums.map((album) => (
-          <button
-            key={album.id}
-            onClick={() => setActiveAlbum(album.id)}
-            onDoubleClick={() => deleteAlbum(album.id)}
-            className={`px-3.5 py-1.5 rounded-full text-sm font-medium border shrink-0 transition-colors ${
-              activeAlbum === album.id
-                ? "ig-gradient text-white border-transparent"
-                : "bg-card2 border-line text-muted"
-            }`}
-            title="Double-tap to delete album"
-          >
-            {album.name}
-            <span className="opacity-70 ml-1">
-              {album.vault_items?.[0]?.count ?? 0}
-            </span>
-          </button>
-        ))}
-      </div>
+      <button
+        onClick={() => fileRef.current?.click()}
+        disabled={uploading}
+        className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
+      >
+        {uploading ? "Uploading…" : `+ Upload to ${albumName}`}
+      </button>
+      {uploadInput}
 
       {items.length === 0 ? (
-        <div className="py-16 text-center flex flex-col items-center gap-3">
+        <div className="py-10 text-center flex flex-col items-center gap-3">
           <div className="w-14 h-14 rounded-2xl ig-gradient glow-accent flex items-center justify-center">
             <IconLock className="w-6 h-6 text-white" />
           </div>
-          <p className="font-semibold">Vault is empty</p>
-          <p className="text-muted text-sm">
-            Upload photos and videos to keep them safe here.
-          </p>
+          <p className="font-semibold">Nothing here yet</p>
+          <p className="text-muted text-sm">Upload photos and videos to this album.</p>
         </div>
       ) : (
         <div className="grid grid-cols-3 gap-1">
@@ -207,27 +286,27 @@ export default function VaultManager() {
             <button
               key={item.id}
               onClick={() => setViewer(item)}
-              className="relative aspect-square bg-card2 overflow-hidden rounded-sm"
+              className="relative aspect-square bg-card2 overflow-hidden rounded-md group"
             >
               {item.media_type === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={mediaUrl(item.media_path)}
                   alt=""
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                   loading="lazy"
                 />
               ) : (
                 <>
                   <video
-                    src={mediaUrl(item.media_path)}
+                    src={`${mediaUrl(item.media_path)}#t=0.001`}
                     className="w-full h-full object-cover"
                     muted
                     playsInline
                     preload="metadata"
                   />
-                  <span className="absolute top-1.5 right-1.5 text-white text-xs drop-shadow">
-                    ▶
+                  <span className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center">
+                    <IconPlay className="w-3.5 h-3.5 text-white translate-x-px" />
                   </span>
                 </>
               )}
@@ -250,12 +329,10 @@ export default function VaultManager() {
                 className="max-w-full max-h-[70vh] rounded-xl object-contain"
               />
             ) : (
-              <video
+              <VideoPlayer
                 src={mediaUrl(viewer.media_path)}
-                controls
-                autoPlay
-                playsInline
-                className="max-w-full max-h-[70vh] rounded-xl"
+                className="rounded-xl"
+                videoClassName="max-h-[70vh]"
               />
             )}
           </div>

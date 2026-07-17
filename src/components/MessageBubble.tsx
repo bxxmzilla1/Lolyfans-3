@@ -2,6 +2,7 @@
 
 import { mediaUrl, formatTime, URL_REGEX } from "@/lib/utils";
 import { IconReply } from "./Icons";
+import VideoPlayer from "./VideoPlayer";
 
 export type Message = {
   id: string;
@@ -80,11 +81,9 @@ export default function MessageBubble({
           />
         )}
         {message.media_path && message.media_type === "video" && (
-          <video
+          <VideoPlayer
             src={mediaUrl(message.media_path)}
-            controls
-            playsInline
-            className="w-full max-h-80 bg-black"
+            videoClassName="max-h-80"
           />
         )}
 

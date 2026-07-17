@@ -121,3 +121,40 @@ textarea {
   animation: msg-in 0.22s cubic-bezier(0.2, 0.8, 0.25, 1);
   transform-origin: bottom;
 }
+
+/* Themed video progress slider */
+.video-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 9999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--fill, 0%),
+    rgba(255, 255, 255, 0.25) var(--fill, 0%)
+  );
+  cursor: pointer;
+}
+.video-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.7);
+}
+.video-range::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.7);
+}
+
+/* Fullscreen video fills the screen */
+:fullscreen video {
+  max-height: 100vh !important;
+  height: 100%;
+  width: 100%;
+}
