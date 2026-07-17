@@ -25,7 +25,16 @@ export async function proxy(request: NextRequest) {
   );
 
   // Verifies locally and refreshes the session cookie only when it expired.
-  await supabase.auth.getClaims();
+  const { data } = await supabase.auth.getClaims();
+
+  // Signed-in owners opening "/" (the PWA start URL) go straight to the inbox
+  // without rendering the sign-in page first — one less server round trip.
+  if (data?.claims && request.nextUrl.pathname === "/") {
+    const redirect = NextResponse.redirect(new URL("/inbox", request.url));
+    response.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+    return redirect;
+  }
+
   return response;
 }
 

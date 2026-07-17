@@ -37,6 +37,18 @@ let chatsCache: ChatRow[] | null = null;
 let ownerIdCache: string | null = null;
 let categoriesCache: Category[] | null = null;
 
+// Persisted copy so a fresh app launch paints instantly from the last known
+// inbox while the network request runs. Cleared on logout / auth failure.
+export const INBOX_CACHE_KEY = "loly_inbox_v1";
+
+function readStoredInbox(): { chats: ChatRow[]; ownerId: string; categories: Category[] } | null {
+  try {
+    return JSON.parse(localStorage.getItem(INBOX_CACHE_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
 // One shared realtime subscription for all mounted chat lists. The component
 // can be mounted twice at once (desktop sidebar + mobile list), and Supabase
 // forbids two subscriptions to the same channel topic on one client.
@@ -84,24 +96,39 @@ export default function ChatList() {
   const cancelledRef = useRef(false);
 
   async function load() {
-    const [chatsRes, catsRes] = await Promise.all([
-      fetch("/api/chats"),
-      fetch("/api/categories"),
-    ]);
+    const chatsRes = await fetch("/api/chats");
     if (cancelledRef.current) return;
     if (chatsRes.ok) {
-      const { chats, ownerId } = await chatsRes.json();
+      const { chats, ownerId, categories } = await chatsRes.json();
       chatsCache = chats;
       ownerIdCache = ownerId;
+      categoriesCache = categories;
       setChats(chats);
       setOwnerId(ownerId);
-    }
-    if (catsRes.ok) {
-      const { categories } = await catsRes.json();
-      categoriesCache = categories;
       setCategories(categories);
+      try {
+        localStorage.setItem(INBOX_CACHE_KEY, JSON.stringify({ chats, ownerId, categories }));
+      } catch {
+        // Storage full or unavailable; the app still works, just without instant paint.
+      }
+    } else if (chatsRes.status === 401) {
+      try {
+        localStorage.removeItem(INBOX_CACHE_KEY);
+      } catch {}
     }
   }
+
+  // Paint instantly from the last persisted inbox on a fresh launch, then let
+  // the network refresh replace it.
+  useEffect(() => {
+    if (chatsCache !== null) return;
+    const stored = readStoredInbox();
+    if (stored) {
+      setChats((current) => current ?? stored.chats);
+      setOwnerId((current) => current ?? stored.ownerId);
+      setCategories((current) => (current.length ? current : stored.categories));
+    }
+  }, []);
 
   // Refetch on mount and on navigation (opening a chat clears its badge server-side).
   useEffect(() => {
