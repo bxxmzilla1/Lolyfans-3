@@ -16,6 +16,7 @@ export default async function GuestChatPage() {
       .from("messages")
       .select("*")
       .eq("chat_id", chatId)
+      .eq("hidden", false)
       .order("created_at", { ascending: true })
       .limit(500),
     db.from("chats").select("owner_id").eq("id", chatId).single(),

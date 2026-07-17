@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl } from "@/lib/utils";
 import InviteManager from "./InviteManager";
+import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import { IconLink, IconLogout, IconUser } from "./Icons";
 
 type Section = "profile" | "links";
@@ -130,7 +131,16 @@ function ProfileSection() {
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [section, setSection] = useState<Section>("profile");
+  const [askAdmin, setAskAdmin] = useState(false);
   const router = useRouter();
+
+  function openLinks() {
+    if (getCachedAdminCode()) {
+      setSection("links");
+    } else {
+      setAskAdmin(true);
+    }
+  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -179,7 +189,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconUser className="w-3.5 h-3.5" /> Profile
         </button>
         <button
-          onClick={() => setSection("links")}
+          onClick={openLinks}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "links"
               ? "bg-accent text-white"
@@ -189,6 +199,17 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconLink className="w-3.5 h-3.5" /> Invite links
         </button>
       </div>
+
+      {askAdmin && (
+        <AdminCodeDialog
+          message="Enter the admin code to open invite links."
+          onVerified={() => {
+            setAskAdmin(false);
+            setSection("links");
+          }}
+          onCancel={() => setAskAdmin(false)}
+        />
+      )}
 
       <div className="flex-1 overflow-y-auto p-5 lg:p-8">
         <div className="mx-auto w-full max-w-2xl">

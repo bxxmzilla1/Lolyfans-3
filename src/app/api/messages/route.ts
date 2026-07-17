@@ -50,7 +50,11 @@ export async function GET(req: NextRequest) {
   }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ messages: data, role: auth.role });
+
+  // Hidden messages are only visible to the owner
+  const messages =
+    auth.role === "guest" ? (data ?? []).filter((m) => !m.hidden) : data;
+  return NextResponse.json({ messages, role: auth.role });
 }
 
 export async function POST(req: NextRequest) {

@@ -6,7 +6,20 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl, MediaKind } from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
 import LinkPopup from "./LinkPopup";
-import { IconChat, IconLock, IconPlus, IconSend, IconUnlock } from "./Icons";
+import AdminCodeDialog, {
+  getCachedAdminCode,
+  clearCachedAdminCode,
+} from "./AdminCodeDialog";
+import {
+  IconChat,
+  IconCheck,
+  IconEye,
+  IconEyeOff,
+  IconLock,
+  IconPlus,
+  IconSend,
+  IconUnlock,
+} from "./Icons";
 
 export default function ChatView({
   chatId,
@@ -29,6 +42,9 @@ export default function ChatView({
   const [dragOver, setDragOver] = useState(false);
   const [sendLocked, setSendLocked] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
+  const [msgSelectMode, setMsgSelectMode] = useState(false);
+  const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
+  const [askAdmin, setAskAdmin] = useState<{ hidden: boolean } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -59,6 +75,8 @@ export default function ChatView({
     setPeerTyping(false);
     setReplyTo(null);
     setAttachment(null);
+    setMsgSelectMode(false);
+    setSelectedMsgs(new Set());
     // Wait a frame so the list has laid out its content
     requestAnimationFrame(() => {
       scrollToBottom(false);
@@ -108,6 +126,10 @@ export default function ChatView({
       .on("broadcast", { event: "update-message" }, ({ payload }) => {
         const msg = payload as Message;
         setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)));
+      })
+      .on("broadcast", { event: "hide-messages" }, () => {
+        // Refetch: guests get the filtered list, the owner gets updated labels
+        load();
       })
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         if ((payload as { sender: string }).sender === role) return;
@@ -216,6 +238,42 @@ export default function ChatView({
     }
   }
 
+  function toggleMsgSelected(m: Message) {
+    if (m.id.startsWith("temp-")) return;
+    setSelectedMsgs((prev) => {
+      const next = new Set(prev);
+      if (next.has(m.id)) next.delete(m.id);
+      else next.add(m.id);
+      return next;
+    });
+  }
+
+  /** Hide or unhide the selected messages for the guest (admin-code gated). */
+  async function hideSelected(hidden: boolean, code?: string) {
+    const ids = [...selectedMsgs];
+    if (ids.length === 0) return;
+    const adminCode = code ?? getCachedAdminCode();
+    if (!adminCode) {
+      setAskAdmin({ hidden });
+      return;
+    }
+    const res = await fetch("/api/messages/hide", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId, messageIds: ids, hidden, code: adminCode }),
+    });
+    if (res.ok) {
+      const { messages: updated } = (await res.json()) as { messages: Message[] };
+      const byId = new Map(updated.map((m) => [m.id, m]));
+      setMessages((prev) => prev.map((m) => byId.get(m.id) ?? m));
+      setMsgSelectMode(false);
+      setSelectedMsgs(new Set());
+    } else if (res.status === 403) {
+      clearCachedAdminCode();
+      setAskAdmin({ hidden });
+    }
+  }
+
   function handleDragOver(e: React.DragEvent) {
     if (e.dataTransfer.types.includes("application/x-lolyfans-vault")) {
       e.preventDefault();
@@ -299,6 +357,9 @@ export default function ChatView({
             onLinkClick={setPopupUrl}
             onMediaClick={setLightbox}
             onToggleLock={toggleLock}
+            selectMode={msgSelectMode}
+            selected={selectedMsgs.has(m.id)}
+            onSelectToggle={toggleMsgSelected}
           />
         ))}
         {peerTyping && (
@@ -329,6 +390,38 @@ export default function ChatView({
             onClick={() => setReplyTo(null)}
             className="text-muted text-sm px-1"
             aria-label="Cancel reply"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {msgSelectMode && (
+        <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line flex items-center gap-2 fade-up">
+          <p className="flex-1 text-xs font-semibold text-accent">
+            {selectedMsgs.size} message{selectedMsgs.size === 1 ? "" : "s"} selected
+          </p>
+          <button
+            onClick={() => hideSelected(true)}
+            disabled={selectedMsgs.size === 0}
+            className="flex items-center gap-1.5 bg-accent text-white rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+          >
+            <IconEyeOff className="w-3.5 h-3.5" /> Hide
+          </button>
+          <button
+            onClick={() => hideSelected(false)}
+            disabled={selectedMsgs.size === 0}
+            className="flex items-center gap-1.5 bg-card border border-line rounded-lg px-3 py-1.5 text-xs font-semibold disabled:opacity-40"
+          >
+            <IconEye className="w-3.5 h-3.5" /> Unhide
+          </button>
+          <button
+            onClick={() => {
+              setMsgSelectMode(false);
+              setSelectedMsgs(new Set());
+            }}
+            className="text-muted text-sm px-1"
+            aria-label="Cancel selection"
           >
             ✕
           </button>
@@ -393,6 +486,23 @@ export default function ChatView({
           />
           {role === "owner" && (
             <button
+              onClick={() => {
+                setMsgSelectMode((v) => !v);
+                setSelectedMsgs(new Set());
+              }}
+              className={`w-9 h-9 rounded-xl shrink-0 hidden lg:flex items-center justify-center transition-colors ${
+                msgSelectMode
+                  ? "bg-accent text-white glow-accent"
+                  : "bg-transparent border border-line text-muted hover:text-fg"
+              }`}
+              aria-label={msgSelectMode ? "Exit message selection" : "Select messages"}
+              title={msgSelectMode ? "Exit message selection" : "Select messages to hide"}
+            >
+              <IconCheck className="w-4.5 h-4.5" />
+            </button>
+          )}
+          {role === "owner" && (
+            <button
               onClick={() => setSendLocked((v) => !v)}
               className={`w-9 h-9 rounded-xl shrink-0 hidden lg:flex items-center justify-center transition-colors ${
                 sendLocked
@@ -435,6 +545,22 @@ export default function ChatView({
           </button>
         </div>
       </div>
+
+      {askAdmin && (
+        <AdminCodeDialog
+          message={
+            askAdmin.hidden
+              ? "Enter the admin code to hide the selected messages from the receiver."
+              : "Enter the admin code to unhide the selected messages."
+          }
+          onVerified={(code) => {
+            const { hidden } = askAdmin;
+            setAskAdmin(null);
+            hideSelected(hidden, code);
+          }}
+          onCancel={() => setAskAdmin(null)}
+        />
+      )}
 
       {popupUrl && <LinkPopup url={popupUrl} onClose={() => setPopupUrl(null)} />}
 

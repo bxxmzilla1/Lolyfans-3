@@ -1,7 +1,7 @@
 "use client";
 
 import { mediaUrl, formatTime, URL_REGEX } from "@/lib/utils";
-import { IconLock, IconReply, IconUnlock } from "./Icons";
+import { IconCheck, IconEyeOff, IconLock, IconReply, IconUnlock } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
 
 export type Message = {
@@ -13,6 +13,7 @@ export type Message = {
   media_type: "image" | "video" | null;
   reply_to_id: string | null;
   locked?: boolean;
+  hidden?: boolean;
   created_at: string;
 };
 
@@ -44,6 +45,9 @@ export default function MessageBubble({
   onLinkClick,
   onMediaClick,
   onToggleLock,
+  selectMode = false,
+  selected = false,
+  onSelectToggle,
 }: {
   message: Message;
   mine: boolean;
@@ -52,6 +56,9 @@ export default function MessageBubble({
   onLinkClick: (url: string) => void;
   onMediaClick: (m: Message) => void;
   onToggleLock: (m: Message) => void;
+  selectMode?: boolean;
+  selected?: boolean;
+  onSelectToggle?: (m: Message) => void;
 }) {
   const locked = !!message.locked;
   // Receiver of a locked message: blurred, unclickable
@@ -85,10 +92,38 @@ export default function MessageBubble({
   return (
     <div className={`group msg-in flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
       <div
-        className={`max-w-[78%] rounded-3xl overflow-hidden ${
+        className={`relative max-w-[78%] rounded-3xl overflow-hidden ${
           mine ? "bubble-own rounded-br-lg" : "bg-card2 rounded-bl-lg"
+        } ${message.hidden ? "opacity-60" : ""} ${
+          selectMode && selected ? "ring-2 ring-accent" : ""
         }`}
       >
+        {message.hidden && (
+          <div className="px-3 pt-2">
+            <span
+              className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                mine ? "bg-white/20 text-white" : "bg-line text-muted"
+              }`}
+            >
+              <IconEyeOff className="w-3 h-3" /> Hidden
+            </span>
+          </div>
+        )}
+        {selectMode && (
+          <button
+            onClick={() => onSelectToggle?.(message)}
+            aria-label={selected ? "Unselect message" : "Select message"}
+            className="absolute inset-0 z-20 cursor-pointer"
+          >
+            <span
+              className={`absolute top-2 ${mine ? "left-2" : "right-2"} w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                selected ? "bg-accent border-accent" : "bg-black/40 border-white/70"
+              }`}
+            >
+              {selected && <IconCheck className="w-3 h-3 text-white" />}
+            </span>
+          </button>
+        )}
         {repliedTo && (
           <div className={`mx-3 mt-2 px-3 py-1.5 rounded-xl text-xs border-l-2 ${
             mine ? "bg-white/15 border-white/60 text-white/85" : "bg-line/60 border-accent text-muted"

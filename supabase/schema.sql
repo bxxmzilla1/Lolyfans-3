@@ -57,10 +57,13 @@ create table if not exists messages (
   reply_to_id uuid references messages(id) on delete set null,
   -- Locked media renders blurred for the receiver until the sender unlocks it
   locked boolean not null default false,
+  -- Hidden messages are invisible to the guest; the owner still sees them
+  hidden boolean not null default false,
   created_at timestamptz not null default now()
 );
 
 alter table messages add column if not exists locked boolean not null default false;
+alter table messages add column if not exists hidden boolean not null default false;
 
 create index if not exists messages_chat_created_idx on messages (chat_id, created_at);
 
