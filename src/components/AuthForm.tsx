@@ -10,6 +10,7 @@ export default function AuthForm() {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [signupCode, setSignupCode] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
@@ -37,24 +38,30 @@ export default function AuthForm() {
       }
       router.push("/inbox");
       router.refresh();
-    } else {
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: { emailRedirectTo: `${window.location.origin}/auth/confirm` },
-      });
-      setLoading(false);
-      if (error) {
-        setError(error.message);
-        return;
-      }
-      if (data.session) {
-        router.push("/inbox");
-        router.refresh();
-      } else {
-        setNotice("Check your email to confirm your account, then sign in.");
-      }
+      return;
     }
+
+    // Sign up is gated by a server-side code (SIGNUP_CODE env var)
+    const res = await fetch("/api/auth/signup", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password, code: signupCode }),
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setLoading(false);
+      setError(body.error || "Could not create account");
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (error) {
+      setError(error.message);
+      return;
+    }
+    router.push("/inbox");
+    router.refresh();
   }
 
   return (
@@ -94,11 +101,24 @@ export default function AuthForm() {
           required
           className="w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors"
         />
+        {mode === "signup" && (
+          <input
+            type="password"
+            value={signupCode}
+            onChange={(e) => setSignupCode(e.target.value)}
+            placeholder="Signup code"
+            autoComplete="off"
+            required
+            className="w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors"
+          />
+        )}
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}
         {notice && <p className="text-emerald-400 text-sm text-center">{notice}</p>}
         <button
           type="submit"
-          disabled={loading || !email || !password}
+          disabled={
+            loading || !email || !password || (mode === "signup" && !signupCode)
+          }
           className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity"
         >
           {loading

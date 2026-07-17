@@ -68,7 +68,7 @@ function ProfileSection() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6 max-w-lg">
       <div className="flex items-center gap-4">
         <button
           onClick={() => fileRef.current?.click()}
@@ -132,6 +132,18 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [section, setSection] = useState<Section>("profile");
   const router = useRouter();
 
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
   async function logout() {
     await supabaseBrowser().auth.signOut();
     await fetch("/api/auth/logout", { method: "POST" });
@@ -140,53 +152,52 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
-      onClick={onClose}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-md bg-card border border-line rounded-2xl flex flex-col max-h-[85vh] fade-up"
-      >
-        <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+    <div className="fixed inset-0 z-50 bg-bg flex flex-col fade-up">
+      <header className="shrink-0 border-b border-line px-5 py-4 flex items-center justify-between bg-card/80 backdrop-blur">
+        <div>
           <p className="font-bold text-lg">Settings</p>
-          <button
-            onClick={onClose}
-            aria-label="Close settings"
-            className="w-8 h-8 rounded-lg bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center"
-          >
-            ✕
-          </button>
+          <p className="text-muted text-xs">Profile, invite links, and account</p>
         </div>
+        <button
+          onClick={onClose}
+          aria-label="Close settings"
+          className="w-9 h-9 rounded-xl bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center"
+        >
+          ✕
+        </button>
+      </header>
 
-        <div className="flex gap-1.5 px-5 pt-4">
-          <button
-            onClick={() => setSection("profile")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-              section === "profile"
-                ? "bg-accent text-white"
-                : "bg-card2 border border-line text-muted hover:text-fg"
-            }`}
-          >
-            <IconUser className="w-3.5 h-3.5" /> Profile
-          </button>
-          <button
-            onClick={() => setSection("links")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-              section === "links"
-                ? "bg-accent text-white"
-                : "bg-card2 border border-line text-muted hover:text-fg"
-            }`}
-          >
-            <IconLink className="w-3.5 h-3.5" /> Invite links
-          </button>
-        </div>
+      <div className="shrink-0 flex gap-1.5 px-5 pt-4 pb-2 border-b border-line bg-card/40">
+        <button
+          onClick={() => setSection("profile")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "profile"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconUser className="w-3.5 h-3.5" /> Profile
+        </button>
+        <button
+          onClick={() => setSection("links")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "links"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconLink className="w-3.5 h-3.5" /> Invite links
+        </button>
+      </div>
 
-        <div className="flex-1 overflow-y-auto p-5">
+      <div className="flex-1 overflow-y-auto p-5 lg:p-8">
+        <div className="mx-auto w-full max-w-2xl">
           {section === "profile" ? <ProfileSection /> : <InviteManager />}
         </div>
+      </div>
 
-        <div className="border-t border-line p-3">
+      <div className="shrink-0 border-t border-line p-3 bg-card/60">
+        <div className="mx-auto w-full max-w-2xl">
           <button
             onClick={logout}
             className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-red-400 hover:bg-card2 transition-colors"

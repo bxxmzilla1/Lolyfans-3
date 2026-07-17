@@ -29,14 +29,20 @@ export default function ChatView({
   const [dragOver, setDragOver] = useState(false);
   const [sendLocked, setSendLocked] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
+  const listRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const typingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingSentAtRef = useRef(0);
 
-  const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollToBottom = useCallback((smooth = true) => {
+    const list = listRef.current;
+    if (list) {
+      list.scrollTo({ top: list.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+      return;
+    }
+    bottomRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto" });
   }, []);
 
   const load = useCallback(async () => {
@@ -46,6 +52,21 @@ export default function ChatView({
       setMessages(messages);
     }
   }, [chatId]);
+
+  // Jump straight to the latest message when opening a chat (no smooth scroll delay)
+  useEffect(() => {
+    setMessages(initialMessages ?? []);
+    setPeerTyping(false);
+    setReplyTo(null);
+    setAttachment(null);
+    // Wait a frame so the list has laid out its content
+    requestAnimationFrame(() => {
+      scrollToBottom(false);
+      // Media can push height after load — nudge again shortly after
+      setTimeout(() => scrollToBottom(false), 100);
+      setTimeout(() => scrollToBottom(false), 400);
+    });
+  }, [chatId, initialMessages, scrollToBottom]);
 
   useEffect(() => {
     // Messages are server-rendered; only fetch on mount when none were provided.
@@ -108,7 +129,7 @@ export default function ChatView({
   }, [chatId, load]);
 
   useEffect(() => {
-    scrollToBottom();
+    scrollToBottom(true);
   }, [messages.length, peerTyping, scrollToBottom]);
 
   /** Let the other side know we're typing (throttled). */
@@ -259,7 +280,7 @@ export default function ChatView({
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto px-3 py-4 space-y-3">
+      <div ref={listRef} className="flex-1 overflow-y-auto px-3 py-4 space-y-3">
         {messages.length === 0 && (
           <div className="h-full flex flex-col items-center justify-center gap-3 text-center">
             <div className="w-16 h-16 rounded-2xl ig-gradient glow-accent flex items-center justify-center">
