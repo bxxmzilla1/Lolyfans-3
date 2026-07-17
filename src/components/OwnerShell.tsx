@@ -7,6 +7,7 @@ import ChatList from "./ChatList";
 import VaultPanel from "./VaultPanel";
 import BottomNav from "./BottomNav";
 import SettingsModal from "./SettingsModal";
+import OwnerPresence from "./OwnerPresence";
 import { IconChat, IconGear } from "./Icons";
 
 function SettingsMenu() {
@@ -35,6 +36,7 @@ export default function OwnerShell({ children }: { children: React.ReactNode }) 
 
   return (
     <div className="h-dvh flex overflow-hidden">
+      <OwnerPresence />
       {/* Left sidebar: chats + settings (desktop) */}
       <aside className="hidden lg:flex w-[320px] shrink-0 flex-col border-r border-line bg-card/60 backdrop-blur">
         <Link href="/inbox" className="px-5 py-5 flex items-center gap-3">

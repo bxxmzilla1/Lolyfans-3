@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl, MediaKind } from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
@@ -27,8 +28,12 @@ export default function ChatView({
   const [attachment, setAttachment] = useState<{ path: string; type: MediaKind } | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [sendLocked, setSendLocked] = useState(false);
+  const [peerTyping, setPeerTyping] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const channelRef = useRef<RealtimeChannel | null>(null);
+  const typingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingSentAtRef = useRef(0);
 
   const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -50,6 +55,7 @@ export default function ChatView({
       .channel(`chat:${chatId}`)
       .on("broadcast", { event: "new-message" }, ({ payload }) => {
         const msg = payload as Message;
+        if (msg.sender !== role) setPeerTyping(false);
         setMessages((prev) => {
           if (prev.some((m) => m.id === msg.id)) return prev;
           // Our own message echoed back: replace the optimistic temp bubble
@@ -82,11 +88,19 @@ export default function ChatView({
         const msg = payload as Message;
         setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)));
       })
+      .on("broadcast", { event: "typing" }, ({ payload }) => {
+        if ((payload as { sender: string }).sender === role) return;
+        setPeerTyping(true);
+        if (typingHideRef.current) clearTimeout(typingHideRef.current);
+        typingHideRef.current = setTimeout(() => setPeerTyping(false), 3000);
+      })
       .subscribe();
+    channelRef.current = channel;
 
     const onFocus = () => load();
     window.addEventListener("focus", onFocus);
     return () => {
+      channelRef.current = null;
       supabase.removeChannel(channel);
       window.removeEventListener("focus", onFocus);
     };
@@ -95,7 +109,19 @@ export default function ChatView({
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages.length, scrollToBottom]);
+  }, [messages.length, peerTyping, scrollToBottom]);
+
+  /** Let the other side know we're typing (throttled). */
+  function notifyTyping() {
+    const now = Date.now();
+    if (now - typingSentAtRef.current < 1500) return;
+    typingSentAtRef.current = now;
+    channelRef.current?.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { sender: role },
+    });
+  }
 
   async function send(mediaPathArg?: string, mediaTypeArg?: string) {
     const mediaPath = mediaPathArg ?? attachment?.path;
@@ -254,6 +280,15 @@ export default function ChatView({
             onToggleLock={toggleLock}
           />
         ))}
+        {peerTyping && (
+          <div className="flex items-end gap-2 msg-in">
+            <div className="bg-card2 rounded-3xl rounded-bl-lg px-4 py-3.5 flex items-center gap-1">
+              <span className="typing-dot w-2 h-2 rounded-full bg-muted" />
+              <span className="typing-dot w-2 h-2 rounded-full bg-muted" />
+              <span className="typing-dot w-2 h-2 rounded-full bg-muted" />
+            </div>
+          </div>
+        )}
         <div ref={bottomRef} />
       </div>
 
@@ -355,7 +390,10 @@ export default function ChatView({
           )}
           <textarea
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value);
+              if (e.target.value) notifyTyping();
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();

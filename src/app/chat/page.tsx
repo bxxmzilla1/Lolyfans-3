@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getGuestChatId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import ChatView from "@/components/ChatView";
-import { IconChat } from "@/components/Icons";
+import GuestChatHeader from "@/components/GuestChatHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -10,23 +10,31 @@ export default async function GuestChatPage() {
   const chatId = await getGuestChatId();
   if (!chatId) redirect("/");
 
-  const { data: messages } = await supabaseAdmin()
-    .from("messages")
-    .select("*")
-    .eq("chat_id", chatId)
-    .order("created_at", { ascending: true })
-    .limit(500);
+  const db = supabaseAdmin();
+  const [{ data: messages }, { data: chat }] = await Promise.all([
+    db
+      .from("messages")
+      .select("*")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: true })
+      .limit(500),
+    db.from("chats").select("owner_id").eq("id", chatId).single(),
+  ]);
+  if (!chat) redirect("/");
+
+  // The owner's profile (name + picture) from their auth account
+  const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
+  const meta = (ownerUser?.user?.user_metadata ?? {}) as {
+    display_name?: string;
+    avatar_path?: string;
+  };
 
   const header = (
-    <header className="border-b border-line px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
-      <div className="w-9 h-9 rounded-xl ig-gradient glow-accent flex items-center justify-center">
-        <IconChat className="w-5 h-5 text-white" />
-      </div>
-      <div>
-        <p className="font-bold ig-gradient-text text-lg leading-tight">Lolyfans</p>
-        <p className="text-muted text-xs">Private chat</p>
-      </div>
-    </header>
+    <GuestChatHeader
+      ownerId={chat.owner_id}
+      name={meta.display_name || "Lolyfans"}
+      avatarPath={meta.avatar_path || null}
+    />
   );
 
   return (
