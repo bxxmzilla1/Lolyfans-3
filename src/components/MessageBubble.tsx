@@ -65,7 +65,7 @@ export default function MessageBubble({
       }}
       aria-label={locked ? "Unblur for them" : "Blur for them"}
       title={locked ? "Unblur for them" : "Blur for them"}
-      className={`absolute top-2 right-2 z-10 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur transition-colors ${
+      className={`absolute top-2 right-2 z-10 w-8 h-8 rounded-full hidden lg:flex items-center justify-center backdrop-blur transition-colors ${
         locked ? "bg-accent text-white glow-accent" : "bg-black/50 text-white/90 hover:bg-black/70"
       }`}
     >

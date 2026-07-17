@@ -338,7 +338,7 @@ export default function ChatView({
           {role === "owner" && (
             <button
               onClick={() => setSendLocked((v) => !v)}
-              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center transition-colors ${
+              className={`w-9 h-9 rounded-xl shrink-0 hidden lg:flex items-center justify-center transition-colors ${
                 sendLocked
                   ? "bg-accent text-white glow-accent"
                   : "bg-transparent border border-line text-muted hover:text-fg"
