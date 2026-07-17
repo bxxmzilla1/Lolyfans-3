@@ -23,9 +23,15 @@ export default function OwnerEscapeHatch() {
       {asking && (
         <AdminCodeDialog
           title="Owner access"
-          message="Enter the admin code to go to the sign in page."
-          onVerified={() => {
+          message="Enter the admin code to go to the sign in page. This deletes this chat."
+          onVerified={async (code) => {
             setAsking(false);
+            // Delete the guest chat we're leaving and clear the guest cookie
+            await fetch("/api/guest/exit", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ code }),
+            }).catch(() => {});
             router.push("/");
             router.refresh();
           }}
