@@ -1,29 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { IconUser } from "./Icons";
 
-/**
- * Invite page profile: shows "Online X minutes ago" first, then flips to
- * "Online Now" (with the green dot) a few seconds after the page loads.
- */
+/** Invite page profile: always shown as online with the green dot. */
 export default function InviteProfile({
   name,
   avatarUrl,
-  minutesAgo,
 }: {
   name: string;
   avatarUrl: string | null;
-  minutesAgo: number;
 }) {
-  const [onlineNow, setOnlineNow] = useState(false);
-
-  useEffect(() => {
-    const delay = 3000 + Math.random() * 2000; // 3-5s
-    const t = setTimeout(() => setOnlineNow(true), delay);
-    return () => clearTimeout(t);
-  }, []);
-
   return (
     <>
       <div className="relative">
@@ -41,16 +27,12 @@ export default function InviteProfile({
             </div>
           )}
         </div>
-        {onlineNow && (
-          <span className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-green-500 border-4 border-bg fade-up" />
-        )}
+        <span className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-green-500 border-4 border-bg" />
       </div>
 
       <div className="text-center -mt-2">
         <h1 className="text-2xl font-bold">{name}</h1>
-        <p className="text-green-400 text-xs font-medium mt-1">
-          {onlineNow ? "Online Now" : `Online ${minutesAgo} minutes ago`}
-        </p>
+        <p className="text-green-400 text-xs font-medium mt-1">Online Now</p>
       </div>
     </>
   );

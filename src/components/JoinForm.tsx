@@ -44,7 +44,7 @@ export default function JoinForm({
     }
 
     // Chat request sequence: wait for the inviter to "respond", then enter.
-    const waitMs = 3000 + Math.random() * 2000; // 3-5s
+    const waitMs = 2000 + Math.random() * 500; // 2-2.5s
     timersRef.current.push(
       setTimeout(() => {
         setStage("accepted");

@@ -87,9 +87,6 @@ export default async function InvitePage({
     avatarPath = meta.avatar_path || null;
   }
 
-  // Rendered fresh on every visit: reads as recently active without live presence
-  const minutesAgo = 2 + Math.floor(Math.random() * 4); // 2-5
-
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
       <div className="w-full max-w-sm flex flex-col items-center gap-6">
@@ -102,7 +99,6 @@ export default async function InvitePage({
         <InviteProfile
           name={ownerName}
           avatarUrl={avatarPath ? mediaUrl(avatarPath) : null}
-          minutesAgo={minutesAgo}
         />
 
         <div className="text-center -mt-2">
