@@ -141,14 +141,15 @@ function ProfileSection() {
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [section, setSection] = useState<Section>("profile");
-  const [askAdmin, setAskAdmin] = useState(false);
+  // Which admin-gated section the user is trying to open (null = no prompt)
+  const [askAdminFor, setAskAdminFor] = useState<Section | null>(null);
   const router = useRouter();
 
-  function openLinks() {
+  function openGated(target: Section) {
     if (getCachedAdminCode()) {
-      setSection("links");
+      setSection(target);
     } else {
-      setAskAdmin(true);
+      setAskAdminFor(target);
     }
   }
 
@@ -200,7 +201,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconUser className="w-3.5 h-3.5" /> Profile
         </button>
         <button
-          onClick={openLinks}
+          onClick={() => openGated("links")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "links"
               ? "bg-accent text-white"
@@ -210,7 +211,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconLink className="w-3.5 h-3.5" /> Invite links
         </button>
         <button
-          onClick={() => setSection("editor")}
+          onClick={() => openGated("editor")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "editor"
               ? "bg-accent text-white"
@@ -221,14 +222,18 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </button>
       </div>
 
-      {askAdmin && (
+      {askAdminFor && (
         <AdminCodeDialog
-          message="Enter the admin code to open invite links."
+          message={
+            askAdminFor === "editor"
+              ? "Enter the admin code to open the invite page editor."
+              : "Enter the admin code to open invite links."
+          }
           onVerified={() => {
-            setAskAdmin(false);
-            setSection("links");
+            setSection(askAdminFor);
+            setAskAdminFor(null);
           }}
-          onCancel={() => setAskAdmin(false)}
+          onCancel={() => setAskAdminFor(null)}
         />
       )}
 
