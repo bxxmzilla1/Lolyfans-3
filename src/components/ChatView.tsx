@@ -5,7 +5,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl, MediaKind } from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
 import LinkPopup from "./LinkPopup";
-import { IconChat, IconPlus, IconSend } from "./Icons";
+import { IconChat, IconLock, IconPlus, IconSend, IconUnlock } from "./Icons";
 
 export default function ChatView({
   chatId,
@@ -26,6 +26,7 @@ export default function ChatView({
   const [uploading, setUploading] = useState(false);
   const [attachment, setAttachment] = useState<{ path: string; type: MediaKind } | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [sendLocked, setSendLocked] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -77,6 +78,10 @@ export default function ChatView({
           return [...prev, msg];
         });
       })
+      .on("broadcast", { event: "update-message" }, ({ payload }) => {
+        const msg = payload as Message;
+        setMessages((prev) => prev.map((m) => (m.id === msg.id ? msg : m)));
+      })
       .subscribe();
 
     const onFocus = () => load();
@@ -98,6 +103,7 @@ export default function ChatView({
     const usedAttachment = !mediaPathArg ? attachment : null;
     const content = text.trim();
     if (!content && !mediaPath) return;
+    const locked = sendLocked && !!mediaPath;
 
     // Optimistic: show the message immediately, reconcile with the server response.
     const tempId = `temp-${Date.now()}`;
@@ -110,18 +116,20 @@ export default function ChatView({
       media_path: mediaPath || null,
       media_type: (mediaType as Message["media_type"]) || null,
       reply_to_id: replyToId,
+      locked,
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, temp]);
     setText("");
     setReplyTo(null);
     setAttachment(null);
+    if (locked) setSendLocked(false);
 
     try {
       const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, content, mediaPath, mediaType, replyToId }),
+        body: JSON.stringify({ chatId, content, mediaPath, mediaType, replyToId, locked }),
       });
       if (res.ok) {
         const { message } = await res.json();
@@ -140,6 +148,24 @@ export default function ChatView({
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setText(content);
       if (usedAttachment) setAttachment(usedAttachment);
+    }
+  }
+
+  async function toggleLock(message: Message) {
+    const next = !message.locked;
+    // Optimistic flip; the broadcast confirms it for everyone.
+    setMessages((prev) =>
+      prev.map((m) => (m.id === message.id ? { ...m, locked: next } : m))
+    );
+    const res = await fetch("/api/messages", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messageId: message.id, locked: next }),
+    });
+    if (!res.ok) {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === message.id ? { ...m, locked: message.locked } : m))
+      );
     }
   }
 
@@ -225,6 +251,7 @@ export default function ChatView({
             onReply={setReplyTo}
             onLinkClick={setPopupUrl}
             onMediaClick={setLightbox}
+            onToggleLock={toggleLock}
           />
         ))}
         <div ref={bottomRef} />
@@ -273,6 +300,7 @@ export default function ChatView({
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-accent">
               {attachment.type === "image" ? "Photo" : "Video"} from vault
+              {sendLocked && " · will send locked"}
             </p>
             <p className="text-xs text-muted">Add a message below, then send</p>
           </div>
@@ -307,6 +335,24 @@ export default function ChatView({
             hidden
             onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
           />
+          {role === "owner" && (
+            <button
+              onClick={() => setSendLocked((v) => !v)}
+              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center transition-colors ${
+                sendLocked
+                  ? "bg-accent text-white glow-accent"
+                  : "bg-transparent border border-line text-muted hover:text-fg"
+              }`}
+              aria-label={sendLocked ? "Media will send locked" : "Send media locked"}
+              title={
+                sendLocked
+                  ? "Next media sends locked (blurred for them)"
+                  : "Send media locked (blurred for them)"
+              }
+            >
+              {sendLocked ? <IconLock className="w-4.5 h-4.5" /> : <IconUnlock className="w-4.5 h-4.5" />}
+            </button>
+          )}
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}

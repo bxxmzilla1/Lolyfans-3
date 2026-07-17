@@ -47,11 +47,16 @@ export async function PATCH(req: NextRequest) {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { id, albumId } = await req.json();
+  // Accepts a single id or an array of ids (multi-select moves)
+  const { id, ids, albumId } = await req.json();
+  const targetIds: string[] = Array.isArray(ids) ? ids : id ? [id] : [];
+  if (targetIds.length === 0) {
+    return NextResponse.json({ error: "id or ids required" }, { status: 400 });
+  }
   const { error } = await supabaseAdmin()
     .from("vault_items")
     .update({ album_id: albumId || null })
-    .eq("id", id)
+    .in("id", targetIds)
     .eq("owner_id", ownerId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });

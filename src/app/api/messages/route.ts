@@ -55,7 +55,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { chatId, content, mediaPath, mediaType, replyToId } = body;
+  const { chatId, content, mediaPath, mediaType, replyToId, locked } = body;
   if (!chatId) return NextResponse.json({ error: "chatId required" }, { status: 400 });
   if (!content?.trim() && !mediaPath) {
     return NextResponse.json({ error: "Empty message" }, { status: 400 });
@@ -74,6 +74,7 @@ export async function POST(req: NextRequest) {
       media_path: mediaPath || null,
       media_type: mediaType || null,
       reply_to_id: replyToId || null,
+      locked: !!locked && !!mediaPath,
     })
     .select()
     .single();
@@ -90,5 +91,38 @@ export async function POST(req: NextRequest) {
     broadcast(`inbox:${auth.chatOwnerId}`, "new-message", { chatId }),
   ]);
 
+  return NextResponse.json({ message });
+}
+
+/** Toggle the blur lock on a media message. Only the sender may do this. */
+export async function PATCH(req: NextRequest) {
+  const { messageId, locked } = await req.json();
+  if (!messageId) return NextResponse.json({ error: "messageId required" }, { status: 400 });
+
+  const db = supabaseAdmin();
+  const { data: existing } = await db
+    .from("messages")
+    .select("id, chat_id, sender, media_path")
+    .eq("id", messageId)
+    .single();
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const auth = await authorizeChat(existing.chat_id);
+  if (!auth || auth.role !== existing.sender) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!existing.media_path) {
+    return NextResponse.json({ error: "Only media messages can be locked" }, { status: 400 });
+  }
+
+  const { data: message, error } = await db
+    .from("messages")
+    .update({ locked: !!locked })
+    .eq("id", messageId)
+    .select()
+    .single();
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await broadcast(`chat:${existing.chat_id}`, "update-message", message);
   return NextResponse.json({ message });
 }

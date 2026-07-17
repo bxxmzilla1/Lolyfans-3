@@ -1,7 +1,7 @@
 "use client";
 
 import { mediaUrl, formatTime, URL_REGEX } from "@/lib/utils";
-import { IconReply } from "./Icons";
+import { IconLock, IconReply, IconUnlock } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
 
 export type Message = {
@@ -12,6 +12,7 @@ export type Message = {
   media_path: string | null;
   media_type: "image" | "video" | null;
   reply_to_id: string | null;
+  locked?: boolean;
   created_at: string;
 };
 
@@ -42,6 +43,7 @@ export default function MessageBubble({
   onReply,
   onLinkClick,
   onMediaClick,
+  onToggleLock,
 }: {
   message: Message;
   mine: boolean;
@@ -49,7 +51,37 @@ export default function MessageBubble({
   onReply: (m: Message) => void;
   onLinkClick: (url: string) => void;
   onMediaClick: (m: Message) => void;
+  onToggleLock: (m: Message) => void;
 }) {
+  const locked = !!message.locked;
+  // Receiver of a locked message: blurred, unclickable
+  const blurred = locked && !mine;
+
+  const lockToggle = mine && message.media_path && (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggleLock(message);
+      }}
+      aria-label={locked ? "Unblur for them" : "Blur for them"}
+      title={locked ? "Unblur for them" : "Blur for them"}
+      className={`absolute top-2 right-2 z-10 w-8 h-8 rounded-full flex items-center justify-center backdrop-blur transition-colors ${
+        locked ? "bg-accent text-white glow-accent" : "bg-black/50 text-white/90 hover:bg-black/70"
+      }`}
+    >
+      {locked ? <IconLock className="w-4 h-4" /> : <IconUnlock className="w-4 h-4" />}
+    </button>
+  );
+
+  const lockedOverlay = blurred && (
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 pointer-events-none">
+      <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
+        <IconLock className="w-5 h-5 text-white" />
+      </span>
+      <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
+    </div>
+  );
+
   return (
     <div className={`group msg-in flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
       <div
@@ -72,20 +104,43 @@ export default function MessageBubble({
         )}
 
         {message.media_path && message.media_type === "image" && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={mediaUrl(message.media_path)}
-            alt="Photo"
-            className="w-full max-h-80 object-cover cursor-pointer"
-            onClick={() => onMediaClick(message)}
-          />
+          <div className="relative overflow-hidden">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={mediaUrl(message.media_path)}
+              alt={blurred ? "Locked photo" : "Photo"}
+              className={`w-full max-h-80 object-cover ${
+                blurred
+                  ? "blur-2xl scale-110 pointer-events-none select-none"
+                  : "cursor-pointer"
+              }`}
+              onClick={blurred ? undefined : () => onMediaClick(message)}
+              draggable={false}
+            />
+            {lockedOverlay}
+            {lockToggle}
+          </div>
         )}
         {message.media_path && message.media_type === "video" && (
-          <VideoPlayer
-            src={mediaUrl(message.media_path)}
-            videoClassName="max-h-80"
-            fullscreenOnPlay
-          />
+          <div className="relative overflow-hidden">
+            {blurred ? (
+              <video
+                src={`${mediaUrl(message.media_path)}#t=0.001`}
+                muted
+                playsInline
+                preload="metadata"
+                className="w-full max-h-80 object-cover blur-2xl scale-110 pointer-events-none select-none"
+              />
+            ) : (
+              <VideoPlayer
+                src={mediaUrl(message.media_path)}
+                videoClassName="max-h-80"
+                fullscreenOnPlay
+              />
+            )}
+            {lockedOverlay}
+            {lockToggle}
+          </div>
         )}
 
         {message.content && (

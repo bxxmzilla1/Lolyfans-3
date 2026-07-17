@@ -5,6 +5,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl } from "@/lib/utils";
 import {
   IconBack,
+  IconCheck,
   IconChevronRight,
   IconFolder,
   IconGrid,
@@ -36,6 +37,8 @@ export default function VaultManager() {
   const [items, setItems] = useState<Item[]>([]);
   const [uploading, setUploading] = useState(false);
   const [viewer, setViewer] = useState<Item | null>(null);
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   const loadAlbums = useCallback(async () => {
@@ -63,6 +66,8 @@ export default function VaultManager() {
 
   useEffect(() => {
     setItems([]);
+    setSelectMode(false);
+    setSelected(new Set());
     loadItems();
   }, [loadItems]);
 
@@ -121,13 +126,24 @@ export default function VaultManager() {
     }
   }
 
-  async function moveItem(item: Item, albumId: string | null) {
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function moveSelected(albumId: string | null) {
+    if (selected.size === 0) return;
     await fetch("/api/vault/items", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id: item.id, albumId }),
+      body: JSON.stringify({ ids: [...selected], albumId }),
     });
-    setViewer(null);
+    setSelectMode(false);
+    setSelected(new Set());
     loadItems();
     loadAlbums();
   }
@@ -252,6 +268,21 @@ export default function VaultManager() {
             {items.length} item{items.length === 1 ? "" : "s"}
           </p>
         </div>
+        {items.length > 0 && (
+          <button
+            onClick={() => {
+              setSelectMode((v) => !v);
+              setSelected(new Set());
+            }}
+            className={`h-9 px-3 rounded-xl border text-sm font-semibold transition-colors shrink-0 ${
+              selectMode
+                ? "bg-accent border-accent text-white"
+                : "bg-card2 border-line text-fg hover:bg-line"
+            }`}
+          >
+            {selectMode ? "Cancel" : "Select"}
+          </button>
+        )}
         {openAlbum !== "all" && (
           <button
             onClick={() => deleteAlbum(openAlbum)}
@@ -262,6 +293,38 @@ export default function VaultManager() {
           </button>
         )}
       </div>
+
+      {selectMode && (
+        <div className="rounded-xl bg-card border border-line p-3 space-y-2 fade-up">
+          <p className="text-xs font-semibold text-accent">
+            {selected.size} selected — everything always stays in All
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <select
+              value=""
+              disabled={selected.size === 0}
+              onChange={(e) => e.target.value && moveSelected(e.target.value)}
+              className="flex-1 min-w-0 bg-card2 border border-line rounded-lg px-3 py-2 text-sm disabled:opacity-50"
+            >
+              <option value="" disabled>
+                Show in album…
+              </option>
+              {albums.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={() => moveSelected(null)}
+              disabled={selected.size === 0}
+              className="bg-card2 border border-line rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-50"
+            >
+              Remove from albums
+            </button>
+          </div>
+        </div>
+      )}
 
       <button
         onClick={() => fileRef.current?.click()}
@@ -285,8 +348,8 @@ export default function VaultManager() {
           {items.map((item) => (
             <button
               key={item.id}
-              onClick={() => setViewer(item)}
-              draggable
+              onClick={() => (selectMode ? toggleSelected(item.id) : setViewer(item))}
+              draggable={!selectMode}
               onDragStart={(e) => {
                 e.dataTransfer.setData(
                   "application/x-lolyfans-vault",
@@ -294,8 +357,20 @@ export default function VaultManager() {
                 );
                 e.dataTransfer.effectAllowed = "copy";
               }}
-              title="Click to view · drag into a chat to send"
-              className="relative aspect-square bg-card2 overflow-hidden rounded-md group cursor-grab active:cursor-grabbing"
+              title={
+                selectMode
+                  ? "Tap to select"
+                  : "Click to view · drag into a chat to send"
+              }
+              className={`relative aspect-square bg-card2 overflow-hidden rounded-md group ${
+                selectMode
+                  ? "cursor-pointer"
+                  : "cursor-grab active:cursor-grabbing"
+              } ${
+                selectMode && selected.has(item.id)
+                  ? "ring-2 ring-accent ring-inset"
+                  : ""
+              }`}
             >
               {item.media_type === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -318,6 +393,19 @@ export default function VaultManager() {
                     <IconPlay className="w-3.5 h-3.5 text-white translate-x-px" />
                   </span>
                 </>
+              )}
+              {selectMode && (
+                <span
+                  className={`absolute top-1.5 right-1.5 w-5.5 h-5.5 rounded-full border-2 flex items-center justify-center ${
+                    selected.has(item.id)
+                      ? "bg-accent border-accent"
+                      : "bg-black/40 border-white/70"
+                  }`}
+                >
+                  {selected.has(item.id) && (
+                    <IconCheck className="w-3 h-3 text-white" />
+                  )}
+                </span>
               )}
             </button>
           ))}
@@ -349,18 +437,6 @@ export default function VaultManager() {
             className="flex flex-wrap items-center justify-center gap-2"
             onClick={(e) => e.stopPropagation()}
           >
-            <select
-              value={viewer.album_id ?? ""}
-              onChange={(e) => moveItem(viewer, e.target.value || null)}
-              className="bg-card2 border border-line rounded-lg px-3 py-2 text-sm"
-            >
-              <option value="">No album</option>
-              {albums.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
             <button
               onClick={() => deleteItem(viewer)}
               className="bg-card2 border border-line rounded-lg px-4 py-2 text-sm font-semibold text-red-400"

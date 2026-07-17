@@ -169,6 +169,23 @@ export function IconVolumeMute({ className }: IconProps) {
   );
 }
 
+export function IconUnlock({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <rect x="3" y="11" width="18" height="11" rx="2" />
+      <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+    </Svg>
+  );
+}
+
+export function IconCheck({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M20 6 9 17l-5-5" />
+    </Svg>
+  );
+}
+
 export function IconExpand({ className }: IconProps) {
   return (
     <Svg className={className}>
