@@ -62,9 +62,20 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-    // Keep the device binding fresh so IP-based resume keeps working.
+    // Keep the device binding fresh so IP-based resume keeps working, and
+    // make sure they follow the inviter (their posts show in the home feed).
     after(async () => {
-      if (ip) await db.from("chats").update({ guest_ip: ip }).eq("id", existing.id);
+      await Promise.all([
+        ip
+          ? db.from("chats").update({ guest_ip: ip }).eq("id", existing.id)
+          : Promise.resolve(),
+        db
+          .from("follows")
+          .upsert(
+            { chat_id: existing.id, owner_id: invite!.owner_id },
+            { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
+          ),
+      ]);
     });
     const res = NextResponse.json({ ok: true, chatId: existing.id });
     res.cookies.set(
@@ -97,13 +108,20 @@ export async function POST(req: NextRequest) {
   }
 
   // Bookkeeping + notifications after the response is sent: bump the usage
-  // counter and tell listeners (web inbox, Orion) a new chat just appeared.
+  // counter, auto-follow the inviter so their posts fill the new fan's home
+  // feed, and tell listeners (web inbox, Orion) a new chat just appeared.
   after(async () => {
     await Promise.all([
       db
         .from("invites")
         .update({ uses: (invite!.uses ?? 0) + 1 })
         .eq("id", invite!.id),
+      db
+        .from("follows")
+        .upsert(
+          { chat_id: chat.id, owner_id: invite!.owner_id },
+          { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
+        ),
       broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id }),
     ]);
   });

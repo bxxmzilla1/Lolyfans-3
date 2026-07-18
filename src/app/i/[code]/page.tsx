@@ -120,7 +120,7 @@ export default async function InvitePage({
         </div>
         {!blockedReason && (
           <Link
-            href={`/i/${code}/signup`}
+            href={`/i/${code}/profile`}
             className="w-full bg-accent text-white font-semibold rounded-xl py-3 text-center active:opacity-80 transition-opacity"
           >
             {buttonText?.trim() || "Start chatting"}
