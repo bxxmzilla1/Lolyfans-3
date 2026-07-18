@@ -63,6 +63,15 @@ function CommentsSheet({
       .catch(() => setComments([]));
   }, [post.id]);
 
+  // The feed behind the panel shouldn't scroll while comments are open.
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, []);
+
   async function send() {
     const body = text.trim();
     if (!body || sending) return;
@@ -278,6 +287,13 @@ export default function PostFeed({
             )}
           </div>
 
+          {/* Caption sits above the media, under the creator's name */}
+          {post.caption && (
+            <p className="px-3.5 pb-2.5 text-sm whitespace-pre-wrap break-words">
+              {post.caption}
+            </p>
+          )}
+
           {/* Media is never cropped: it fits the column (capped at 70% of the
               screen) over a blurred copy of itself. Tapping opens fullscreen. */}
           <button
@@ -352,11 +368,6 @@ export default function PostFeed({
             </button>
           </div>
 
-          {post.caption && (
-            <p className="px-3.5 pt-2 text-sm whitespace-pre-wrap break-words">
-              <span className="font-semibold">{post.ownerName}</span> {post.caption}
-            </p>
-          )}
           <button
             onClick={() => setCommentsFor(post)}
             className="px-3.5 pt-1.5 pb-3 text-sm text-muted"
