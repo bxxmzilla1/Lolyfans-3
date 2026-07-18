@@ -6,10 +6,6 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl, MediaKind } from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
 import LinkPopup from "./LinkPopup";
-import AdminCodeDialog, {
-  getCachedAdminCode,
-  clearCachedAdminCode,
-} from "./AdminCodeDialog";
 import {
   IconChat,
   IconCheck,
@@ -44,7 +40,6 @@ export default function ChatView({
   const [peerTyping, setPeerTyping] = useState(false);
   const [msgSelectMode, setMsgSelectMode] = useState(false);
   const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
-  const [askAdmin, setAskAdmin] = useState<{ hidden: boolean } | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -248,19 +243,14 @@ export default function ChatView({
     });
   }
 
-  /** Hide or unhide the selected messages for the guest (admin-code gated). */
-  async function hideSelected(hidden: boolean, code?: string) {
+  /** Hide or unhide the selected messages for the guest. */
+  async function hideSelected(hidden: boolean) {
     const ids = [...selectedMsgs];
     if (ids.length === 0) return;
-    const adminCode = code ?? getCachedAdminCode();
-    if (!adminCode) {
-      setAskAdmin({ hidden });
-      return;
-    }
     const res = await fetch("/api/messages/hide", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId, messageIds: ids, hidden, code: adminCode }),
+      body: JSON.stringify({ chatId, messageIds: ids, hidden }),
     });
     if (res.ok) {
       const { messages: updated } = (await res.json()) as { messages: Message[] };
@@ -268,9 +258,6 @@ export default function ChatView({
       setMessages((prev) => prev.map((m) => byId.get(m.id) ?? m));
       setMsgSelectMode(false);
       setSelectedMsgs(new Set());
-    } else if (res.status === 403) {
-      clearCachedAdminCode();
-      setAskAdmin({ hidden });
     }
   }
 
@@ -545,22 +532,6 @@ export default function ChatView({
           </button>
         </div>
       </div>
-
-      {askAdmin && (
-        <AdminCodeDialog
-          message={
-            askAdmin.hidden
-              ? "Enter the admin code to hide the selected messages from the receiver."
-              : "Enter the admin code to unhide the selected messages."
-          }
-          onVerified={(code) => {
-            const { hidden } = askAdmin;
-            setAskAdmin(null);
-            hideSelected(hidden, code);
-          }}
-          onCancel={() => setAskAdmin(null)}
-        />
-      )}
 
       {popupUrl && <LinkPopup url={popupUrl} onClose={() => setPopupUrl(null)} />}
 

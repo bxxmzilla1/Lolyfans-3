@@ -58,13 +58,20 @@ export async function notifyGuestSms(chatId: string, origin: string): Promise<vo
     if (!claimed?.length) return;
 
     const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
-    const meta = (ownerUser?.user?.user_metadata ?? {}) as { display_name?: string };
+    const meta = (ownerUser?.user?.user_metadata ?? {}) as {
+      display_name?: string;
+      sms_template?: string;
+    };
     const name = meta.display_name || "Someone";
 
-    await sendSms(
-      chat.guest_phone,
-      `${name} sent you a message on Lolyfans. Reply to her here ${origin}`
-    );
+    // Owner-customizable template (Settings > SMS Notification): NAME is the
+    // owner's display name, LINKURL the link back to the app.
+    const template =
+      meta.sms_template?.trim() ||
+      "NAME sent you a message on Lolyfans. Reply to her here LINKURL";
+    const body = template.replace(/LINKURL/g, origin).replace(/NAME/g, name);
+
+    await sendSms(chat.guest_phone, body);
   } catch (err) {
     console.error("Offline SMS notify failed:", err);
   }
