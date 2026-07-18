@@ -113,13 +113,6 @@ export default async function InviteProfilePreviewPage({
 
   return (
     <div className="min-h-dvh pb-10">
-      <header className="sticky top-0 z-30 border-b border-line2 bg-card/80 backdrop-blur-lg px-4 py-3">
-        <h1 className="max-w-lg mx-auto font-bold text-lg flex items-center gap-1 justify-center">
-          {profile.name}
-          {profile.verified && <IconVerified className="w-4 h-4 text-sky-500" />}
-        </h1>
-      </header>
-
       <main className="mx-auto max-w-lg">
         {/* Profile bio: only the Follow button, no Message */}
         <section className="pb-4">
