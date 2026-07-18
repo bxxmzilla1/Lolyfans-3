@@ -5,6 +5,11 @@ import { sendSms } from "@/lib/twilio";
 // (the page pings every 45s while open).
 const ONLINE_WINDOW_MS = 90_000;
 
+// Minimum gap between SMS nudges to a guest who stays offline. Keeps a burst
+// of messages (e.g. chatbot bubbles) down to one text, but still re-nudges
+// them when new messages arrive later.
+const RENOTIFY_AFTER_MS = 10 * 60_000;
+
 /** The public URL of the app, from the request's proxy headers. */
 export function requestOrigin(headers: Headers): string {
   const host = headers.get("x-forwarded-host") || headers.get("host") || "";
@@ -15,8 +20,9 @@ export function requestOrigin(headers: Headers): string {
 
 /**
  * Text the guest that the creator messaged them — but only when they're
- * offline, and only once per offline period (so a burst of chat bubbles or
- * repeated messages don't turn into an SMS flood).
+ * offline, and at most once per 10 minutes (so a burst of chat bubbles or
+ * rapid-fire messages don't turn into an SMS flood). Coming back online
+ * resets the timer, so the next offline message nudges them right away.
  */
 export async function notifyGuestSms(chatId: string, origin: string): Promise<void> {
   try {
@@ -31,10 +37,13 @@ export async function notifyGuestSms(chatId: string, origin: string): Promise<vo
     const lastSeen = chat.guest_last_seen_at ? Date.parse(chat.guest_last_seen_at) : 0;
     if (Date.now() - lastSeen < ONLINE_WINDOW_MS) return; // online — no SMS
 
-    // Already nudged since they last dropped offline? Then stay quiet until
-    // they come back and go offline again.
+    // Skip only if we already texted them recently and they haven't been
+    // back since — later messages re-nudge after the cooldown.
     const notified = chat.sms_notified_at ? Date.parse(chat.sms_notified_at) : 0;
-    if (notified && notified >= lastSeen) return;
+    const seenSinceLastSms = lastSeen > notified;
+    if (notified && !seenSinceLastSms && Date.now() - notified < RENOTIFY_AFTER_MS) {
+      return;
+    }
 
     // Claim the notification atomically (only one claim wins when several
     // messages land at once, e.g. Orion sending separate bubbles).
