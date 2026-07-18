@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
 import { IconLogout, IconUser } from "./Icons";
+import { invalidateGuestBootstrap } from "./GuestShell";
 
 /** Guest profile: change picture and name. */
 export default function GuestProfileEditor({
@@ -28,6 +29,7 @@ export default function GuestProfileEditor({
     setLoggingOut(true);
     try {
       await fetch("/api/guest/logout", { method: "POST" });
+      invalidateGuestBootstrap();
       router.push("/login");
       router.refresh();
     } finally {

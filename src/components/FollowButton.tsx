@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useGuestShell } from "./GuestShellContext";
 
 /** Follow/unfollow a creator; optimistic so it feels instant. */
 export default function FollowButton({
@@ -14,6 +15,7 @@ export default function FollowButton({
 }) {
   const [following, setFollowing] = useState(initialFollowing);
   const [busy, setBusy] = useState(false);
+  const { refresh } = useGuestShell();
 
   async function toggle() {
     if (busy) return;
@@ -27,6 +29,7 @@ export default function FollowButton({
         body: JSON.stringify({ ownerId, follow: next }),
       });
       if (!res.ok) setFollowing(!next);
+      else refresh();
     } catch {
       setFollowing(!next);
     }
