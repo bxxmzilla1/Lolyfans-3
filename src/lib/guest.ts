@@ -60,6 +60,9 @@ export type OwnerProfile = {
   verified: boolean;
   /** Owner-set base follower count (Social proof tab). */
   followerBase: number;
+  bio: string | null;
+  /** Show a location line (the visitor's own city) under the bio. */
+  showLocation: boolean;
 };
 
 /** Display profiles (name, picture, checkmark) for a set of creators. */
@@ -77,6 +80,8 @@ export async function ownerProfiles(
         avatar_path?: string;
         invite_verified?: boolean;
         social_followers?: number;
+        profile_bio?: string;
+        profile_show_location?: boolean;
       };
       return [
         id,
@@ -85,6 +90,8 @@ export async function ownerProfiles(
           avatarPath: meta.avatar_path || null,
           verified: !!meta.invite_verified,
           followerBase: Number(meta.social_followers) || 0,
+          bio: meta.profile_bio?.trim() || null,
+          showLocation: !!meta.profile_show_location,
         },
       ] as const;
     })

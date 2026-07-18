@@ -6,8 +6,15 @@ import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
 import { ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
+import { visitorLocation } from "@/lib/geo";
 import { formatCount, mediaUrl } from "@/lib/utils";
-import { IconChat, IconHeart, IconUser, IconVerified } from "@/components/Icons";
+import {
+  IconChat,
+  IconHeart,
+  IconMapPin,
+  IconUser,
+  IconVerified,
+} from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +65,7 @@ export default async function InviteProfilePreviewPage({
   const ownerId = invite!.owner_id;
   // Only image posts in the locked preview — they blur nicely and load much
   // faster than videos.
-  const [profiles, { data: imagePosts }, { count: postCount }, { count: realFollowers }] =
+  const [profiles, { data: imagePosts }, { count: postCount }, { count: realFollowers }, location] =
     await Promise.all([
       ownerProfiles([ownerId]),
       db
@@ -76,6 +83,7 @@ export default async function InviteProfilePreviewPage({
         .from("follows")
         .select("chat_id", { count: "exact", head: true })
         .eq("owner_id", ownerId),
+      visitorLocation(requestHeaders),
     ]);
 
   const profile = profiles.get(ownerId);
@@ -125,12 +133,28 @@ export default async function InviteProfilePreviewPage({
             {" · "}
             {formatCount(posts)} {posts === 1 ? "post" : "posts"}
           </p>
+          {(profile.bio || (profile.showLocation && location)) && (
+            <div className="w-full text-left space-y-1.5">
+              {profile.bio && (
+                <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
+              )}
+              {profile.showLocation && location && (
+                <p className="flex items-center gap-1 text-xs text-muted">
+                  <IconMapPin className="w-3.5 h-3.5 text-accent shrink-0" />
+                  {location}
+                </p>
+              )}
+            </div>
+          )}
           <Link
             href={`/i/${code}/signup`}
             className="px-10 py-2.5 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity"
           >
             Follow
           </Link>
+          <p className="text-xs text-muted -mt-1">
+            You must follow this profile to send a message
+          </p>
         </section>
 
         {/* All image posts as locked teasers: blurred media, visible caption

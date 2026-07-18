@@ -4,11 +4,12 @@ import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
+import { visitorLocation } from "@/lib/geo";
 import { formatCount, mediaUrl } from "@/lib/utils";
 import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
-import { IconUser, IconVerified } from "@/components/Icons";
+import { IconMapPin, IconUser, IconVerified } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export default async function CreatorProfilePage({
   const requestHeaders = await headers();
   const db = supabaseAdmin();
 
-  const [profiles, chats, { data: posts }, { count: realFollowers }] =
+  const [profiles, chats, { data: posts }, { count: realFollowers }, location] =
     await Promise.all([
       ownerProfiles([ownerId]),
       guestChats(requestHeaders),
@@ -40,6 +41,7 @@ export default async function CreatorProfilePage({
         .from("follows")
         .select("chat_id", { count: "exact", head: true })
         .eq("owner_id", ownerId),
+      visitorLocation(requestHeaders),
     ]);
 
   const profile = profiles.get(ownerId);
@@ -115,6 +117,19 @@ export default async function CreatorProfilePage({
             {" · "}
             {feedPosts.length} {feedPosts.length === 1 ? "post" : "posts"}
           </p>
+          {(profile.bio || (profile.showLocation && location)) && (
+            <div className="w-full text-left space-y-1.5">
+              {profile.bio && (
+                <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
+              )}
+              {profile.showLocation && location && (
+                <p className="flex items-center gap-1 text-xs text-muted">
+                  <IconMapPin className="w-3.5 h-3.5 text-accent shrink-0" />
+                  {location}
+                </p>
+              )}
+            </div>
+          )}
           <div className="flex items-center gap-2">
             {chats.length > 0 && (
               <FollowButton ownerId={ownerId} initialFollowing={following} />

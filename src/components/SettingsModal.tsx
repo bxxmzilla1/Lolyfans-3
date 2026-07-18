@@ -25,6 +25,8 @@ type Section = "profile" | "posts" | "social" | "links" | "editor" | "apikey";
 
 function ProfileSection() {
   const [displayName, setDisplayName] = useState("");
+  const [bio, setBio] = useState("");
+  const [showLocation, setShowLocation] = useState(false);
   const [email, setEmail] = useState("");
   const [avatarPath, setAvatarPath] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -40,6 +42,8 @@ function ProfileSection() {
         if (!user) return;
         setEmail(user.email ?? "");
         setDisplayName((user.user_metadata?.display_name as string) ?? "");
+        setBio((user.user_metadata?.profile_bio as string) ?? "");
+        setShowLocation(!!user.user_metadata?.profile_show_location);
         setAvatarPath((user.user_metadata?.avatar_path as string) ?? null);
       });
   }, []);
@@ -75,7 +79,11 @@ function ProfileSection() {
     setSaving(true);
     try {
       await supabaseBrowser().auth.updateUser({
-        data: { display_name: displayName.trim() },
+        data: {
+          display_name: displayName.trim(),
+          profile_bio: bio.trim().slice(0, 300),
+          profile_show_location: showLocation,
+        },
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
@@ -133,6 +141,39 @@ function ProfileSection() {
           placeholder="Your name"
           className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
         />
+
+        <label className="text-sm font-semibold block pt-2">Profile bio</label>
+        <textarea
+          value={bio}
+          onChange={(e) => setBio(e.target.value)}
+          rows={3}
+          maxLength={300}
+          placeholder="Tell your fans about yourself…"
+          className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none resize-none"
+        />
+
+        <div className="flex items-center justify-between rounded-xl border border-line bg-card2 px-3 py-2.5">
+          <div>
+            <p className="text-sm font-semibold">Show location</p>
+            <p className="text-xs text-muted">
+              Displays a City, Country line under your bio — each visitor sees
+              their own area.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowLocation((s) => !s)}
+            aria-label={showLocation ? "Hide location" : "Show location"}
+            className="relative shrink-0 w-12 h-7 rounded-full bg-bg border border-line transition-colors"
+          >
+            <span
+              className={`absolute top-1 w-4.5 h-4.5 rounded-full transition-all ${
+                showLocation ? "left-6.5 bg-accent" : "left-1 bg-muted"
+              }`}
+            />
+          </button>
+        </div>
+
         <button
           onClick={saveName}
           disabled={saving}
