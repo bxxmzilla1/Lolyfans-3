@@ -53,7 +53,7 @@ export default async function GuestChatsPage() {
   });
 
   return (
-    <div className="min-h-dvh pb-24 lg:pb-8 lg:pl-60">
+    <div className="min-h-dvh pb-[calc(88px+env(safe-area-inset-bottom))] lg:pb-8 lg:pl-60">
       <header className="sticky top-0 z-30 border-b border-line2 bg-card/80 backdrop-blur-lg px-4 py-3">
         <h1 className="max-w-lg mx-auto font-bold text-lg">Chats</h1>
       </header>

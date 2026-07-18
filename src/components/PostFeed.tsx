@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import Portal from "./Portal";
 import { formatCount, formatTime, mediaUrl } from "@/lib/utils";
 import { IconChat, IconHeart, IconHeartFilled, IconSend, IconUser, IconVerified } from "./Icons";
@@ -79,14 +80,25 @@ function CommentsSheet({
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-[100] bg-black/50 flex flex-col justify-end" onClick={onClose}>
+      {/* Bottom sheet on mobile, right sidebar on desktop */}
+      <div
+        className="fixed inset-0 z-[100] bg-black/50 flex flex-col justify-end lg:flex-row lg:justify-end"
+        onClick={onClose}
+      >
         <div
           onClick={(e) => e.stopPropagation()}
-          className="bg-bg rounded-t-3xl max-h-[75vh] flex flex-col fade-up"
+          className="bg-bg rounded-t-3xl max-h-[75vh] flex flex-col fade-up lg:h-full lg:max-h-none lg:w-96 lg:rounded-none lg:border-l lg:border-line"
         >
           <div className="shrink-0 py-3 border-b border-line text-center relative">
-            <span className="absolute left-1/2 -translate-x-1/2 -top-0 mt-1.5 w-10 h-1 rounded-full bg-line2" />
-            <p className="font-bold text-sm mt-1.5">Comments</p>
+            <span className="absolute left-1/2 -translate-x-1/2 -top-0 mt-1.5 w-10 h-1 rounded-full bg-line2 lg:hidden" />
+            <p className="font-bold text-sm mt-1.5 lg:mt-0">Comments</p>
+            <button
+              onClick={onClose}
+              aria-label="Close comments"
+              className="hidden lg:flex absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-card2 border border-line text-muted hover:text-fg items-center justify-center"
+            >
+              ✕
+            </button>
           </div>
 
           <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-4">
@@ -156,14 +168,34 @@ function CommentsSheet({
 export default function PostFeed({
   posts: initialPosts,
   canInteract,
-  showOwnerHeader = true,
 }: {
   posts: FeedPost[];
   canInteract: boolean;
-  showOwnerHeader?: boolean;
 }) {
   const [posts, setPosts] = useState(initialPosts);
   const [commentsFor, setCommentsFor] = useState<FeedPost | null>(null);
+  const [messaging, setMessaging] = useState<string | null>(null);
+  const router = useRouter();
+
+  /** Open the chat with the creator who published this post. */
+  async function message(post: FeedPost) {
+    if (messaging) return;
+    setMessaging(post.id);
+    try {
+      const res = await fetch("/api/guest/open", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerId: post.ownerId }),
+      });
+      if (res.ok) {
+        router.push("/chat");
+        router.refresh();
+        return;
+      }
+    } finally {
+      setMessaging(null);
+    }
+  }
 
   async function toggleLike(post: FeedPost) {
     if (!canInteract) return;
@@ -203,10 +235,10 @@ export default function PostFeed({
     <div className="pb-4 divide-y divide-line">
       {posts.map((post) => (
         <article key={post.id}>
-          {showOwnerHeader && (
+          <div className="flex items-center gap-2.5 px-3.5 py-2.5">
             <Link
               href={`/p/${post.ownerId}`}
-              className="flex items-center gap-2.5 px-3.5 py-2.5"
+              className="flex items-center gap-2.5 min-w-0 flex-1"
             >
               {post.ownerAvatar ? (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -224,11 +256,17 @@ export default function PostFeed({
                 {post.ownerName}
                 {post.verified && <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />}
               </span>
-              <span className="ml-auto text-[11px] text-muted shrink-0">
-                {formatTime(post.createdAt)}
-              </span>
             </Link>
-          )}
+            {canInteract && (
+              <button
+                onClick={() => message(post)}
+                disabled={messaging === post.id}
+                className="shrink-0 px-3.5 py-1.5 rounded-full bg-accent text-white text-xs font-semibold disabled:opacity-60 active:opacity-80 transition-opacity"
+              >
+                {messaging === post.id ? "Opening…" : "Message"}
+              </button>
+            )}
+          </div>
 
           {post.type === "video" ? (
             <video
@@ -274,13 +312,7 @@ export default function PostFeed({
 
           {post.caption && (
             <p className="px-3.5 pt-2 text-sm whitespace-pre-wrap break-words">
-              {showOwnerHeader ? (
-                <>
-                  <span className="font-semibold">{post.ownerName}</span> {post.caption}
-                </>
-              ) : (
-                post.caption
-              )}
+              <span className="font-semibold">{post.ownerName}</span> {post.caption}
             </p>
           )}
           <button
