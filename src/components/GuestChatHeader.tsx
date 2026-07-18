@@ -45,7 +45,8 @@ export default function GuestChatHeader({
       <div className="min-w-0">
         <p className="font-bold text-[15px] leading-tight truncate">{name}</p>
         <div className="flex items-center gap-2">
-          <p className="text-xs text-green-400">Online Now</p>
+          {/* Mobile keeps just the green dot; the text only shows on desktop */}
+          <p className="hidden lg:block text-xs text-green-400">Online Now</p>
           {location && (
             <span className="inline-flex items-center gap-0.5 text-xs text-muted truncate">
               <IconMapPin className="w-3 h-3 text-accent shrink-0" />

@@ -7,6 +7,7 @@ import { visitorLocation } from "@/lib/geo";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
+import GuestFooter from "@/components/GuestFooter";
 import GuestPresence from "@/components/GuestPresence";
 import OwnerEscapeHatch from "@/components/OwnerEscapeHatch";
 
@@ -62,7 +63,9 @@ export default async function GuestChatPage() {
   );
 
   return (
-    <div className="h-dvh">
+    // On mobile the footer menu stays visible, so the chat (and its message
+    // box) is padded up to sit above it; on desktop the footer is hidden.
+    <div className="h-dvh pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0">
       {/* Guests default to light mode unless they flipped the header switch */}
       <script
         dangerouslySetInnerHTML={{
@@ -77,6 +80,9 @@ export default async function GuestChatPage() {
         header={header}
         initialMessages={messages ?? []}
       />
+      <div className="lg:hidden">
+        <GuestFooter />
+      </div>
     </div>
   );
 }
