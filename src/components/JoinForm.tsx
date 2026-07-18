@@ -6,7 +6,7 @@ import { IconEye, IconEyeOff } from "./Icons";
 import { countryFlag, countryName } from "./CountryPicker";
 import { DIAL_CODES } from "@/lib/dialCodes";
 
-type Step = "form" | "code" | "loading";
+type Step = "form" | "code" | "opening";
 
 const COUNTRY_OPTIONS: { code: string; name: string; dial: string }[] = Object.keys(
   DIAL_CODES
@@ -252,8 +252,9 @@ export default function JoinForm({
       return;
     }
 
-    // Verified — go straight to the chat (loading skeleton until it renders).
-    setStep("loading");
+    // Verified — go straight to the chat, with a loading skeleton so the
+    // page never looks frozen while /chat renders.
+    setStep("opening");
     router.push("/chat");
     router.refresh();
   }
@@ -376,9 +377,9 @@ export default function JoinForm({
         </form>
       )}
 
-      {/* Chat skeleton from verify until /chat finishes loading, so the page
-          never looks frozen. */}
-      {step === "loading" && (
+      {/* Chat skeleton shown from verification until /chat finishes loading,
+          so the page never looks frozen. */}
+      {step === "opening" && (
         <div className="fixed inset-0 z-50 bg-bg flex flex-col fade-up">
           <div className="border-b border-line2 px-4 py-3 flex items-center gap-3 bg-card/60">
             <div className="w-11 h-11 rounded-full bg-card2 animate-pulse" />
@@ -396,6 +397,9 @@ export default function JoinForm({
           <div className="p-3">
             <div className="h-12 rounded-2xl bg-card2 border border-line animate-pulse" />
           </div>
+          <p className="absolute inset-x-0 top-1/2 text-center text-muted text-sm">
+            Opening chat…
+          </p>
         </div>
       )}
     </>
