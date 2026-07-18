@@ -155,8 +155,8 @@ export default async function InviteProfilePreviewPage({
               href={`/i/${code}/signup`}
               className="w-full py-3.5 px-6 rounded-full bg-accent text-white text-base font-semibold flex items-center justify-between active:opacity-80 transition-opacity"
             >
-              <span>Subscribe</span>
-              <span>Free</span>
+              <span>SUBSCRIBE</span>
+              <span>FREE</span>
             </Link>
             <p className="text-xs text-muted -mt-1">
               You must subscribe to this profile to send a message
@@ -229,8 +229,8 @@ export default async function InviteProfilePreviewPage({
             href={`/i/${code}/signup`}
             className="w-full py-3.5 px-6 rounded-full bg-accent text-white text-base font-semibold flex items-center justify-between active:opacity-80 transition-opacity"
           >
-            <span>Subscribe</span>
-            <span>Free</span>
+            <span>SUBSCRIBE</span>
+            <span>FREE</span>
           </Link>
         </div>
       </main>
