@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { broadcast } from "@/lib/realtime";
+import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
 
 /**
  * Send one message (optionally with media) to many of the owner's chats at
@@ -56,6 +57,15 @@ export async function POST(req: NextRequest) {
     ...(inserted ?? []).map((m) => broadcast(`chat:${m.chat_id}`, "new-message", m)),
     broadcast(`inbox:${ownerId}`, "new-message", { chatId: targetIds[0] }),
   ]);
+
+  // SMS-nudge every offline recipient (after the response; online guests and
+  // already-nudged offline guests are skipped inside the helper).
+  const origin = requestOrigin(req.headers);
+  after(async () => {
+    for (const id of targetIds) {
+      await notifyGuestSms(id, origin);
+    }
+  });
 
   return NextResponse.json({ ok: true, sent: targetIds.length });
 }

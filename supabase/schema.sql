@@ -191,6 +191,12 @@ create unique index if not exists chats_owner_phone_idx
   on chats (owner_id, guest_phone)
   where guest_phone is not null;
 
+-- Offline SMS notifications: the guest chat page heartbeats guest_last_seen_at
+-- while open; when the owner messages an offline guest, one SMS nudge is sent
+-- per offline period (tracked by sms_notified_at).
+alter table chats add column if not exists guest_last_seen_at timestamptz;
+alter table chats add column if not exists sms_notified_at timestamptz;
+
 -- Public storage bucket for chat media and vault files
 insert into storage.buckets (id, name, public)
 values ('media', 'media', true)

@@ -36,6 +36,8 @@ Copy `.env.example` to `.env.local` and fill in:
 | `TWILIO_ACCOUNT_SID` | Twilio Account SID (guest phone sign-up SMS) |
 | `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
 | `TWILIO_VERIFY_SERVICE_SID` | Twilio Verify Service SID (create under Verify > Services, starts with `VA`) |
+| `TWILIO_MESSAGING_SERVICE_SID` | Twilio Messaging Service SID (`MG...`) for offline SMS nudges (or set `TWILIO_FROM_NUMBER`) |
+| `TWILIO_FROM_NUMBER` | Twilio phone number (`+1...`) used as the SMS sender if no Messaging Service is set |
 
 ### 3. Run locally
 

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId, getGuestChatId } from "@/lib/session";
 import { broadcast } from "@/lib/realtime";
+import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
 
 type ChatAuth = { role: "owner" | "guest"; chatOwnerId: string };
 
@@ -94,6 +95,12 @@ export async function POST(req: NextRequest) {
     // Owner's chat list updates instantly on any new message.
     broadcast(`inbox:${auth.chatOwnerId}`, "new-message", { chatId }),
   ]);
+
+  // Offline guest? Nudge them by SMS (after the response, never blocking).
+  if (auth.role === "owner") {
+    const origin = requestOrigin(req.headers);
+    after(() => notifyGuestSms(chatId, origin));
+  }
 
   return NextResponse.json({ message });
 }

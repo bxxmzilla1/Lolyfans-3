@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ownerFromApiKey } from "@/lib/apiKey";
 import { broadcast } from "@/lib/realtime";
+import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -69,6 +70,11 @@ export async function POST(req: NextRequest) {
     broadcast(`chat:${chatId}`, "new-message", message),
     broadcast(`inbox:${ownerId}`, "new-message", { chatId }),
   ]);
+
+  // Offline guest? Nudge them by SMS (one per offline period, so a burst of
+  // chatbot bubbles still sends a single text).
+  const origin = requestOrigin(req.headers);
+  after(() => notifyGuestSms(chatId, origin));
 
   return NextResponse.json({ message }, { headers: CORS });
 }
