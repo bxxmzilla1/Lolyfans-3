@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
@@ -6,7 +7,6 @@ import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
 import { visitorGeoParts } from "@/lib/geo";
 import { mediaUrl } from "@/lib/utils";
-import JoinForm from "@/components/JoinForm";
 import InviteProfile from "@/components/InviteProfile";
 import InviteTheme from "@/components/InviteTheme";
 
@@ -132,7 +132,12 @@ export default async function InvitePage({
           </p>
         </div>
         {!blockedReason && (
-          <JoinForm code={code} buttonText={buttonText} defaultCountry={country} />
+          <Link
+            href={`/i/${code}/signup`}
+            className="w-full bg-accent text-white font-semibold rounded-xl py-3 text-center active:opacity-80 transition-opacity"
+          >
+            {buttonText?.trim() || "Start chatting"}
+          </Link>
         )}
       </div>
     </main>
