@@ -6,43 +6,32 @@ import { usePathname, useRouter } from "next/navigation";
 import GuestNav from "./GuestNav";
 import { GuestShellProvider } from "./GuestShellContext";
 import { useInboxSignals } from "@/lib/useInboxSignals";
-import GuestChatList, { type GuestChatRow } from "./GuestChatList";
+import GuestChatList from "./GuestChatList";
 import GuestProfileEditor from "./GuestProfileEditor";
 import FollowButton from "./FollowButton";
-import PostFeed, { type FeedPost } from "./PostFeed";
+import PostFeed from "./PostFeed";
+import {
+  getGuestBootstrapCache,
+  setGuestBootstrapCache,
+  type GuestBootstrap,
+} from "@/lib/guestBootstrapCache";
 import { mediaUrl } from "@/lib/utils";
 import { IconUser, IconVerified } from "./Icons";
 
-type Suggestion = {
-  ownerId: string;
-  name: string;
-  avatarPath: string | null;
-  verified: boolean;
-};
-
-type Bootstrap = {
-  profile: { name: string; avatarPath: string | null };
-  chats: GuestChatRow[];
-  unread: number;
-  home: {
-    suggestions: Suggestion[];
-    posts: FeedPost[];
-    canInteract: boolean;
-  };
-};
+type Bootstrap = GuestBootstrap;
 
 // Survives navigating away to /chat or /p/... and back — no cold reload.
-let cached: Bootstrap | null = null;
 let inflight: Promise<Bootstrap | null> | null = null;
 
 async function loadBootstrap(): Promise<Bootstrap | null> {
+  const cached = getGuestBootstrapCache();
   if (cached) return cached;
   if (inflight) return inflight;
   inflight = fetch("/api/guest/bootstrap")
     .then(async (res) => {
       if (!res.ok) return null;
       const data = (await res.json()) as Bootstrap;
-      cached = data;
+      setGuestBootstrapCache(data);
       return data;
     })
     .catch(() => null)
@@ -53,7 +42,7 @@ async function loadBootstrap(): Promise<Bootstrap | null> {
 }
 
 export function invalidateGuestBootstrap() {
-  cached = null;
+  setGuestBootstrapCache(null);
 }
 
 function PanelShell({
@@ -142,8 +131,8 @@ function HomePanel({ data }: { data: Bootstrap["home"] }) {
 export default function GuestShell() {
   const pathname = usePathname();
   const router = useRouter();
-  const [data, setData] = useState<Bootstrap | null>(cached);
-  const [loading, setLoading] = useState(!cached);
+  const [data, setData] = useState<Bootstrap | null>(() => getGuestBootstrapCache());
+  const [loading, setLoading] = useState(() => !getGuestBootstrapCache());
   // Track visited tabs in state so React re-renders when a new tab mounts.
   const [visited, setVisited] = useState<Set<string>>(() => {
     const t =
@@ -169,34 +158,33 @@ export default function GuestShell() {
   }, [data]);
 
   const refresh = useCallback(() => {
-    cached = null;
+    setGuestBootstrapCache(null);
     loadBootstrap().then((next) => {
       if (next) setData(next);
     });
   }, []);
 
-  /** Optimistically clear one chat's badge and persist that to Supabase. */
-  const clearChatUnread = useCallback((chatId: string) => {
-    setData((prev) => {
-      if (!prev) return prev;
-      const chat = prev.chats.find((c) => c.id === chatId);
-      if (!chat || chat.unread === 0) return prev;
-      const next = {
-        ...prev,
-        unread: Math.max(0, prev.unread - chat.unread),
-        chats: prev.chats.map((c) =>
-          c.id === chatId ? { ...c, unread: 0 } : c
-        ),
-      };
-      cached = next;
-      return next;
-    });
-    // /api/guest/open also marks it read; this covers any other caller.
-    fetch("/api/guest/read", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId }),
-    }).catch(() => {});
+  // Keep shell state in sync when a chat was marked read on the /chat page
+  // (shell is unmounted there; the event fires as we navigate back too).
+  useEffect(() => {
+    function onRead(e: Event) {
+      const chatId = (e as CustomEvent<{ chatId: string }>).detail?.chatId;
+      if (!chatId) return;
+      setData((prev) => {
+        if (!prev) return prev;
+        const chat = prev.chats.find((c) => c.id === chatId);
+        if (!chat || chat.unread === 0) return prev;
+        return {
+          ...prev,
+          unread: Math.max(0, prev.unread - chat.unread),
+          chats: prev.chats.map((c) =>
+            c.id === chatId ? { ...c, unread: 0 } : c
+          ),
+        };
+      });
+    }
+    window.addEventListener("guest-chat-read", onRead);
+    return () => window.removeEventListener("guest-chat-read", onRead);
   }, []);
 
   // Every message send broadcasts a realtime signal — reload the shell data
@@ -209,11 +197,12 @@ export default function GuestShell() {
 
   useEffect(() => {
     let alive = true;
+    const cached = getGuestBootstrapCache();
     if (cached) {
       setData(cached);
       setLoading(false);
       // Quiet background refresh — UI stays instant from cache.
-      cached = null;
+      setGuestBootstrapCache(null);
       loadBootstrap().then((next) => {
         if (alive && next) setData(next);
       });
@@ -248,7 +237,6 @@ export default function GuestShell() {
         hasShell: true,
         unread: data?.unread ?? 0,
         refresh,
-        clearChatUnread,
       }}
     >
       <div className="min-h-dvh pb-[calc(88px+env(safe-area-inset-bottom))] lg:pb-10 lg:pl-60">
@@ -270,10 +258,7 @@ export default function GuestShell() {
                 aria-hidden={tab !== "chats"}
               >
                 <PanelShell title="Chats">
-                  <GuestChatList
-                    chats={data.chats}
-                    onOpenChat={clearChatUnread}
-                  />
+                  <GuestChatList chats={data.chats} />
                 </PanelShell>
               </div>
             )}

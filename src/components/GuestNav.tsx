@@ -38,6 +38,16 @@ export default function GuestNav() {
     return () => clearInterval(timer);
   }, [shell.hasShell, pathname, loadFallback]);
 
+  // Chat page just marked a conversation as read — refresh the footer badge.
+  useEffect(() => {
+    function onRead() {
+      if (shell.hasShell) shell.refresh();
+      else loadFallback();
+    }
+    window.addEventListener("guest-chat-read", onRead);
+    return () => window.removeEventListener("guest-chat-read", onRead);
+  }, [shell, loadFallback]);
+
   // Instant badge: refetch the moment a message lands in any of our chats.
   // Inside the shell this is off (empty pairs) — GuestShell handles it there.
   useInboxSignals(shell.hasShell ? [] : pairs, () => {
