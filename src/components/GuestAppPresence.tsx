@@ -10,9 +10,35 @@ import type { ChatOwnerPair } from "@/lib/useInboxSignals";
  * app (Home, Chats, Profile, creator pages, the chat itself) — not just with
  * the conversation open. Also heartbeats guest_last_seen_at (seen-only, no
  * read-marking) so offline SMS nudges are skipped while they're browsing.
+ *
+ * Presence is tied to actual visibility: the moment the fan switches to
+ * another app/tab, minimizes the browser, or the page is hidden/frozen, we
+ * leave the presence channels so the creator sees them go offline right away.
+ * Coming back re-announces them instantly.
  */
 export default function GuestAppPresence() {
   const [pairs, setPairs] = useState<ChatOwnerPair[]>([]);
+  const [visible, setVisible] = useState(true);
+
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState === "visible");
+    // `pagehide`/`freeze` fire on mobile when the PWA is backgrounded or the
+    // page is about to be suspended — treat both as "left the app".
+    const hide = () => setVisible(false);
+    update();
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener("pagehide", hide);
+    window.addEventListener("focus", update);
+    document.addEventListener("freeze", hide);
+    document.addEventListener("resume", update);
+    return () => {
+      document.removeEventListener("visibilitychange", update);
+      window.removeEventListener("pagehide", hide);
+      window.removeEventListener("focus", update);
+      document.removeEventListener("freeze", hide);
+      document.removeEventListener("resume", update);
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -35,14 +61,16 @@ export default function GuestAppPresence() {
     .sort()
     .join(",");
 
+  // Announce only while the app is actually on screen. Leaving (hidden,
+  // backgrounded, frozen) tears the channels down → creator sees offline.
   useEffect(() => {
-    if (!presenceKey) return;
+    if (!presenceKey || !visible) return;
     const stops = presenceKey.split(",").map((entry) => {
       const [ownerId, chatId] = entry.split(":");
       return trackGuestPresence(ownerId, chatId);
     });
     return () => stops.forEach((stop) => stop());
-  }, [presenceKey]);
+  }, [presenceKey, visible]);
 
   // Seen-only heartbeat: keeps guest_last_seen_at fresh across all their
   // chats without touching the read cursor (badges stay accurate).
