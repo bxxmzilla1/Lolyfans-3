@@ -22,6 +22,8 @@ export default function InviteManager() {
   const [renaming, setRenaming] = useState<InviteWithStats | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const [resetting, setResetting] = useState(false);
   // Multi-select for bulk country changes
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -113,6 +115,15 @@ export default function InviteManager() {
     load();
   }
 
+  async function resetStats() {
+    setConfirmReset(false);
+    if (resetting) return;
+    setResetting(true);
+    await fetch("/api/invites/reset", { method: "POST" });
+    await load();
+    setResetting(false);
+  }
+
   async function saveRename() {
     if (!renaming) return;
     const id = renaming.id;
@@ -145,6 +156,16 @@ export default function InviteManager() {
             <IconRefresh className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`} />
             Refresh
           </button>
+          {invites.length > 0 && (
+            <button
+              onClick={() => setConfirmReset(true)}
+              disabled={resetting}
+              title="Reset clicks and subscribers on all links"
+              className="px-4 bg-card2 border border-line rounded-xl font-semibold text-sm text-red-400 hover:text-red-500 transition-colors disabled:opacity-50"
+            >
+              {resetting ? "Resetting…" : "Reset stats"}
+            </button>
+          )}
           {invites.length > 0 && (
             <button
               onClick={() => {
@@ -343,6 +364,15 @@ export default function InviteManager() {
           </li>
         ))}
       </ul>
+
+      {confirmReset && (
+        <ConfirmDialog
+          title="Reset link stats"
+          message="Set clicks and subscribers back to 0 on every invite link? The chats themselves stay — only the tracking counts are wiped. This can't be undone."
+          onConfirm={resetStats}
+          onCancel={() => setConfirmReset(false)}
+        />
+      )}
 
       {deleting && (
         <ConfirmDialog
