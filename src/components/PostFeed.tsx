@@ -268,20 +268,22 @@ export default function PostFeed({
             )}
           </div>
 
+          {/* Media is never cropped: it scales to fit the column and caps at
+              70% of the screen height, letterboxed when needed. */}
           {post.type === "video" ? (
             <video
               src={post.url}
               controls
               playsInline
               preload="metadata"
-              className="w-full max-h-[70vh] bg-black"
+              className="w-full h-auto max-h-[70vh] object-contain bg-black"
             />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={post.url}
               alt={post.caption || "Post"}
-              className="w-full max-h-[70vh] object-cover bg-card2"
+              className="w-full h-auto max-h-[70vh] object-contain bg-black"
             />
           )}
 
