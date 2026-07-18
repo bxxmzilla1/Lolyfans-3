@@ -54,16 +54,20 @@ export async function POST(req: NextRequest) {
   }
 
   const prompt = [
-    `Write ${howMany} short, casual social-media comments for a creator's ${post.media_type} post.`,
+    `Write ${howMany} short comments left by male fans drooling and simping over a`,
+    `female creator's ${post.media_type} post on her page.`,
     post.caption ? `The post caption is: "${post.caption}".` : "",
     String(instructions || "").trim()
       ? `Extra instructions from the creator: ${String(instructions).trim().slice(0, 500)}`
       : "",
-    "Make them feel like real fans wrote them: varied length (2-12 words), lowercase-heavy,",
-    "occasional emoji, slang and small typos are fine. No hashtags. Each from a different person.",
-    "Also invent a realistic short display name for each commenter (first names, nicknames,",
-    "some with numbers). Reply ONLY with a JSON array like:",
-    '[{"name":"jess","comment":"omg stunning"}]',
+    "Every commenter is a man thirsting over her: worshipping, begging, down bad,",
+    'simp energy — things like "marry me", "you\'re killing me", "goddess", "I don\'t deserve',
+    'to see this", fire/heart-eyes/drooling emoji. Keep it adoring, not vulgar or graphic.',
+    "Varied length (2-12 words), lowercase-heavy, slang and small typos are fine, no hashtags,",
+    "each from a different guy. Also invent a realistic masculine display name or handle for",
+    "each commenter (guy first names, nicknames, some with numbers like mike_87 or jayden23).",
+    "Reply ONLY with a JSON array like:",
+    '[{"name":"mike_87","comment":"goddess fr im down bad"}]',
   ]
     .filter(Boolean)
     .join("\n");
