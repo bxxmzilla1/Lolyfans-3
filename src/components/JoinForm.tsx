@@ -166,6 +166,7 @@ export default function JoinForm({
   defaultCountry?: string | null;
 }) {
   const [step, setStep] = useState<Step>("form");
+  const [name, setName] = useState("");
   const [country, setCountry] = useState(
     defaultCountry && DIAL_CODES[defaultCountry] ? defaultCountry : "US"
   );
@@ -205,6 +206,10 @@ export default function JoinForm({
   async function sendCode(e?: React.FormEvent) {
     e?.preventDefault();
     if (busy) return;
+    if (!name.trim()) {
+      setError("Enter your name");
+      return;
+    }
     if (!/^\+[1-9]\d{6,14}$/.test(e164)) {
       setError("Enter a valid phone number");
       return;
@@ -243,7 +248,13 @@ export default function JoinForm({
     const res = await fetch("/api/join", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, phone: e164, password, otp: otp.trim() }),
+      body: JSON.stringify({
+        code,
+        name: name.trim(),
+        phone: e164,
+        password,
+        otp: otp.trim(),
+      }),
     });
     if (!res.ok) {
       setBusy(false);
@@ -266,6 +277,15 @@ export default function JoinForm({
     <>
       {step === "form" && (
         <form onSubmit={sendCode} className="w-full flex flex-col gap-3">
+          <input
+            type="text"
+            autoComplete="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Your name"
+            maxLength={40}
+            className={inputClass}
+          />
           <CountrySearchPicker
             value={country}
             onChange={setCountry}
@@ -318,7 +338,7 @@ export default function JoinForm({
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
           <button
             type="submit"
-            disabled={busy || !phone.trim() || password.length < 6}
+            disabled={busy || !name.trim() || !phone.trim() || password.length < 6}
             className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity"
           >
             {busy ? "Sending code…" : buttonText?.trim() || "Start chatting"}

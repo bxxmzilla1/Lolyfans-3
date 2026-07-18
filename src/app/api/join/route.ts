@@ -12,7 +12,7 @@ import { broadcast } from "@/lib/realtime";
  * SMS code Twilio sent them.
  */
 export async function POST(req: NextRequest) {
-  const { code, phone, password, otp } = await req.json();
+  const { code, name, phone, password, otp } = await req.json();
 
   if (!code) {
     return NextResponse.json({ error: "Invalid link" }, { status: 400 });
@@ -85,7 +85,10 @@ export async function POST(req: NextRequest) {
     return res;
   }
 
-  const guestName = `Guest ${Math.floor(1000 + Math.random() * 9000)}`;
+  // The name typed at sign-up; auto-generate one only as a fallback.
+  const guestName =
+    String(name || "").trim().slice(0, 40) ||
+    `Guest ${Math.floor(1000 + Math.random() * 9000)}`;
   const { data: chat, error } = await db
     .from("chats")
     .insert({
