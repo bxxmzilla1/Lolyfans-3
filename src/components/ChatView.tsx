@@ -114,6 +114,10 @@ export default function ChatView({
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify({ chatId }),
             }).catch(() => {});
+          } else {
+            // Guest reading the incoming message right now: advance the read
+            // cursor immediately so the footer Chats badge stays accurate.
+            fetch("/api/guest/ping", { method: "POST" }).catch(() => {});
           }
           return [...prev, msg];
         });

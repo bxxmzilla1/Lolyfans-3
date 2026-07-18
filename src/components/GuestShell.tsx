@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import GuestNav from "./GuestNav";
 import { GuestShellProvider } from "./GuestShellContext";
+import { useInboxSignals } from "@/lib/useInboxSignals";
 import GuestChatList, { type GuestChatRow } from "./GuestChatList";
 import GuestProfileEditor from "./GuestProfileEditor";
 import FollowButton from "./FollowButton";
@@ -173,6 +174,14 @@ export default function GuestShell() {
       if (next) setData(next);
     });
   }, []);
+
+  // Every message send broadcasts a realtime signal — reload the shell data
+  // the moment one lands in any of this guest's chats, so the footer badge
+  // and the chat list update instantly.
+  useInboxSignals(
+    (data?.chats ?? []).map((c) => ({ chatId: c.id, ownerId: c.ownerId })),
+    refresh
+  );
 
   useEffect(() => {
     let alive = true;

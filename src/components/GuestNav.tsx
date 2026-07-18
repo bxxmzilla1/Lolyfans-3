@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useGuestShell } from "./GuestShellContext";
+import { useInboxSignals, type ChatOwnerPair } from "@/lib/useInboxSignals";
 import { IconChat, IconHome, IconUser } from "./Icons";
 
 /**
@@ -15,27 +16,35 @@ export default function GuestNav() {
   const [, startTransition] = useTransition();
   const shell = useGuestShell();
   const [fallbackUnread, setFallbackUnread] = useState(0);
+  const [pairs, setPairs] = useState<ChatOwnerPair[]>([]);
 
-  // Outside the shell (/chat, /p/...) there's no bootstrap unread — poll it.
+  const loadFallback = useCallback(async () => {
+    try {
+      const res = await fetch("/api/guest/chats");
+      const json = await res.json();
+      setFallbackUnread(json.unread ?? 0);
+      setPairs(json.chats ?? []);
+    } catch {
+      // offline
+    }
+  }, []);
+
+  // Outside the shell (/chat, /p/...) there's no bootstrap unread — fetch it,
+  // then keep a slow poll as a safety net behind the realtime signals.
   useEffect(() => {
     if (shell.hasShell) return;
-    let alive = true;
-    async function load() {
-      try {
-        const res = await fetch("/api/guest/chats");
-        const json = await res.json();
-        if (alive) setFallbackUnread(json.unread ?? 0);
-      } catch {
-        // offline
-      }
-    }
-    load();
-    const timer = setInterval(load, 30000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [shell.hasShell, pathname]);
+    loadFallback();
+    const timer = setInterval(loadFallback, 30000);
+    return () => clearInterval(timer);
+  }, [shell.hasShell, pathname, loadFallback]);
+
+  // Instant badge: refetch the moment a message lands in any of our chats.
+  // Inside the shell this is off (empty pairs) — GuestShell handles it there.
+  useInboxSignals(shell.hasShell ? [] : pairs, () => {
+    // Give the open chat's read-marker a beat to land first, so a message
+    // being read right now doesn't flash the badge.
+    setTimeout(loadFallback, 800);
+  });
 
   const unread = shell.hasShell ? shell.unread : fallbackUnread;
   const onChats = pathname === "/chats";

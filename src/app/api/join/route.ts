@@ -8,6 +8,52 @@ import { broadcast } from "@/lib/realtime";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
+ * If the creator configured a welcome message (Settings → Welcome), drop it
+ * into a freshly created chat as their first message — with its media
+ * attachment if one was set — and signal every realtime listener.
+ */
+async function sendWelcomeMessage(chatId: string, ownerId: string) {
+  const db = supabaseAdmin();
+  const { data: ownerUser } = await db.auth.admin.getUserById(ownerId);
+  const meta = (ownerUser?.user?.user_metadata ?? {}) as {
+    welcome_enabled?: boolean;
+    welcome_text?: string;
+    welcome_media_path?: string;
+    welcome_media_type?: string;
+  };
+  const text = (meta.welcome_text || "").trim();
+  const mediaPath = meta.welcome_media_path || null;
+  if (!meta.welcome_enabled || (!text && !mediaPath)) return;
+
+  const { data: message } = await db
+    .from("messages")
+    .insert({
+      chat_id: chatId,
+      sender: "owner",
+      content: text || null,
+      media_path: mediaPath,
+      media_type: mediaPath
+        ? meta.welcome_media_type === "video"
+          ? "video"
+          : "image"
+        : null,
+    })
+    .select()
+    .single();
+  if (!message) return;
+
+  await Promise.all([
+    // The owner "sent" it, so it's already read on their side.
+    db
+      .from("chats")
+      .update({ last_message_at: message.created_at, last_read_at: message.created_at })
+      .eq("id", chatId),
+    broadcast(`chat:${chatId}`, "new-message", message),
+    broadcast(`inbox:${ownerId}`, "new-message", { chatId }),
+  ]);
+}
+
+/**
  * Creates (or resumes) a guest chat after sign-up: the guest registers with
  * an email + password. No verification step — the account works right away.
  */
@@ -109,7 +155,8 @@ export async function POST(req: NextRequest) {
 
   // Bookkeeping + notifications after the response is sent: bump the usage
   // counter, auto-follow the inviter so their posts fill the new fan's home
-  // feed, and tell listeners (web inbox, Orion) a new chat just appeared.
+  // feed, tell listeners (web inbox, Orion) a new chat just appeared, and
+  // drop the creator's welcome message into the fresh chat.
   after(async () => {
     await Promise.all([
       db
@@ -123,6 +170,7 @@ export async function POST(req: NextRequest) {
           { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
         ),
       broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id }),
+      sendWelcomeMessage(chat.id, invite!.owner_id),
     ]);
   });
 

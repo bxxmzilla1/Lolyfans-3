@@ -13,7 +13,7 @@ type ChatRow = {
   categories: string[];
 };
 type Category = { id: string; name: string };
-type VaultItem = { id: string; media_path: string; media_type: "image" | "video" };
+export type VaultItem = { id: string; media_path: string; media_type: "image" | "video" };
 type VaultPick = { path: string; type: "image" | "video" };
 
 export default function MassMessage({
@@ -396,7 +396,7 @@ export default function MassMessage({
 }
 
 /** Full-screen picker that lists vault albums and their media to attach one. */
-function VaultPicker({
+export function VaultPicker({
   onPick,
   onClose,
 }: {

@@ -6,6 +6,7 @@ import { IconUser, IconVerified } from "./Icons";
 
 export type GuestChatRow = {
   id: string;
+  ownerId: string;
   ownerName: string;
   ownerAvatar: string | null;
   verified: boolean;

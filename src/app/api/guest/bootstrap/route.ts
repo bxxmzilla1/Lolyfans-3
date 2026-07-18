@@ -97,6 +97,7 @@ export async function GET(req: NextRequest) {
     const p = profiles.get(chat.owner_id);
     return {
       id: chat.id,
+      ownerId: chat.owner_id,
       ownerName: p?.name || "Lolyfans",
       ownerAvatar: p?.avatarPath || null,
       verified: !!p?.verified,
