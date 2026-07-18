@@ -2,6 +2,7 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createToken, GUEST_COOKIE, cookieOptions } from "@/lib/session";
 import { getRequestCountry, ipFromHeaders, inviteUsable, countryAllowed } from "@/lib/invites";
+import { broadcast } from "@/lib/realtime";
 
 export async function POST(req: NextRequest) {
   const { code, name } = await req.json();
@@ -71,12 +72,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not create chat" }, { status: 500 });
   }
 
-  // Usage counter is bookkeeping — bump it after the response is sent.
+  // Bookkeeping + notifications after the response is sent: bump the usage
+  // counter and tell listeners (web inbox, Orion) a new chat just appeared.
   after(async () => {
-    await db
-      .from("invites")
-      .update({ uses: (invite!.uses ?? 0) + 1 })
-      .eq("id", invite!.id);
+    await Promise.all([
+      db
+        .from("invites")
+        .update({ uses: (invite!.uses ?? 0) + 1 })
+        .eq("id", invite!.id),
+      broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id }),
+    ]);
   });
 
   const res = NextResponse.json({ ok: true, chatId: chat.id });
