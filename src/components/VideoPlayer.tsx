@@ -19,12 +19,15 @@ export default function VideoPlayer({
   className = "",
   videoClassName = "",
   fullscreenOnPlay = false,
+  autoPlay = false,
 }: {
   src: string;
   className?: string;
   videoClassName?: string;
   /** Chat mode: show only a play button; playing opens fullscreen with the full controls. */
   fullscreenOnPlay?: boolean;
+  /** Start playing as soon as the player mounts (e.g. opened from a feed post). */
+  autoPlay?: boolean;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -33,6 +36,12 @@ export default function VideoPlayer({
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    // The tap that opened the player counts as the user gesture; if the
+    // browser still blocks it, the play button stays as a fallback.
+    if (autoPlay) videoRef.current?.play().catch(() => {});
+  }, [autoPlay]);
 
   useEffect(() => {
     function onFullscreenChange() {

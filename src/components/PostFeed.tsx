@@ -384,13 +384,15 @@ export default function PostFeed({
                   src={viewer.url}
                   className="rounded-xl"
                   videoClassName="max-h-[85vh]"
+                  autoPlay
                 />
               ) : (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={viewer.url}
                   alt={viewer.caption || "Post"}
-                  className="w-full h-auto max-h-[85vh] object-contain rounded-xl"
+                  onClick={() => setViewer(null)}
+                  className="w-full h-auto max-h-[85vh] object-contain rounded-xl cursor-pointer"
                 />
               )}
             </div>
