@@ -194,7 +194,22 @@ export default function PostFeed({
   const [commentsFor, setCommentsFor] = useState<FeedPost | null>(null);
   const [viewer, setViewer] = useState<FeedPost | null>(null);
   const [messaging, setMessaging] = useState<string | null>(null);
+  const feedRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  // When the feed mounts dynamically (e.g. right after subscribing unlocks a
+  // profile), mobile Safari skips preloading the inserted <video> elements —
+  // their first frame never renders and only the blurred backdrop shows.
+  // Explicitly kick off a load for every video so posters appear.
+  useEffect(() => {
+    feedRef.current?.querySelectorAll("video").forEach((v) => {
+      try {
+        v.load();
+      } catch {
+        /* ignore */
+      }
+    });
+  }, []);
 
   /** Open the chat with the creator who published this post. */
   async function message(post: FeedPost) {
@@ -251,7 +266,7 @@ export default function PostFeed({
 
   return (
     // Instagram-style: full-width posts separated by a hairline, no cards.
-    <div className="pb-4 divide-y divide-line">
+    <div ref={feedRef} className="pb-4 divide-y divide-line">
       {posts.map((post) => (
         <article key={post.id}>
           <div className="flex items-center gap-2.5 px-3.5 py-2.5">
