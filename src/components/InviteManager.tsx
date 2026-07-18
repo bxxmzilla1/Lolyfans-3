@@ -100,6 +100,32 @@ export default function InviteManager() {
     });
   }
 
+  /** Toggle whether one link opens the profile preview directly. */
+  async function toggleSkipLanding(invite: Invite) {
+    await fetch("/api/invites", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: invite.id, skipLanding: !invite.skip_landing }),
+    });
+    load();
+  }
+
+  /** Apply the landing behaviour to every selected link at once. */
+  async function applyLanding(skipLanding: boolean) {
+    if (applying || selected.size === 0) return;
+    setApplying(true);
+    await fetch("/api/invites", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selected], skipLanding }),
+    });
+    setApplying(false);
+    setSelectMode(false);
+    setSelected(new Set());
+    setBulkCountries([]);
+    load();
+  }
+
   async function applyCountries() {
     if (applying || selected.size === 0) return;
     setApplying(true);
@@ -242,6 +268,27 @@ export default function InviteManager() {
             </p>
           ) : (
             <>
+              <div>
+                <p className="text-sm font-semibold mb-2">
+                  What the selected links open
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => applyLanding(false)}
+                    disabled={applying}
+                    className="flex-1 bg-card2 border border-line rounded-xl py-2.5 text-xs font-semibold hover:border-accent transition-colors disabled:opacity-50"
+                  >
+                    Invite page first
+                  </button>
+                  <button
+                    onClick={() => applyLanding(true)}
+                    disabled={applying}
+                    className="flex-1 bg-card2 border border-line rounded-xl py-2.5 text-xs font-semibold hover:border-accent transition-colors disabled:opacity-50"
+                  >
+                    Profile page directly
+                  </button>
+                </div>
+              </div>
               <p className="text-sm font-semibold">
                 Countries allowed to chat with the selected links
               </p>
@@ -322,6 +369,29 @@ export default function InviteManager() {
               </p>
             ) : (
               <p className="text-xs mt-1.5 text-muted">🌍 Everyone</p>
+            )}
+            {!selectMode && (
+              <button
+                onClick={() => toggleSkipLanding(invite)}
+                title="What visitors see first when they open this link"
+                className="mt-2 w-full flex items-center justify-between gap-2 bg-card2 border border-line rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-left hover:border-accent transition-colors"
+              >
+                <span className="text-muted">Opens</span>
+                <span className="flex items-center gap-1.5">
+                  {invite.skip_landing ? "Profile page directly" : "Invite page first"}
+                  <span
+                    className={`w-7 h-4 rounded-full relative transition-colors ${
+                      invite.skip_landing ? "bg-accent" : "bg-line2"
+                    }`}
+                  >
+                    <span
+                      className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${
+                        invite.skip_landing ? "left-3.5" : "left-0.5"
+                      }`}
+                    />
+                  </span>
+                </span>
+              </button>
             )}
             {invite.stats.joins > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-2">

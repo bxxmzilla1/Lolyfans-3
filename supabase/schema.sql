@@ -256,6 +256,11 @@ create table if not exists post_comments (
 alter table post_comments enable row level security;
 create index if not exists post_comments_post_idx on post_comments (post_id, created_at);
 
+-- Invite links can skip the invite landing page and drop visitors straight on
+-- the creator's locked profile preview. Clicks are recorded there too, so the
+-- stats keep working either way.
+alter table invites add column if not exists skip_landing boolean not null default false;
+
 -- Public storage bucket for chat media and vault files
 insert into storage.buckets (id, name, public)
 values ('media', 'media', true)

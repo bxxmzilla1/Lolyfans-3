@@ -1,5 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { after } from "next/server";
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
@@ -55,6 +56,20 @@ export default async function InviteProfilePreviewPage({
   if (ipChat?.data) redirect("/api/resume");
 
   const invite = inviteRes.data;
+
+  // Count this view as a link click (unique per IP; revisits are no-ops).
+  // Matters for links that skip the landing page — this is their first stop.
+  if (invite && visitorIp) {
+    after(async () => {
+      await db
+        .from("invite_visits")
+        .upsert(
+          { invite_id: invite.id, ip: visitorIp },
+          { onConflict: "invite_id,ip", ignoreDuplicates: true }
+        );
+    });
+  }
+
   const usable = inviteUsable(invite);
   const country =
     requestHeaders.get("x-vercel-ip-country")?.toUpperCase() || null;

@@ -73,6 +73,11 @@ export default async function InvitePage({
     ? "This chat link is not available in your country."
     : null;
 
+  // Links set to skip the landing page drop the visitor straight on the
+  // creator's locked profile preview (the click was already registered above;
+  // the preview registers it too for visitors who land there directly).
+  if (invite?.skip_landing && !blockedReason) redirect(`/i/${code}/profile`);
+
   // The profile of whoever created this link + their invite page settings
   let ownerName = "Lolyfans";
   let avatarPath: string | null = null;

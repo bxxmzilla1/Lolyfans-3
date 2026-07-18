@@ -11,6 +11,8 @@ export type Invite = {
   active: boolean;
   expires_at: string | null;
   created_at: string;
+  /** Skip the invite landing page: the link opens the profile preview directly. */
+  skip_landing: boolean;
 };
 
 /** Country of the visitor, from Vercel's geo header. Null when unknown (e.g. localhost). */

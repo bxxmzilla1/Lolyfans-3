@@ -100,8 +100,10 @@ export async function PATCH(req: NextRequest) {
     active?: boolean;
     label?: string | null;
     allowed_countries?: string[] | null;
+    skip_landing?: boolean;
   } = {};
   if (typeof active === "boolean") updates.active = active;
+  if (typeof body.skipLanding === "boolean") updates.skip_landing = body.skipLanding;
   if (label !== undefined) updates.label = String(label).trim() || null;
   if (body.allowedCountries !== undefined) {
     const codes: string[] = Array.isArray(body.allowedCountries)
