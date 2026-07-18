@@ -2,11 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconCheck, IconEye, IconEyeOff, IconUser } from "./Icons";
+import { IconEye, IconEyeOff } from "./Icons";
 import { countryFlag, countryName } from "./CountryPicker";
 import { DIAL_CODES } from "@/lib/dialCodes";
 
-type Step = "form" | "code" | "waiting" | "accepted";
+type Step = "form" | "code" | "loading";
 
 const COUNTRY_OPTIONS: { code: string; name: string; dial: string }[] = Object.keys(
   DIAL_CODES
@@ -159,14 +159,10 @@ function detectCountry(
 export default function JoinForm({
   code,
   buttonText,
-  inviterName,
-  avatarUrl,
   defaultCountry,
 }: {
   code: string;
   buttonText?: string;
-  inviterName: string;
-  avatarUrl: string | null;
   defaultCountry?: string | null;
 }) {
   const [step, setStep] = useState<Step>("form");
@@ -256,34 +252,11 @@ export default function JoinForm({
       return;
     }
 
-    // Verified — play the chat request sequence, then enter the chat.
-    setStep("waiting");
-    const waitMs = 2000 + Math.random() * 500; // 2-2.5s
-    timersRef.current.push(
-      setTimeout(() => {
-        setStep("accepted");
-        timersRef.current.push(
-          setTimeout(() => {
-            router.push("/chat");
-            router.refresh();
-          }, 1500)
-        );
-      }, waitMs)
-    );
+    // Verified — go straight to the chat (loading skeleton until it renders).
+    setStep("loading");
+    router.push("/chat");
+    router.refresh();
   }
-
-  const avatar = avatarUrl ? (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={avatarUrl}
-      alt={inviterName}
-      className="w-24 h-24 rounded-full object-cover bg-bg"
-    />
-  ) : (
-    <div className="w-24 h-24 rounded-full bg-bg flex items-center justify-center">
-      <IconUser className="w-10 h-10 text-muted" />
-    </div>
-  );
 
   const inputClass =
     "w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors";
@@ -403,44 +376,25 @@ export default function JoinForm({
         </form>
       )}
 
-      {(step === "waiting" || step === "accepted") && (
-        <div className="fixed inset-0 z-50 bg-bg flex flex-col items-center justify-center gap-7 p-6">
-          <div className="relative w-32 h-32 flex items-center justify-center">
-            {step === "waiting" && (
-              <>
-                <span className="absolute inset-0 rounded-full bg-accent/25 animate-ping" />
-                <span className="absolute inset-3 rounded-full bg-accent/15 animate-ping [animation-delay:400ms]" />
-              </>
-            )}
-            <div className="ig-ring relative z-10">{avatar}</div>
-            {step === "accepted" && (
-              <span className="absolute bottom-0 right-0 z-20 w-9 h-9 rounded-full bg-green-500 border-4 border-bg flex items-center justify-center fade-up">
-                <IconCheck className="w-4 h-4 text-white" />
-              </span>
-            )}
+      {/* Chat skeleton from verify until /chat finishes loading, so the page
+          never looks frozen. */}
+      {step === "loading" && (
+        <div className="fixed inset-0 z-50 bg-bg flex flex-col fade-up">
+          <div className="border-b border-line2 px-4 py-3 flex items-center gap-3 bg-card/60">
+            <div className="w-11 h-11 rounded-full bg-card2 animate-pulse" />
+            <div className="space-y-1.5">
+              <div className="h-3 w-28 rounded-full bg-card2 animate-pulse" />
+              <div className="h-2.5 w-16 rounded-full bg-card2 animate-pulse" />
+            </div>
           </div>
-
-          <div className="text-center">
-            {step === "waiting" ? (
-              <>
-                <p className="font-bold text-lg">Chat request sent</p>
-                <p className="text-muted text-sm mt-1.5">
-                  Waiting for {inviterName} to accept
-                </p>
-                <span className="mt-3 inline-flex items-center gap-1">
-                  <span className="typing-dot w-1.5 h-1.5 rounded-full bg-accent" />
-                  <span className="typing-dot w-1.5 h-1.5 rounded-full bg-accent" />
-                  <span className="typing-dot w-1.5 h-1.5 rounded-full bg-accent" />
-                </span>
-              </>
-            ) : (
-              <>
-                <p className="font-bold text-lg text-green-400 fade-up">
-                  {inviterName} accepted your request
-                </p>
-                <p className="text-muted text-sm mt-1.5">Opening chat…</p>
-              </>
-            )}
+          <div className="flex-1 p-4 space-y-3 overflow-hidden">
+            <div className="h-10 w-44 rounded-3xl rounded-bl-lg bg-card2 animate-pulse" />
+            <div className="h-10 w-56 rounded-3xl rounded-bl-lg bg-card2 animate-pulse" />
+            <div className="h-10 w-40 rounded-3xl rounded-br-lg bg-accent/25 animate-pulse ml-auto" />
+            <div className="h-10 w-52 rounded-3xl rounded-bl-lg bg-card2 animate-pulse" />
+          </div>
+          <div className="p-3">
+            <div className="h-12 rounded-2xl bg-card2 border border-line animate-pulse" />
           </div>
         </div>
       )}
