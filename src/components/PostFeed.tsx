@@ -4,8 +4,17 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Portal from "./Portal";
+import VideoPlayer from "./VideoPlayer";
 import { formatCount, formatTime, mediaUrl } from "@/lib/utils";
-import { IconChat, IconHeart, IconHeartFilled, IconSend, IconUser, IconVerified } from "./Icons";
+import {
+  IconChat,
+  IconHeart,
+  IconHeartFilled,
+  IconPlay,
+  IconSend,
+  IconUser,
+  IconVerified,
+} from "./Icons";
 
 export type FeedPost = {
   id: string;
@@ -174,6 +183,7 @@ export default function PostFeed({
 }) {
   const [posts, setPosts] = useState(initialPosts);
   const [commentsFor, setCommentsFor] = useState<FeedPost | null>(null);
+  const [viewer, setViewer] = useState<FeedPost | null>(null);
   const [messaging, setMessaging] = useState<string | null>(null);
   const router = useRouter();
 
@@ -268,24 +278,54 @@ export default function PostFeed({
             )}
           </div>
 
-          {/* Media is never cropped: it scales to fit the column and caps at
-              70% of the screen height, letterboxed when needed. */}
-          {post.type === "video" ? (
-            <video
-              src={post.url}
-              controls
-              playsInline
-              preload="metadata"
-              className="w-full h-auto max-h-[70vh] object-contain bg-black"
-            />
-          ) : (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={post.url}
-              alt={post.caption || "Post"}
-              className="w-full h-auto max-h-[70vh] object-contain bg-black"
-            />
-          )}
+          {/* Media is never cropped: it fits the column (capped at 70% of the
+              screen) over a blurred copy of itself. Tapping opens fullscreen. */}
+          <button
+            onClick={() => setViewer(post)}
+            aria-label="View full screen"
+            className="relative block w-full overflow-hidden"
+          >
+            {post.type === "video" ? (
+              <video
+                src={`${post.url}#t=0.001`}
+                aria-hidden
+                muted
+                playsInline
+                preload="metadata"
+                tabIndex={-1}
+                className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={post.url}
+                aria-hidden
+                alt=""
+                className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
+              />
+            )}
+            {post.type === "video" ? (
+              <>
+                <video
+                  src={`${post.url}#t=0.001`}
+                  playsInline
+                  preload="metadata"
+                  tabIndex={-1}
+                  className="relative w-full h-auto max-h-[70vh] object-contain pointer-events-none"
+                />
+                <span className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-accent text-white glow-accent flex items-center justify-center">
+                  <IconPlay className="w-6 h-6 translate-x-0.5" />
+                </span>
+              </>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={post.url}
+                alt={post.caption || "Post"}
+                className="relative w-full h-auto max-h-[70vh] object-contain"
+              />
+            )}
+          </button>
 
           {/* Action row: like + comment */}
           <div className="px-3.5 pt-2.5 flex items-center gap-4">
@@ -327,6 +367,43 @@ export default function PostFeed({
           </button>
         </article>
       ))}
+
+      {/* Fullscreen media viewer; videos get the themed player controls */}
+      {viewer && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[110] bg-black/95 flex items-center justify-center p-3 lg:p-8"
+            onClick={() => setViewer(null)}
+          >
+            <div
+              className="w-full max-w-4xl max-h-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {viewer.type === "video" ? (
+                <VideoPlayer
+                  src={viewer.url}
+                  className="rounded-xl"
+                  videoClassName="max-h-[85vh]"
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={viewer.url}
+                  alt={viewer.caption || "Post"}
+                  className="w-full h-auto max-h-[85vh] object-contain rounded-xl"
+                />
+              )}
+            </div>
+            <button
+              onClick={() => setViewer(null)}
+              aria-label="Close"
+              className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/10 text-white text-xl leading-none flex items-center justify-center"
+            >
+              ✕
+            </button>
+          </div>
+        </Portal>
+      )}
 
       {commentsFor && (
         <CommentsSheet
