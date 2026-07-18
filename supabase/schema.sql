@@ -197,6 +197,33 @@ create unique index if not exists chats_owner_phone_idx
 alter table chats add column if not exists guest_last_seen_at timestamptz;
 alter table chats add column if not exists sms_notified_at timestamptz;
 
+-- Creator posts: images/videos shown on the creator's public profile and in
+-- the home feed of guests who follow them.
+create table if not exists posts (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  media_path text not null,
+  media_type text not null check (media_type in ('image', 'video')),
+  caption text,
+  created_at timestamptz not null default now()
+);
+alter table posts enable row level security;
+create index if not exists posts_owner_idx on posts (owner_id, created_at desc);
+
+-- A guest (identified by their chat) following a creator.
+create table if not exists follows (
+  chat_id uuid not null references chats(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (chat_id, owner_id)
+);
+alter table follows enable row level security;
+
+-- Guest profile (picture) + guest-side read tracking for their chat list
+-- unread badges.
+alter table chats add column if not exists guest_avatar_path text;
+alter table chats add column if not exists guest_last_read_at timestamptz;
+
 -- Public storage bucket for chat media and vault files
 insert into storage.buckets (id, name, public)
 values ('media', 'media', true)

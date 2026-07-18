@@ -1,11 +1,12 @@
 "use client";
 
+import Link from "next/link";
 import { mediaUrl } from "@/lib/utils";
-import { IconMapPin, IconUser } from "./Icons";
-import GuestThemeToggle from "./GuestThemeToggle";
+import { IconBack, IconMapPin, IconUser } from "./Icons";
 
 /** Guest-side chat header: the owner's profile, always shown as online. */
 export default function GuestChatHeader({
+  ownerId,
   name,
   avatarPath,
   location,
@@ -17,6 +18,13 @@ export default function GuestChatHeader({
 }) {
   return (
     <header className="border-b border-line2 px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
+      <Link
+        href="/chats"
+        aria-label="Back to chats"
+        className="relative z-50 shrink-0 -ml-1 w-8 h-8 rounded-full flex items-center justify-center text-muted active:bg-card2"
+      >
+        <IconBack className="w-5 h-5" />
+      </Link>
       <div className="relative shrink-0">
         <div className="ig-ring">
           {avatarPath ? (
@@ -46,7 +54,15 @@ export default function GuestChatHeader({
           )}
         </div>
       </div>
-      <GuestThemeToggle />
+      {ownerId && (
+        <Link
+          href={`/p/${ownerId}`}
+          // z-50 keeps it clickable under the invisible owner corner button
+          className="relative z-50 ml-auto shrink-0 px-3.5 py-2 rounded-full bg-accent text-white text-xs font-semibold whitespace-nowrap active:opacity-80"
+        >
+          Visit Profile
+        </Link>
+      )}
     </header>
   );
 }

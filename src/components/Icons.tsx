@@ -289,6 +289,15 @@ export function IconKey({ className }: IconProps) {
   );
 }
 
+export function IconHome({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M3 11.5 12 4l9 7.5" />
+      <path d="M5 10v10h5v-6h4v6h5V10" />
+    </Svg>
+  );
+}
+
 export function IconVerified({ className }: IconProps) {
   return (
     <svg

@@ -7,7 +7,14 @@ export async function proxy(request: NextRequest) {
 
   // Guest-facing pages never carry an owner session — skip the auth work
   // entirely so invite links respond as fast as possible.
-  if (pathname.startsWith("/i/") || pathname.startsWith("/chat")) {
+  if (
+    pathname.startsWith("/i/") ||
+    pathname.startsWith("/chat") ||
+    pathname.startsWith("/p/") ||
+    pathname === "/home" ||
+    pathname === "/chats" ||
+    pathname === "/profile"
+  ) {
     return NextResponse.next({ request });
   }
 

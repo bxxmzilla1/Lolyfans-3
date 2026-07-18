@@ -17,7 +17,11 @@ export async function POST(req: NextRequest) {
   const { fileName, scope } = await req.json();
   const ext = String(fileName || "file").split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
   const folder =
-    (scope === "vault" || scope === "avatar") && ownerId ? scope : "chat";
+    (scope === "vault" || scope === "avatar" || scope === "post") && ownerId
+      ? scope
+      : scope === "avatar" && guestChatId
+      ? "avatar"
+      : "chat";
   const path = `${folder}/${nanoid(16)}.${ext}`;
 
   const { data, error } = await supabaseAdmin()

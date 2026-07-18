@@ -8,12 +8,13 @@ import InviteManager from "./InviteManager";
 import InvitePageEditor from "./InvitePageEditor";
 import ApiKeyManager from "./ApiKeyManager";
 import SmsNotificationEditor from "./SmsNotificationEditor";
+import PostsManager from "./PostsManager";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
 import ThemeToggle from "./ThemeToggle";
-import { IconChat, IconEdit, IconKey, IconLink, IconLogout, IconUser } from "./Icons";
+import { IconChat, IconEdit, IconGrid, IconKey, IconLink, IconLogout, IconUser } from "./Icons";
 
-type Section = "profile" | "links" | "editor" | "apikey" | "sms";
+type Section = "profile" | "posts" | "links" | "editor" | "apikey" | "sms";
 
 function ProfileSection() {
   const [displayName, setDisplayName] = useState("");
@@ -203,6 +204,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconUser className="w-3.5 h-3.5" /> Profile
         </button>
         <button
+          onClick={() => setSection("posts")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "posts"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconGrid className="w-3.5 h-3.5" /> Posts
+        </button>
+        <button
           onClick={() => openGated("links")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "links"
@@ -266,13 +277,15 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           className={`mx-auto w-full ${
             section === "profile" || section === "sms"
               ? "max-w-2xl"
-              : section === "editor"
+              : section === "editor" || section === "posts"
               ? "max-w-4xl"
               : "max-w-6xl"
           }`}
         >
           {section === "profile" ? (
             <ProfileSection />
+          ) : section === "posts" ? (
+            <PostsManager />
           ) : section === "editor" ? (
             <InvitePageEditor />
           ) : section === "apikey" ? (

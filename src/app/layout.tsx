@@ -44,7 +44,7 @@ export default function RootLayout({
           // the wrong colors. Guest-facing pages (invite links and the guest
           // chat) default to light so they never flash a black screen.
           dangerouslySetInnerHTML={{
-            __html: `(function(){var g=location.pathname.slice(0,3)==='/i/'||location.pathname.slice(0,5)==='/chat';var t=null;try{t=localStorage.getItem('theme');}catch(e){}if(t==='light'||(g&&t!=='dark')){document.documentElement.classList.add('light');}})();`,
+            __html: `(function(){var p=location.pathname;var g=p.slice(0,3)==='/i/'||p.slice(0,3)==='/p/'||p.slice(0,5)==='/chat'||p==='/home'||p==='/chats'||p==='/profile';var t=null;try{t=localStorage.getItem('theme');}catch(e){}if(t==='light'||(g&&t!=='dark')){document.documentElement.classList.add('light');}})();`,
           }}
         />
       </head>
