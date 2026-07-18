@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
 import { formatCount, mediaUrl } from "@/lib/utils";
-import GuestFooter from "@/components/GuestFooter";
+import GuestNav from "@/components/GuestNav";
 import FollowButton from "@/components/FollowButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import { IconUser, IconVerified } from "@/components/Icons";
@@ -80,7 +80,7 @@ export default async function CreatorProfilePage({
   }));
 
   return (
-    <div className="min-h-dvh pb-24">
+    <div className="min-h-dvh pb-24 lg:pb-8 lg:pl-60">
       <header className="sticky top-0 z-30 border-b border-line2 bg-card/80 backdrop-blur-lg px-4 py-3">
         <h1 className="max-w-lg mx-auto font-bold text-lg flex items-center gap-1 justify-center">
           {profile.name}
@@ -140,7 +140,7 @@ export default async function CreatorProfilePage({
         </div>
       </main>
 
-      <GuestFooter />
+      <GuestNav />
     </div>
   );
 }

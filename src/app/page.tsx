@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getOwnerId, getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
@@ -61,6 +62,12 @@ export default async function Home({
           </p>
         </div>
         <AuthForm />
+        <p className="text-sm text-muted -mt-2">
+          Joined through an invite link?{" "}
+          <Link href="/login" className="text-accent font-semibold">
+            Log in here
+          </Link>
+        </p>
       </div>
     </main>
   );

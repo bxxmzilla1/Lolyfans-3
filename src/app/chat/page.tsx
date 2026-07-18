@@ -7,7 +7,7 @@ import { visitorLocation } from "@/lib/geo";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
-import GuestFooter from "@/components/GuestFooter";
+import GuestNav from "@/components/GuestNav";
 import GuestPresence from "@/components/GuestPresence";
 import OwnerEscapeHatch from "@/components/OwnerEscapeHatch";
 
@@ -64,8 +64,8 @@ export default async function GuestChatPage() {
 
   return (
     // On mobile the footer menu stays visible, so the chat (and its message
-    // box) is padded up to sit above it; on desktop the footer is hidden.
-    <div className="h-dvh pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0">
+    // box) is padded up to sit above it; on desktop the nav is a left sidebar.
+    <div className="h-dvh pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-60">
       <GuestPresence chatId={chatId} ownerId={chat.owner_id} />
       <OwnerEscapeHatch />
       <ChatView
@@ -74,9 +74,7 @@ export default async function GuestChatPage() {
         header={header}
         initialMessages={messages ?? []}
       />
-      <div className="lg:hidden">
-        <GuestFooter />
-      </div>
+      <GuestNav />
     </div>
   );
 }

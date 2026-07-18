@@ -6,14 +6,19 @@ export type GuestChat = {
   id: string;
   owner_id: string;
   guest_name: string;
+  guest_email: string | null;
   guest_avatar_path: string | null;
   guest_last_read_at: string | null;
   last_message_at: string;
 };
 
+const CHAT_COLUMNS =
+  "id, owner_id, guest_name, guest_email, guest_avatar_path, guest_last_read_at, last_message_at";
+
 /**
- * Every chat that belongs to this guest — matched by their session cookie
- * and/or their remembered IP (covers cleared history / other browsers).
+ * Every chat that belongs to this guest — matched by their session cookie,
+ * their remembered IP (covers cleared history / other browsers), and the
+ * email their account is registered with (covers logging in on a computer).
  */
 export async function guestChats(requestHeaders: Headers): Promise<GuestChat[]> {
   const db = supabaseAdmin();
@@ -27,10 +32,26 @@ export async function guestChats(requestHeaders: Headers): Promise<GuestChat[]> 
 
   const { data } = await db
     .from("chats")
-    .select("id, owner_id, guest_name, guest_avatar_path, guest_last_read_at, last_message_at")
+    .select(CHAT_COLUMNS)
     .or(filters.join(","))
     .order("last_message_at", { ascending: false });
-  return (data as GuestChat[]) ?? [];
+  const chats = (data as GuestChat[]) ?? [];
+
+  // Same email registered with other creators? Those chats are theirs too.
+  const emails = [...new Set(chats.map((c) => c.guest_email).filter(Boolean))] as string[];
+  if (emails.length) {
+    const { data: byEmail } = await db
+      .from("chats")
+      .select(CHAT_COLUMNS)
+      .in("guest_email", emails);
+    for (const chat of (byEmail as GuestChat[]) ?? []) {
+      if (!chats.some((c) => c.id === chat.id)) chats.push(chat);
+    }
+    chats.sort(
+      (a, b) => +new Date(b.last_message_at) - +new Date(a.last_message_at)
+    );
+  }
+  return chats;
 }
 
 export type OwnerProfile = {

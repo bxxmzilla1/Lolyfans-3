@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getGuestChatId } from "@/lib/session";
 import { guestChats } from "@/lib/guest";
-import GuestFooter from "@/components/GuestFooter";
+import GuestNav from "@/components/GuestNav";
 import GuestProfileEditor from "@/components/GuestProfileEditor";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export default async function GuestProfilePage() {
   const chat = chats.find((c) => c.id === cookieChatId) ?? chats[0];
 
   return (
-    <div className="min-h-dvh pb-24">
+    <div className="min-h-dvh pb-24 lg:pb-8 lg:pl-60">
       <header className="sticky top-0 z-30 border-b border-line2 bg-card/80 backdrop-blur-lg px-4 py-3">
         <h1 className="max-w-lg mx-auto font-bold text-lg">Profile</h1>
       </header>
@@ -28,7 +28,7 @@ export default async function GuestProfilePage() {
           initialAvatarPath={chat.guest_avatar_path}
         />
       </main>
-      <GuestFooter />
+      <GuestNav />
     </div>
   );
 }

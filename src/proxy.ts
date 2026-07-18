@@ -13,7 +13,8 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/p/") ||
     pathname === "/home" ||
     pathname === "/chats" ||
-    pathname === "/profile"
+    pathname === "/profile" ||
+    pathname === "/login"
   ) {
     return NextResponse.next({ request });
   }
