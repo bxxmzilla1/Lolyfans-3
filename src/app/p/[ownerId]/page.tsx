@@ -7,7 +7,7 @@ import { postStats } from "@/lib/posts";
 import { visitorLocation } from "@/lib/geo";
 import { formatCount, mediaUrl } from "@/lib/utils";
 import GuestPage from "@/components/GuestPage";
-import FollowButton from "@/components/FollowButton";
+import ProfileLockGate from "@/components/ProfileLockGate";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
 import { IconChat, IconHeart, IconMapPin, IconUser, IconVerified } from "@/components/Icons";
@@ -67,12 +67,6 @@ export default async function CreatorProfilePage({
   const hasChatWithOwner = chats.some((c) => c.owner_id === ownerId);
   const followers = profile.followerBase + (realFollowers ?? 0);
 
-  // A fan who unsubscribed sees the profile locked again: blurred posts, no
-  // Message button — exactly like before their first subscribe. Their existing
-  // conversation still works from the Chats tab; only this page gates on the
-  // subscription.
-  const locked = chats.length > 0 && !following;
-
   const feedPosts: FeedPost[] = (posts ?? []).map((post) => ({
     id: post.id,
     ownerId,
@@ -88,66 +82,53 @@ export default async function CreatorProfilePage({
     liked: stats.likedByMe.has(post.id),
   }));
 
-  return (
-    <GuestPage hideHeader>
-        <section className="pb-4">
-          <CreatorBanner
-            name={profile.name}
-            avatarPath={profile.avatarPath}
-            bannerPath={profile.bannerPath}
-          />
-          <div className="px-4 pt-3 flex flex-col items-center gap-3">
-            <p className="font-bold text-lg flex items-center gap-1">
-              {profile.name}
-              {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
-            </p>
-            <p className="text-xs text-muted -mt-2">
-              {formatCount(followers)} {followers === 1 ? "subscriber" : "subscribers"}
-              {" · "}
-              {feedPosts.length} {feedPosts.length === 1 ? "post" : "posts"}
-            </p>
-            {(profile.bio || (profile.showLocation && location)) && (
-              <div className="w-full text-center space-y-1.5">
-                {profile.bio && (
-                  <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
-                )}
-                {profile.showLocation && location && (
-                  <p className="flex items-center justify-center gap-1 text-xs text-muted">
-                    <IconMapPin className="w-3.5 h-3.5 text-accent shrink-0" />
-                    {location}
-                  </p>
-                )}
-              </div>
+  const header = (
+    <>
+      <CreatorBanner
+        name={profile.name}
+        avatarPath={profile.avatarPath}
+        bannerPath={profile.bannerPath}
+      />
+      <div className="px-4 pt-3 flex flex-col items-center gap-3">
+        <p className="font-bold text-lg flex items-center gap-1">
+          {profile.name}
+          {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
+        </p>
+        <p className="text-xs text-muted -mt-2">
+          {formatCount(followers)} {followers === 1 ? "subscriber" : "subscribers"}
+          {" · "}
+          {feedPosts.length} {feedPosts.length === 1 ? "post" : "posts"}
+        </p>
+        {(profile.bio || (profile.showLocation && location)) && (
+          <div className="w-full text-center space-y-1.5">
+            {profile.bio && (
+              <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
             )}
-            {locked ? (
-              <>
-                <FollowButton ownerId={ownerId} initialFollowing={false} wide />
-                <p className="text-xs text-muted -mt-1">
-                  You must subscribe to this profile to send a message
-                </p>
-              </>
-            ) : (
-              <div className="flex items-center gap-2">
-                {chats.length > 0 && (
-                  <FollowButton ownerId={ownerId} initialFollowing={following} />
-                )}
-                {hasChatWithOwner && (
-                  <Link
-                    href="/chat"
-                    className="px-6 py-2.5 rounded-full bg-card2 border border-line2 text-sm font-semibold"
-                  >
-                    Message
-                  </Link>
-                )}
-              </div>
+            {profile.showLocation && location && (
+              <p className="flex items-center justify-center gap-1 text-xs text-muted">
+                <IconMapPin className="w-3.5 h-3.5 text-accent shrink-0" />
+                {location}
+              </p>
             )}
           </div>
-        </section>
+        )}
+      </div>
+    </>
+  );
 
-        {locked ? (
-          /* Locked feed: blurred media, visible captions and counts, nothing
-             clickable — same treatment as the invite-link preview. */
-          <div className="border-t border-line divide-y divide-line pointer-events-none select-none">
+  const messageButton = hasChatWithOwner ? (
+    <Link
+      href="/chat"
+      className="px-6 py-2.5 rounded-full bg-card2 border border-line2 text-sm font-semibold"
+    >
+      Message
+    </Link>
+  ) : null;
+
+  /* Locked feed: blurred media, visible captions and counts, nothing
+     clickable — same treatment as the invite-link preview. */
+  const lockedFeed = (
+    <div className="border-t border-line divide-y divide-line pointer-events-none select-none">
             {feedPosts.map((post) => (
               <article key={post.id}>
                 <div className="flex items-center gap-2.5 px-3.5 py-2.5">
@@ -209,12 +190,24 @@ export default async function CreatorProfilePage({
                 </div>
               </article>
             ))}
-          </div>
-        ) : (
+    </div>
+  );
+
+  return (
+    <GuestPage hideHeader>
+      <ProfileLockGate
+        ownerId={ownerId}
+        initialFollowing={following}
+        canSubscribe={chats.length > 0}
+        header={header}
+        messageButton={messageButton}
+        lockedFeed={lockedFeed}
+        unlockedFeed={
           <div className="border-t border-line">
             <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
           </div>
-        )}
+        }
+      />
     </GuestPage>
   );
 }

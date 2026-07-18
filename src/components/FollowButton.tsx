@@ -16,21 +16,29 @@ export default function FollowButton({
   initialFollowing,
   small,
   wide,
+  onChange,
 }: {
   ownerId: string;
   initialFollowing: boolean;
   small?: boolean;
   wide?: boolean;
+  /** Fires optimistically on toggle (and again on revert if the save fails). */
+  onChange?: (following: boolean) => void;
 }) {
   const [following, setFollowing] = useState(initialFollowing);
   const [busy, setBusy] = useState(false);
   const { refresh } = useGuestShell();
   const router = useRouter();
 
+  function apply(value: boolean) {
+    setFollowing(value);
+    onChange?.(value);
+  }
+
   async function toggle() {
     if (busy) return;
     const next = !following;
-    setFollowing(next);
+    apply(next);
     setBusy(true);
     try {
       const res = await fetch("/api/guest/follow", {
@@ -39,15 +47,15 @@ export default function FollowButton({
         body: JSON.stringify({ ownerId, follow: next }),
       });
       if (!res.ok) {
-        setFollowing(!next);
+        apply(!next);
       } else {
         refresh();
-        // Re-render the server page so locked/unlocked state (blurred posts,
-        // Message button) updates immediately.
+        // Background sync so the next server render agrees with the
+        // optimistic state.
         router.refresh();
       }
     } catch {
-      setFollowing(!next);
+      apply(!next);
     }
     setBusy(false);
   }
