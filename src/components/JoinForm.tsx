@@ -14,6 +14,48 @@ const COUNTRY_OPTIONS: { code: string; name: string; dial: string }[] = Object.k
   .map((code) => ({ code, name: countryName(code), dial: DIAL_CODES[code] }))
   .sort((a, b) => a.name.localeCompare(b.name));
 
+// Dial code -> countries sharing it (e.g. +1 is US, Canada and more).
+const DIAL_TO_COUNTRIES: Record<string, string[]> = {};
+for (const [iso, dial] of Object.entries(DIAL_CODES)) {
+  (DIAL_TO_COUNTRIES[dial] ??= []).push(iso);
+}
+
+// Which country wins when several share a dial code and none is selected.
+const DIAL_PREFERRED: Record<string, string> = {
+  "1": "US", "7": "RU", "44": "GB", "47": "NO", "61": "AU", "212": "MA",
+  "262": "RE", "358": "FI", "590": "GP", "599": "CW",
+};
+
+/**
+ * Detects the country from a number typed with its dial code ("+63912…" or
+ * "0063912…"). Returns the matched country plus the rest of the number, or
+ * null when there's no usable match (yet).
+ */
+function detectCountry(
+  raw: string,
+  currentCountry: string
+): { country: string; national: string } | null {
+  const trimmed = raw.trim();
+  let digits = "";
+  if (trimmed.startsWith("+")) digits = trimmed.slice(1).replace(/\D/g, "");
+  else if (/^00\d/.test(trimmed.replace(/\D/g, ""))) {
+    digits = trimmed.replace(/\D/g, "").slice(2);
+  } else return null;
+  if (!digits) return null;
+
+  // Longest dial code first (up to 3 digits) so "+1876" doesn't stop at "+1".
+  for (let len = Math.min(3, digits.length); len >= 1; len--) {
+    const dial = digits.slice(0, len);
+    const countries = DIAL_TO_COUNTRIES[dial];
+    if (!countries) continue;
+    const country = countries.includes(currentCountry)
+      ? currentCountry
+      : DIAL_PREFERRED[dial] || countries[0];
+    return { country, national: digits.slice(len) };
+  }
+  return null;
+}
+
 export default function JoinForm({
   code,
   buttonText,
@@ -40,8 +82,13 @@ export default function JoinForm({
   const timersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const router = useRouter();
 
-  // Full number in E.164: +<dial><national number without leading zeros>
+  // Full number in E.164: +<dial><national number without leading zeros>.
+  // A number still typed with "+" (dial code not recognized yet) is used as-is.
   const e164 = useMemo(() => {
+    if (phone.trim().startsWith("+")) {
+      const digits = phone.replace(/\D/g, "");
+      return digits ? `+${digits}` : "";
+    }
     const digits = phone.replace(/\D/g, "").replace(/^0+/, "");
     return digits ? `+${DIAL_CODES[country]}${digits}` : "";
   }, [country, phone]);
@@ -144,29 +191,39 @@ export default function JoinForm({
     <>
       {step === "form" && (
         <form onSubmit={sendCode} className="w-full flex flex-col gap-3">
-          <div className="flex gap-2">
-            <select
-              value={country}
-              onChange={(e) => setCountry(e.target.value)}
-              className={`${inputClass} w-[124px] shrink-0 px-2`}
-              aria-label="Phone country"
-            >
-              {COUNTRY_OPTIONS.map((c) => (
-                <option key={c.code} value={c.code}>
-                  {countryFlag(c.code)} {c.name} (+{c.dial})
-                </option>
-              ))}
-            </select>
-            <input
-              type="tel"
-              inputMode="tel"
-              autoComplete="tel-national"
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="Phone number"
-              className={inputClass}
-            />
-          </div>
+          <select
+            value={country}
+            onChange={(e) => setCountry(e.target.value)}
+            className={inputClass}
+            aria-label="Phone country"
+          >
+            {COUNTRY_OPTIONS.map((c) => (
+              <option key={c.code} value={c.code}>
+                {countryFlag(c.code)} {c.name} (+{c.dial})
+              </option>
+            ))}
+          </select>
+          <input
+            type="tel"
+            inputMode="tel"
+            autoComplete="tel"
+            value={phone}
+            onChange={(e) => {
+              const v = e.target.value;
+              // Typed with the dial code ("+63…" / "0063…")? Switch the
+              // country automatically and keep only the local part. Getting
+              // it wrong is fine — the picker above still overrides it.
+              const detected = detectCountry(v, country);
+              if (detected) {
+                setCountry(detected.country);
+                setPhone(detected.national);
+              } else {
+                setPhone(v);
+              }
+            }}
+            placeholder="Phone number"
+            className={inputClass}
+          />
           <input
             type="password"
             autoComplete="new-password"
