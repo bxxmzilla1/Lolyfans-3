@@ -1,44 +1,30 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { useGuestShell } from "./GuestShellContext";
 
 /**
  * Subscribe/unsubscribe (follow under the hood) to a creator; optimistic so
- * it feels instant. Shows the OnlyFans-style split label — "SUBSCRIBE" left,
- * "FREE" right — and flips to "Subscribed" once active. `wide` renders the
- * full-width variant used on locked profiles (same look as the invite
- * preview's button).
+ * it feels instant. Full-size shows the OnlyFans-style split label —
+ * "Subscribe" left, "Free" right — and flips to "Subscribed" once active.
  */
 export default function FollowButton({
   ownerId,
   initialFollowing,
   small,
-  wide,
-  onChange,
 }: {
   ownerId: string;
   initialFollowing: boolean;
   small?: boolean;
-  wide?: boolean;
-  /** Fires optimistically on toggle (and again on revert if the save fails). */
-  onChange?: (following: boolean) => void;
 }) {
   const [following, setFollowing] = useState(initialFollowing);
   const [busy, setBusy] = useState(false);
   const { refresh } = useGuestShell();
-  const router = useRouter();
-
-  function apply(value: boolean) {
-    setFollowing(value);
-    onChange?.(value);
-  }
 
   async function toggle() {
     if (busy) return;
     const next = !following;
-    apply(next);
+    setFollowing(next);
     setBusy(true);
     try {
       const res = await fetch("/api/guest/follow", {
@@ -46,31 +32,19 @@ export default function FollowButton({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ownerId, follow: next }),
       });
-      if (!res.ok) {
-        apply(!next);
-      } else {
-        refresh();
-        // Background sync so the next server render agrees with the
-        // optimistic state.
-        router.refresh();
-      }
+      if (!res.ok) setFollowing(!next);
+      else refresh();
     } catch {
-      apply(!next);
+      setFollowing(!next);
     }
     setBusy(false);
   }
-
-  const size = small
-    ? "px-3.5 py-1.5 text-xs"
-    : wide
-      ? "w-full py-3.5 px-6 text-base"
-      : "px-6 py-2.5 text-sm min-w-48";
 
   return (
     <button
       onClick={toggle}
       disabled={busy}
-      className={`${size} rounded-full font-semibold transition-colors ${
+      className={`${small ? "px-3.5 py-1.5 text-xs" : "px-6 py-2.5 text-sm min-w-48"} rounded-full font-semibold transition-colors ${
         following
           ? "bg-card2 border border-line2 text-fg"
           : "bg-accent text-white"
