@@ -1,9 +1,10 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
-import { IconUser } from "./Icons";
+import { IconLogout, IconUser } from "./Icons";
 
 /** Guest profile: change picture and name. */
 export default function GuestProfileEditor({
@@ -18,7 +19,21 @@ export default function GuestProfileEditor({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [loggingOut, setLoggingOut] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const router = useRouter();
+
+  async function logout() {
+    if (loggingOut) return;
+    setLoggingOut(true);
+    try {
+      await fetch("/api/guest/logout", { method: "POST" });
+      router.push("/login");
+      router.refresh();
+    } finally {
+      setLoggingOut(false);
+    }
+  }
 
   async function uploadAvatar(file: File) {
     setUploading(true);
@@ -134,6 +149,21 @@ export default function GuestProfileEditor({
             {saving ? "..." : saved ? "Saved" : "Save"}
           </button>
         </div>
+      </div>
+
+      {/* Log out */}
+      <div className="border-t border-line pt-4">
+        <button
+          onClick={logout}
+          disabled={loggingOut}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-line2 bg-card text-sm font-semibold text-red-500 hover:bg-card2 transition-colors disabled:opacity-50"
+        >
+          <IconLogout className="w-4.5 h-4.5" />
+          {loggingOut ? "Logging out…" : "Log out"}
+        </button>
+        <p className="text-xs text-muted text-center mt-2">
+          You can log back in anytime with your email and password.
+        </p>
       </div>
     </div>
   );

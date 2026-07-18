@@ -29,12 +29,12 @@ export default function GuestChatList({ chats }: { chats: GuestChatRow[] }) {
   }
 
   return (
-    <ul className="divide-y divide-line">
+    <ul className="p-3 space-y-2.5">
       {chats.map((chat) => (
         <li key={chat.id}>
           <button
             onClick={() => open(chat.id)}
-            className="w-full flex items-center gap-3 px-4 py-3.5 text-left active:bg-card2 hover:bg-card2/60 transition-colors"
+            className="w-full flex items-center gap-3 px-4 py-3.5 text-left rounded-2xl border border-line2 bg-card shadow-sm active:bg-card2 hover:bg-card2/60 hover:border-accent/40 transition-colors"
           >
             <div className="relative shrink-0">
               {chat.ownerAvatar ? (
