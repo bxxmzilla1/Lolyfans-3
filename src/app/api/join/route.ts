@@ -43,10 +43,15 @@ async function sendWelcomeMessage(chatId: string, ownerId: string) {
   if (!message) return;
 
   await Promise.all([
-    // The owner "sent" it, so it's already read on their side.
+    // Mark as already "answered" so Orion won't fire its own opener on top
+    // of this welcome — it waits for the fan's first reply instead.
     db
       .from("chats")
-      .update({ last_message_at: message.created_at, last_read_at: message.created_at })
+      .update({
+        last_message_at: message.created_at,
+        last_read_at: message.created_at,
+        bot_replied_at: message.created_at,
+      })
       .eq("id", chatId),
     broadcast(`chat:${chatId}`, "new-message", message),
     broadcast(`inbox:${ownerId}`, "new-message", { chatId }),
@@ -153,10 +158,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not create chat" }, { status: 500 });
   }
 
-  // Bookkeeping + notifications after the response is sent: bump the usage
-  // counter, auto-follow the inviter so their posts fill the new fan's home
-  // feed, tell listeners (web inbox, Orion) a new chat just appeared, and
-  // drop the creator's welcome message into the fresh chat.
+  // Bookkeeping after the response is sent. Welcome goes out BEFORE the
+  // new-chat broadcast so Orion never sees an empty chat and double-texts
+  // with its own opener on top of the welcome.
   after(async () => {
     await Promise.all([
       db
@@ -169,9 +173,9 @@ export async function POST(req: NextRequest) {
           { chat_id: chat.id, owner_id: invite!.owner_id },
           { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
         ),
-      broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id }),
-      sendWelcomeMessage(chat.id, invite!.owner_id),
     ]);
+    await sendWelcomeMessage(chat.id, invite!.owner_id);
+    await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id });
   });
 
   const res = NextResponse.json({ ok: true, chatId: chat.id });
