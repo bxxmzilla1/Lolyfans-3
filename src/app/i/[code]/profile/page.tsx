@@ -163,7 +163,7 @@ export default async function InviteProfilePreviewPage({
           )}
           <Link
             href={`/i/${code}/signup`}
-            className="px-10 py-2.5 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity"
+            className="w-full py-3.5 rounded-full bg-accent text-white text-base font-semibold text-center active:opacity-80 transition-opacity"
           >
             Follow
           </Link>
@@ -235,7 +235,7 @@ export default async function InviteProfilePreviewPage({
           <p className="text-sm font-semibold">Follow this creator to see more</p>
           <Link
             href={`/i/${code}/signup`}
-            className="inline-block px-10 py-2.5 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity"
+            className="block w-full py-3.5 rounded-full bg-accent text-white text-base font-semibold text-center active:opacity-80 transition-opacity"
           >
             Follow
           </Link>
