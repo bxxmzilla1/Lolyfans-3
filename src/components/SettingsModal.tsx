@@ -90,8 +90,8 @@ function ProfileSection() {
   async function uploadBanner(original: File) {
     setUploading("banner");
     try {
-      // Banners are wide — keep more detail than avatars.
-      const file = await resizeImage(original, 1600);
+      // Downscale to 480p so the profile banner loads quickly.
+      const file = await resizeImage(original, 480);
       const res = await fetch("/api/upload", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
