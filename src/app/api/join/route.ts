@@ -2,35 +2,41 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createToken, GUEST_COOKIE, cookieOptions } from "@/lib/session";
 import { getRequestCountry, ipFromHeaders, inviteUsable, countryAllowed } from "@/lib/invites";
+import { checkSmsVerification, isE164 } from "@/lib/twilio";
+import { hashPassword, verifyPassword } from "@/lib/password";
 import { broadcast } from "@/lib/realtime";
 
+/**
+ * Creates (or resumes) a guest chat after phone sign-up: the guest registered
+ * with a phone number + password and proved ownership of the number with the
+ * SMS code Twilio sent them.
+ */
 export async function POST(req: NextRequest) {
-  const { code, name } = await req.json();
-  // Visitors no longer type a name — give them an auto-generated nickname.
-  const guestName =
-    String(name || "").trim().slice(0, 40) ||
-    `Guest ${Math.floor(1000 + Math.random() * 9000)}`;
+  const { code, phone, password, otp } = await req.json();
+
   if (!code) {
     return NextResponse.json({ error: "Invalid link" }, { status: 400 });
+  }
+  const phoneStr = String(phone || "");
+  if (!isE164(phoneStr)) {
+    return NextResponse.json({ error: "Enter a valid phone number" }, { status: 400 });
+  }
+  const passwordStr = String(password || "");
+  if (passwordStr.length < 6) {
+    return NextResponse.json(
+      { error: "Password must be at least 6 characters" },
+      { status: 400 }
+    );
+  }
+  const otpStr = String(otp || "").trim();
+  if (!/^\d{4,10}$/.test(otpStr)) {
+    return NextResponse.json({ error: "Enter the verification code" }, { status: 400 });
   }
 
   const db = supabaseAdmin();
   const ip = ipFromHeaders(req.headers);
 
-  // Invite lookup and the returning-device check run at the same time.
-  const [{ data: invite }, previousRes] = await Promise.all([
-    db.from("invites").select("*").eq("code", code).single(),
-    ip
-      ? db
-          .from("chats")
-          .select("id, guest_name")
-          .eq("guest_ip", ip)
-          .order("last_message_at", { ascending: false })
-          .limit(1)
-          .maybeSingle()
-      : Promise.resolve(null),
-  ]);
-
+  const { data: invite } = await db.from("invites").select("*").eq("code", code).single();
   const usable = inviteUsable(invite);
   if (!usable.ok) {
     return NextResponse.json({ error: usable.reason }, { status: 403 });
@@ -44,19 +50,42 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // This device already has a chat (matched by IP)? Put them back into it
-  // instead of creating a duplicate.
-  const previous = previousRes?.data;
-  if (previous) {
-    const res = NextResponse.json({ ok: true, chatId: previous.id });
+  // The phone must be verified through Twilio before anything is created.
+  const otpError = await checkSmsVerification(phoneStr, otpStr);
+  if (otpError) {
+    return NextResponse.json({ error: otpError }, { status: 400 });
+  }
+
+  // This phone already has an account with this creator? Check the password
+  // and resume the existing chat instead of creating a duplicate.
+  const { data: existing } = await db
+    .from("chats")
+    .select("id, guest_name, guest_password")
+    .eq("owner_id", invite!.owner_id)
+    .eq("guest_phone", phoneStr)
+    .maybeSingle();
+
+  if (existing) {
+    if (!verifyPassword(passwordStr, existing.guest_password || "")) {
+      return NextResponse.json(
+        { error: "This phone number is already registered, but the password is wrong" },
+        { status: 403 }
+      );
+    }
+    // Keep the device binding fresh so IP-based resume keeps working.
+    after(async () => {
+      if (ip) await db.from("chats").update({ guest_ip: ip }).eq("id", existing.id);
+    });
+    const res = NextResponse.json({ ok: true, chatId: existing.id });
     res.cookies.set(
       GUEST_COOKIE,
-      createToken({ chatId: previous.id, name: previous.guest_name }),
+      createToken({ chatId: existing.id, name: existing.guest_name }),
       cookieOptions
     );
     return res;
   }
 
+  const guestName = `Guest ${Math.floor(1000 + Math.random() * 9000)}`;
   const { data: chat, error } = await db
     .from("chats")
     .insert({
@@ -65,6 +94,8 @@ export async function POST(req: NextRequest) {
       guest_name: guestName,
       guest_country: country,
       guest_ip: ip,
+      guest_phone: phoneStr,
+      guest_password: hashPassword(passwordStr),
     })
     .select()
     .single();

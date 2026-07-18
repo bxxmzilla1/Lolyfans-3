@@ -33,6 +33,9 @@ Copy `.env.example` to `.env.local` and fill in:
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon key (auth, realtime, signed uploads) |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server only) |
 | `AUTH_SECRET` | Long random string used to sign guest session cookies |
+| `TWILIO_ACCOUNT_SID` | Twilio Account SID (guest phone sign-up SMS) |
+| `TWILIO_AUTH_TOKEN` | Twilio Auth Token |
+| `TWILIO_VERIFY_SERVICE_SID` | Twilio Verify Service SID (create under Verify > Services, starts with `VA`) |
 
 ### 3. Run locally
 

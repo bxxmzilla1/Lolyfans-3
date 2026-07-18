@@ -103,7 +103,7 @@ export default async function InvitePage({
   // real location (from ipinfo). Falls back to a default line.
   const description = (
     descriptionTemplate ||
-    `${ownerName} invited you to a private chat. Start chatting — no sign-up needed.`
+    `${ownerName} invited you to a private chat. Sign up with your phone number to start chatting.`
   )
     .replace(/COUNTRY/g, geo.country || "your country")
     .replace(/CITY/g, geo.city || "your city");
@@ -137,6 +137,7 @@ export default async function InvitePage({
             buttonText={buttonText}
             inviterName={ownerName}
             avatarUrl={avatarPath ? mediaUrl(avatarPath) : null}
+            defaultCountry={country}
           />
         )}
       </div>
