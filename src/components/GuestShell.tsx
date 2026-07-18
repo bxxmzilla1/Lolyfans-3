@@ -175,25 +175,6 @@ export default function GuestShell() {
     });
   }, []);
 
-  /** Optimistically zero every unread badge and persist that to Supabase. */
-  const clearAllUnread = useCallback(() => {
-    setData((prev) => {
-      if (!prev || prev.unread === 0) return prev;
-      const next = {
-        ...prev,
-        unread: 0,
-        chats: prev.chats.map((c) => (c.unread ? { ...c, unread: 0 } : c)),
-      };
-      cached = next;
-      return next;
-    });
-    fetch("/api/guest/read", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ all: true }),
-    }).catch(() => {});
-  }, []);
-
   /** Optimistically clear one chat's badge and persist that to Supabase. */
   const clearChatUnread = useCallback((chatId: string) => {
     setData((prev) => {
@@ -217,15 +198,6 @@ export default function GuestShell() {
       body: JSON.stringify({ chatId }),
     }).catch(() => {});
   }, []);
-
-  // Opening the Chats tab acknowledges the footer badge — clear every unread
-  // in the DB so it stays gone after leaving the tab. Only runs on the tab
-  // switch itself (not when a new message arrives while already on Chats).
-  useEffect(() => {
-    if (tab !== "chats") return;
-    clearAllUnread();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab]);
 
   // Every message send broadcasts a realtime signal — reload the shell data
   // the moment one lands in any of this guest's chats, so the footer badge
@@ -276,7 +248,6 @@ export default function GuestShell() {
         hasShell: true,
         unread: data?.unread ?? 0,
         refresh,
-        clearAllUnread,
         clearChatUnread,
       }}
     >
