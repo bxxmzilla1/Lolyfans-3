@@ -10,7 +10,7 @@ import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
-import { IconMapPin, IconVerified } from "@/components/Icons";
+import { IconChat, IconHeart, IconMapPin, IconUser, IconVerified } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +67,12 @@ export default async function CreatorProfilePage({
   const hasChatWithOwner = chats.some((c) => c.owner_id === ownerId);
   const followers = profile.followerBase + (realFollowers ?? 0);
 
+  // A fan who unsubscribed sees the profile locked again: blurred posts, no
+  // Message button — exactly like before their first subscribe. Their existing
+  // conversation still works from the Chats tab; only this page gates on the
+  // subscription.
+  const locked = chats.length > 0 && !following;
+
   const feedPosts: FeedPost[] = (posts ?? []).map((post) => ({
     id: post.id,
     ownerId,
@@ -113,25 +119,102 @@ export default async function CreatorProfilePage({
                 )}
               </div>
             )}
-            <div className="flex items-center gap-2">
-              {chats.length > 0 && (
-                <FollowButton ownerId={ownerId} initialFollowing={following} />
-              )}
-              {hasChatWithOwner && (
-                <Link
-                  href="/chat"
-                  className="px-6 py-2.5 rounded-full bg-card2 border border-line2 text-sm font-semibold"
-                >
-                  Message
-                </Link>
-              )}
-            </div>
+            {locked ? (
+              <>
+                <FollowButton ownerId={ownerId} initialFollowing={false} wide />
+                <p className="text-xs text-muted -mt-1">
+                  You must subscribe to this profile to send a message
+                </p>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                {chats.length > 0 && (
+                  <FollowButton ownerId={ownerId} initialFollowing={following} />
+                )}
+                {hasChatWithOwner && (
+                  <Link
+                    href="/chat"
+                    className="px-6 py-2.5 rounded-full bg-card2 border border-line2 text-sm font-semibold"
+                  >
+                    Message
+                  </Link>
+                )}
+              </div>
+            )}
           </div>
         </section>
 
-        <div className="border-t border-line">
-          <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
-        </div>
+        {locked ? (
+          /* Locked feed: blurred media, visible captions and counts, nothing
+             clickable — same treatment as the invite-link preview. */
+          <div className="border-t border-line divide-y divide-line pointer-events-none select-none">
+            {feedPosts.map((post) => (
+              <article key={post.id}>
+                <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+                  {profile.avatarPath ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={mediaUrl(profile.avatarPath)}
+                      alt={profile.name}
+                      className="w-9 h-9 rounded-full object-cover bg-bg"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-card2 flex items-center justify-center">
+                      <IconUser className="w-4.5 h-4.5 text-muted" />
+                    </div>
+                  )}
+                  <span className="font-semibold text-sm flex items-center gap-1 min-w-0 truncate">
+                    {profile.name}
+                    {profile.verified && (
+                      <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />
+                    )}
+                  </span>
+                </div>
+
+                {post.caption && (
+                  <p className="px-3.5 pb-2.5 text-sm whitespace-pre-wrap break-words">
+                    {post.caption}
+                  </p>
+                )}
+
+                <div className="relative overflow-hidden">
+                  {post.type === "image" ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={post.url}
+                      alt=""
+                      loading="lazy"
+                      className="w-full h-auto max-h-[70vh] object-contain blur-2xl scale-105"
+                    />
+                  ) : (
+                    <video
+                      src={post.url}
+                      preload="metadata"
+                      muted
+                      playsInline
+                      className="w-full h-auto max-h-[70vh] object-contain blur-2xl scale-105"
+                    />
+                  )}
+                </div>
+
+                <div className="px-3.5 py-2.5 flex items-center gap-4 text-sm font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    <IconHeart className="w-6 h-6" />
+                    {formatCount(post.likes)}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <IconChat className="w-6 h-6" />
+                    {formatCount(post.comments)}
+                  </span>
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="border-t border-line">
+            <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
+          </div>
+        )}
     </GuestPage>
   );
 }
