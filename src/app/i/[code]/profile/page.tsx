@@ -121,39 +121,43 @@ export default async function InviteProfilePreviewPage({
             avatarPath={profile.avatarPath}
             bannerPath={profile.bannerPath}
           />
-          <div className="px-4 pt-3 flex flex-col items-center gap-3">
-            <p className="font-bold text-lg flex items-center gap-1">
-              {profile.name}
-              {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
-            </p>
-            <p className="text-xs text-muted -mt-2">
-              {formatCount(followers)} {followers === 1 ? "subscriber" : "subscribers"}
-              {" · "}
-              {formatCount(posts)} {posts === 1 ? "post" : "posts"}
-            </p>
-            {(profile.bio || (profile.showLocation && location)) && (
-              <div className="w-full text-center space-y-1.5">
-                {profile.bio && (
-                  <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
-                )}
-                {profile.showLocation && location && (
-                  <p className="flex items-center justify-center gap-1 text-xs text-muted">
-                    <IconMapPin className="w-3.5 h-3.5 text-accent shrink-0" />
-                    {location}
-                  </p>
-                )}
-              </div>
+          {/* Identity block: everything left-aligned like OnlyFans */}
+          <div className="px-4 pt-3 space-y-2.5">
+            <div>
+              <p className="font-bold text-xl flex items-center gap-1.5">
+                {profile.name}
+                {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
+              </p>
+              <p className="text-sm text-muted">
+                {formatCount(followers)} {followers === 1 ? "subscriber" : "subscribers"}
+                {" · "}
+                {formatCount(posts)} {posts === 1 ? "post" : "posts"}
+              </p>
+            </div>
+
+            {profile.bio && (
+              <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
             )}
-            <Link
-              href={`/i/${code}/signup`}
-              className="w-full py-3.5 px-6 rounded-full bg-accent text-white text-base font-semibold flex items-center justify-between active:opacity-80 transition-opacity"
-            >
-              <span>SUBSCRIBE</span>
-              <span>FREE</span>
-            </Link>
-            <p className="text-xs text-muted -mt-1">
-              You must subscribe to this profile to send a message
-            </p>
+            {profile.showLocation && location && (
+              <p className="flex items-center gap-1 text-xs text-muted">
+                <IconMapPin className="w-3.5 h-3.5 text-accent shrink-0" />
+                {location}
+              </p>
+            )}
+
+            {/* Full-width subscription bar under the bio, like OnlyFans */}
+            <div className="pt-1 space-y-2">
+              <Link
+                href={`/i/${code}/signup`}
+                className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold flex items-center justify-between active:opacity-80 transition-opacity"
+              >
+                <span>SUBSCRIBE</span>
+                <span>FREE</span>
+              </Link>
+              <p className="text-xs text-muted text-center">
+                You must subscribe to this profile to send a message
+              </p>
+            </div>
           </div>
         </section>
 

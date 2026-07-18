@@ -12,10 +12,13 @@ export default function FollowButton({
   ownerId,
   initialFollowing,
   small,
+  full,
 }: {
   ownerId: string;
   initialFollowing: boolean;
   small?: boolean;
+  /** Full-width bar like the OnlyFans subscription button. */
+  full?: boolean;
 }) {
   const [following, setFollowing] = useState(initialFollowing);
   const [busy, setBusy] = useState(false);
@@ -44,7 +47,13 @@ export default function FollowButton({
     <button
       onClick={toggle}
       disabled={busy}
-      className={`${small ? "px-3.5 py-1.5 text-xs" : "px-6 py-2.5 text-sm min-w-48"} rounded-full font-semibold transition-colors ${
+      className={`${
+        small
+          ? "px-3.5 py-1.5 text-xs"
+          : full
+            ? "w-full px-5 py-3 text-sm"
+            : "px-6 py-2.5 text-sm min-w-48"
+      } rounded-full font-semibold transition-colors ${
         following
           ? "bg-card2 border border-line2 text-fg"
           : "bg-accent text-white"

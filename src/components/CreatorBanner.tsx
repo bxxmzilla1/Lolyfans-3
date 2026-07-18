@@ -2,17 +2,19 @@ import { mediaUrl } from "@/lib/utils";
 import { IconUser } from "./Icons";
 
 /**
- * Profile banner with the avatar overlapping the bottom edge — same layout
- * language as modern creator profiles (full-bleed cover, white-ringed photo).
+ * Profile banner with the avatar overlapping the bottom edge, OnlyFans-style:
+ * avatar on the left, optional action buttons on the right of the same row.
  */
 export default function CreatorBanner({
   name,
   avatarPath,
   bannerPath,
+  actions,
 }: {
   name: string;
   avatarPath: string | null;
   bannerPath: string | null;
+  actions?: React.ReactNode;
 }) {
   return (
     <div className="relative">
@@ -37,8 +39,9 @@ export default function CreatorBanner({
         <div className="absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-black/25 to-transparent pointer-events-none" />
       </div>
 
-      {/* Avatar sits half on the banner, half on the page — white ring like the reference */}
-      <div className="flex justify-center -mt-12 relative z-10">
+      {/* Avatar sits half on the banner, half on the page — left-aligned like
+          OnlyFans, with any action buttons on the right of the same row */}
+      <div className="px-4 -mt-12 relative z-10 flex items-end justify-between gap-3">
         <div className="relative">
           <div className="rounded-full p-[3px] bg-bg shadow-sm">
             {avatarPath ? (
@@ -56,6 +59,7 @@ export default function CreatorBanner({
           </div>
           <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-bg bg-green-500" />
         </div>
+        {actions && <div className="pb-2 flex items-center gap-2">{actions}</div>}
       </div>
     </div>
   );
