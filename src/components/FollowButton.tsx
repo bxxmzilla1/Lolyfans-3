@@ -3,7 +3,11 @@
 import { useState } from "react";
 import { useGuestShell } from "./GuestShellContext";
 
-/** Follow/unfollow a creator; optimistic so it feels instant. */
+/**
+ * Subscribe/unsubscribe (follow under the hood) to a creator; optimistic so
+ * it feels instant. Full-size shows the OnlyFans-style split label —
+ * "Subscribe" left, "Free" right — and flips to "Subscribed" once active.
+ */
 export default function FollowButton({
   ownerId,
   initialFollowing,
@@ -46,7 +50,16 @@ export default function FollowButton({
           : "bg-accent text-white"
       }`}
     >
-      {following ? "Following" : "Follow"}
+      {following ? (
+        "Subscribed"
+      ) : small ? (
+        "Subscribe"
+      ) : (
+        <span className="flex items-center justify-between gap-8">
+          <span>Subscribe</span>
+          <span>Free</span>
+        </span>
+      )}
     </button>
   );
 }

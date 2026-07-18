@@ -114,7 +114,7 @@ function HomePanel({ data }: { data: Bootstrap["home"] }) {
         <div className="px-6 py-16 text-center">
           <p className="font-semibold mb-1">No posts yet</p>
           <p className="text-sm text-muted">
-            Follow creators to see their latest photos and videos here.
+            Subscribe to creators to see their latest photos and videos here.
           </p>
         </div>
       ) : (

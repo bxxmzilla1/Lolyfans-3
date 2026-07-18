@@ -96,7 +96,7 @@ export default async function CreatorProfilePage({
               {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
             </p>
             <p className="text-xs text-muted -mt-2">
-              {formatCount(followers)} {followers === 1 ? "follower" : "followers"}
+              {formatCount(followers)} {followers === 1 ? "subscriber" : "subscribers"}
               {" · "}
               {feedPosts.length} {feedPosts.length === 1 ? "post" : "posts"}
             </p>

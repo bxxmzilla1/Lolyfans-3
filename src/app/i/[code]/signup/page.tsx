@@ -72,7 +72,7 @@ export default async function InviteSignupPage({
 
         <div className="text-center -mt-2">
           <p className="text-muted text-sm">
-            Sign up with your email to follow {ownerName} and start chatting.
+            Sign up with your email to subscribe to {ownerName} and start chatting.
           </p>
         </div>
 

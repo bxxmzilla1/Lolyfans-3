@@ -134,7 +134,7 @@ export default async function InviteProfilePreviewPage({
               {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
             </p>
             <p className="text-xs text-muted -mt-2">
-              {formatCount(followers)} {followers === 1 ? "follower" : "followers"}
+              {formatCount(followers)} {followers === 1 ? "subscriber" : "subscribers"}
               {" · "}
               {formatCount(posts)} {posts === 1 ? "post" : "posts"}
             </p>
@@ -153,12 +153,13 @@ export default async function InviteProfilePreviewPage({
             )}
             <Link
               href={`/i/${code}/signup`}
-              className="w-full py-3.5 rounded-full bg-accent text-white text-base font-semibold text-center active:opacity-80 transition-opacity"
+              className="w-full py-3.5 px-6 rounded-full bg-accent text-white text-base font-semibold flex items-center justify-between active:opacity-80 transition-opacity"
             >
-              Follow
+              <span>Subscribe</span>
+              <span>Free</span>
             </Link>
             <p className="text-xs text-muted -mt-1">
-              You must follow this profile to send a message
+              You must subscribe to this profile to send a message
             </p>
           </div>
         </section>
@@ -221,14 +222,15 @@ export default async function InviteProfilePreviewPage({
           </div>
         )}
 
-        {/* Follow gate under the locked feed */}
+        {/* Subscribe gate under the locked feed */}
         <div className="border-t border-line px-4 py-6 text-center space-y-3">
-          <p className="text-sm font-semibold">Follow this creator to see more</p>
+          <p className="text-sm font-semibold">Subscribe to this creator to see more</p>
           <Link
             href={`/i/${code}/signup`}
-            className="block w-full py-3.5 rounded-full bg-accent text-white text-base font-semibold text-center active:opacity-80 transition-opacity"
+            className="w-full py-3.5 px-6 rounded-full bg-accent text-white text-base font-semibold flex items-center justify-between active:opacity-80 transition-opacity"
           >
-            Follow
+            <span>Subscribe</span>
+            <span>Free</span>
           </Link>
         </div>
       </main>
