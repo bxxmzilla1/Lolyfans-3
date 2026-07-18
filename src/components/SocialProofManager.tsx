@@ -38,6 +38,7 @@ export default function SocialProofManager() {
   const [genCount, setGenCount] = useState("10");
   const [genPrompt, setGenPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
+  const [genProgress, setGenProgress] = useState(0);
   const [error, setError] = useState("");
   const [clearAll, setClearAll] = useState(false);
 
@@ -91,28 +92,39 @@ export default function SocialProofManager() {
     if (!selected || generating) return;
     setGenerating(true);
     setError("");
+    setGenProgress(0);
     try {
-      const res = await fetch("/api/posts/comments", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          postId: selected.id,
-          count: Math.min(50, Math.max(1, Number(genCount) || 10)),
-          instructions: genPrompt,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setError(json.error || "Generation failed");
-        return;
+      // Big batches are generated in chunks of 50 so each Grok request stays
+      // fast and never gets cut off mid-JSON.
+      const total = Math.min(300, Math.max(1, Number(genCount) || 10));
+      let done = 0;
+      while (done < total) {
+        const batch = Math.min(50, total - done);
+        const res = await fetch("/api/posts/comments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            postId: selected.id,
+            count: batch,
+            instructions: genPrompt,
+          }),
+        });
+        const json = await res.json();
+        if (!res.ok) {
+          setError(json.error || "Generation failed");
+          return;
+        }
+        setComments((prev) =>
+          [...(prev ?? []), ...(json.comments ?? [])].sort(
+            (a, b) => +new Date(a.created_at) - +new Date(b.created_at)
+          )
+        );
+        done += batch;
+        setGenProgress(done);
       }
-      setComments((prev) =>
-        [...(prev ?? []), ...(json.comments ?? [])].sort(
-          (a, b) => +new Date(a.created_at) - +new Date(b.created_at)
-        )
-      );
     } finally {
       setGenerating(false);
+      setGenProgress(0);
     }
   }
 
@@ -239,7 +251,7 @@ export default function SocialProofManager() {
                 <input
                   type="number"
                   min={1}
-                  max={50}
+                  max={300}
                   value={genCount}
                   onChange={(e) => setGenCount(e.target.value)}
                   className={`${inputClass} w-24`}
@@ -259,7 +271,9 @@ export default function SocialProofManager() {
                 disabled={generating}
                 className="w-full py-2.5 rounded-xl bg-accent text-white text-sm font-semibold disabled:opacity-50"
               >
-                {generating ? "Generating…" : "Generate comments"}
+                {generating
+                  ? `Generating… ${genProgress}/${Math.min(300, Math.max(1, Number(genCount) || 10))}`
+                  : "Generate comments"}
               </button>
             </div>
           </div>
