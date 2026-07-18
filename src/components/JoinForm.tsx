@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { IconCheck, IconUser } from "./Icons";
+import { IconCheck, IconEye, IconEyeOff, IconUser } from "./Icons";
 import { countryFlag, countryName } from "./CountryPicker";
 import { DIAL_CODES } from "@/lib/dialCodes";
 
@@ -175,6 +175,7 @@ export default function JoinForm({
   );
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [otp, setOtp] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -317,15 +318,29 @@ export default function JoinForm({
             placeholder="Phone number"
             className={inputClass}
           />
-          <input
-            type="password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Create a password"
-            minLength={6}
-            className={inputClass}
-          />
+          <div className="relative">
+            <input
+              type={showPassword ? "text" : "password"}
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Create a password"
+              minLength={6}
+              className={`${inputClass} pr-12`}
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword((s) => !s)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-fg transition-colors p-1"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+            >
+              {showPassword ? (
+                <IconEyeOff className="w-5 h-5" />
+              ) : (
+                <IconEye className="w-5 h-5" />
+              )}
+            </button>
+          </div>
           {error && <p className="text-red-400 text-sm text-center">{error}</p>}
           <button
             type="submit"
