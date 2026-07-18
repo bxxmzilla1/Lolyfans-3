@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles, guestUnreadCounts } from "@/lib/guest";
-import GuestNav from "@/components/GuestNav";
+import GuestPage from "@/components/GuestPage";
 import GuestChatList, { type GuestChatRow } from "@/components/GuestChatList";
 
 export const dynamic = "force-dynamic";
@@ -53,14 +53,8 @@ export default async function GuestChatsPage() {
   });
 
   return (
-    <div className="min-h-dvh pb-[calc(88px+env(safe-area-inset-bottom))] lg:pb-8 lg:pl-60">
-      <header className="sticky top-0 z-30 border-b border-line2 bg-card/80 backdrop-blur-lg px-4 py-3">
-        <h1 className="max-w-lg mx-auto font-bold text-lg">Chats</h1>
-      </header>
-      <main className="max-w-lg mx-auto">
-        <GuestChatList chats={rows} />
-      </main>
-      <GuestNav />
-    </div>
+    <GuestPage title="Chats">
+      <GuestChatList chats={rows} />
+    </GuestPage>
   );
 }

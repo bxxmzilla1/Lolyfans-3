@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
 import { formatCount, mediaUrl } from "@/lib/utils";
-import GuestNav from "@/components/GuestNav";
+import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import { IconUser, IconVerified } from "@/components/Icons";
@@ -80,15 +80,14 @@ export default async function CreatorProfilePage({
   }));
 
   return (
-    <div className="min-h-dvh pb-[calc(88px+env(safe-area-inset-bottom))] lg:pb-8 lg:pl-60">
-      <header className="sticky top-0 z-30 border-b border-line2 bg-card/80 backdrop-blur-lg px-4 py-3">
-        <h1 className="max-w-lg mx-auto font-bold text-lg flex items-center gap-1 justify-center">
+    <GuestPage
+      title={
+        <>
           {profile.name}
           {profile.verified && <IconVerified className="w-4 h-4 text-sky-500" />}
-        </h1>
-      </header>
-
-      <main className="max-w-lg mx-auto">
+        </>
+      }
+    >
         <section className="px-4 pt-6 pb-4 flex flex-col items-center gap-3">
           <div className="relative">
             <div className="ig-ring">
@@ -134,9 +133,6 @@ export default async function CreatorProfilePage({
         <div className="border-t border-line">
           <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
         </div>
-      </main>
-
-      <GuestNav />
-    </div>
+    </GuestPage>
   );
 }
