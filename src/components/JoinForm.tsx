@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { IconCheck, IconUser } from "./Icons";
 import { countryFlag, countryName } from "./CountryPicker";
@@ -25,6 +25,106 @@ const DIAL_PREFERRED: Record<string, string> = {
   "1": "US", "7": "RU", "44": "GB", "47": "NO", "61": "AU", "212": "MA",
   "262": "RE", "358": "FI", "590": "GP", "599": "CW",
 };
+
+// Searchable country picker: type the country name letter by letter, or a
+// dial code (e.g. "1" lists USA + Canada, "63" the Philippines).
+function CountrySearchPicker({
+  value,
+  onChange,
+  inputClass,
+}: {
+  value: string;
+  onChange: (code: string) => void;
+  inputClass: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (open) searchRef.current?.focus();
+  }, [open]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return COUNTRY_OPTIONS;
+    const digits = q.replace(/^\+/, "");
+    if (/^\d+$/.test(digits)) {
+      return COUNTRY_OPTIONS.filter((c) => c.dial.startsWith(digits));
+    }
+    // Names that start with the query come first, then any other match.
+    const starts = COUNTRY_OPTIONS.filter((c) =>
+      c.name.toLowerCase().startsWith(q)
+    );
+    const rest = COUNTRY_OPTIONS.filter(
+      (c) =>
+        !c.name.toLowerCase().startsWith(q) &&
+        (c.name.toLowerCase().includes(q) || c.code.toLowerCase() === q)
+    );
+    return [...starts, ...rest];
+  }, [query]);
+
+  return (
+    <div className="relative w-full">
+      <button
+        type="button"
+        onClick={() => {
+          setQuery("");
+          setOpen((o) => !o);
+        }}
+        className={`${inputClass} flex items-center justify-between text-left`}
+        aria-label="Phone country"
+      >
+        <span>
+          {countryFlag(value)} {countryName(value)} (+{DIAL_CODES[value]})
+        </span>
+        <span className="text-muted text-xs">▾</span>
+      </button>
+
+      {open && (
+        <>
+          {/* Catches taps outside the panel to close it */}
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute z-50 top-full left-0 right-0 mt-2 bg-card border border-line rounded-xl shadow-xl overflow-hidden">
+            <div className="p-2 border-b border-line">
+              <input
+                ref={searchRef}
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search country or code (e.g. 1)"
+                className="w-full bg-card2 border border-line rounded-lg px-3 py-2 text-sm placeholder:text-muted focus:border-accent transition-colors"
+              />
+            </div>
+            <div className="max-h-56 overflow-y-auto">
+              {filtered.length === 0 && (
+                <p className="text-muted text-sm text-center py-4">
+                  No country found
+                </p>
+              )}
+              {filtered.map((c) => (
+                <button
+                  key={c.code}
+                  type="button"
+                  onClick={() => {
+                    onChange(c.code);
+                    setOpen(false);
+                  }}
+                  className={`w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm hover:bg-card2 transition-colors ${
+                    c.code === value ? "bg-card2" : ""
+                  }`}
+                >
+                  <span>{countryFlag(c.code)}</span>
+                  <span className="flex-1 truncate">{c.name}</span>
+                  <span className="text-muted">+{c.dial}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
 
 /**
  * Detects the country from a number typed with its dial code ("+63912…" or
@@ -191,18 +291,11 @@ export default function JoinForm({
     <>
       {step === "form" && (
         <form onSubmit={sendCode} className="w-full flex flex-col gap-3">
-          <select
+          <CountrySearchPicker
             value={country}
-            onChange={(e) => setCountry(e.target.value)}
-            className={inputClass}
-            aria-label="Phone country"
-          >
-            {COUNTRY_OPTIONS.map((c) => (
-              <option key={c.code} value={c.code}>
-                {countryFlag(c.code)} {c.name} (+{c.dial})
-              </option>
-            ))}
-          </select>
+            onChange={setCountry}
+            inputClass={inputClass}
+          />
           <input
             type="tel"
             inputMode="tel"
