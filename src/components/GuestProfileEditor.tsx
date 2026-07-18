@@ -1,11 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
-import { IconMoon, IconSun, IconUser } from "./Icons";
+import { IconUser } from "./Icons";
 
-/** Guest profile: change picture, name and light/dark theme. */
+/** Guest profile: change picture and name. */
 export default function GuestProfileEditor({
   initialName,
   initialAvatarPath,
@@ -18,29 +18,7 @@ export default function GuestProfileEditor({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [light, setLight] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    let savedTheme: string | null = null;
-    try {
-      savedTheme = localStorage.getItem("theme");
-    } catch {
-      // storage unavailable
-    }
-    setLight(savedTheme ? savedTheme === "light" : true);
-  }, []);
-
-  function toggleTheme() {
-    const next = !light;
-    setLight(next);
-    document.documentElement.classList.toggle("light", next);
-    try {
-      localStorage.setItem("theme", next ? "light" : "dark");
-    } catch {
-      // storage unavailable; theme still applies for this session
-    }
-  }
 
   async function uploadAvatar(file: File) {
     setUploading(true);
@@ -156,34 +134,6 @@ export default function GuestProfileEditor({
             {saving ? "..." : saved ? "Saved" : "Save"}
           </button>
         </div>
-      </div>
-
-      {/* Theme */}
-      <div className="flex items-center justify-between rounded-2xl border border-line2 bg-card px-4 py-3.5">
-        <div className="flex items-center gap-3">
-          {light ? (
-            <IconSun className="w-5 h-5 text-accent" />
-          ) : (
-            <IconMoon className="w-5 h-5 text-accent" />
-          )}
-          <div>
-            <p className="text-sm font-semibold">Appearance</p>
-            <p className="text-xs text-muted">{light ? "Light mode" : "Dark mode"}</p>
-          </div>
-        </div>
-        <button
-          onClick={toggleTheme}
-          aria-label={light ? "Switch to dark mode" : "Switch to light mode"}
-          className="relative w-14 h-8 rounded-full bg-card2 border border-line2 transition-colors"
-        >
-          <span
-            className={`absolute top-1 w-6 h-6 rounded-full bg-accent text-white flex items-center justify-center transition-all ${
-              light ? "left-1" : "left-7"
-            }`}
-          >
-            {light ? <IconSun className="w-3.5 h-3.5" /> : <IconMoon className="w-3.5 h-3.5" />}
-          </span>
-        </button>
       </div>
     </div>
   );

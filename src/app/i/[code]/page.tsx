@@ -8,7 +8,6 @@ import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invit
 import { visitorGeoParts } from "@/lib/geo";
 import { mediaUrl } from "@/lib/utils";
 import InviteProfile from "@/components/InviteProfile";
-import InviteTheme from "@/components/InviteTheme";
 
 export const dynamic = "force-dynamic";
 
@@ -77,7 +76,6 @@ export default async function InvitePage({
   // The profile of whoever created this link + their invite page settings
   let ownerName = "Lolyfans";
   let avatarPath: string | null = null;
-  let ownerTheme: "light" | "dark" = "dark";
   let verified = false;
   let descriptionTemplate = "";
   let buttonText = "";
@@ -86,14 +84,12 @@ export default async function InvitePage({
     const meta = (ownerUser?.user?.user_metadata ?? {}) as {
       display_name?: string;
       avatar_path?: string;
-      theme?: string;
       invite_verified?: boolean;
       invite_description?: string;
       invite_button_text?: string;
     };
     ownerName = meta.display_name || "Lolyfans";
     avatarPath = meta.avatar_path || null;
-    ownerTheme = meta.theme === "light" ? "light" : "dark";
     verified = !!meta.invite_verified;
     descriptionTemplate = meta.invite_description || "";
     buttonText = meta.invite_button_text || "";
@@ -110,15 +106,6 @@ export default async function InvitePage({
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
-      {/* Match the inviter's chosen theme on first paint (no flash) */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `document.documentElement.classList.${
-            ownerTheme === "light" ? "add" : "remove"
-          }('light')`,
-        }}
-      />
-      <InviteTheme theme={ownerTheme} />
       <div className="w-full max-w-sm flex flex-col items-center gap-6">
         <InviteProfile
           name={ownerName}

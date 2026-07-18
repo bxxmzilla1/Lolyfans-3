@@ -66,12 +66,6 @@ export default async function GuestChatPage() {
     // On mobile the footer menu stays visible, so the chat (and its message
     // box) is padded up to sit above it; on desktop the footer is hidden.
     <div className="h-dvh pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0">
-      {/* Guests default to light mode unless they flipped the header switch */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `try{if(localStorage.getItem('theme')!=='dark'){document.documentElement.classList.add('light');}}catch(e){document.documentElement.classList.add('light');}`,
-        }}
-      />
       <GuestPresence chatId={chatId} ownerId={chat.owner_id} />
       <OwnerEscapeHatch />
       <ChatView

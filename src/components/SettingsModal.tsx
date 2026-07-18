@@ -9,12 +9,21 @@ import InvitePageEditor from "./InvitePageEditor";
 import ApiKeyManager from "./ApiKeyManager";
 import SmsNotificationEditor from "./SmsNotificationEditor";
 import PostsManager from "./PostsManager";
+import SocialProofManager from "./SocialProofManager";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
-import ThemeToggle from "./ThemeToggle";
-import { IconChat, IconEdit, IconGrid, IconKey, IconLink, IconLogout, IconUser } from "./Icons";
+import {
+  IconChat,
+  IconEdit,
+  IconGrid,
+  IconHeart,
+  IconKey,
+  IconLink,
+  IconLogout,
+  IconUser,
+} from "./Icons";
 
-type Section = "profile" | "posts" | "links" | "editor" | "apikey" | "sms";
+type Section = "profile" | "posts" | "social" | "links" | "editor" | "apikey" | "sms";
 
 function ProfileSection() {
   const [displayName, setDisplayName] = useState("");
@@ -134,10 +143,6 @@ function ProfileSection() {
           {saved ? "Saved!" : saving ? "Saving…" : "Save profile"}
         </button>
       </div>
-
-      <div className="border-t border-line pt-6">
-        <ThemeToggle />
-      </div>
     </div>
   );
 }
@@ -214,6 +219,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconGrid className="w-3.5 h-3.5" /> Posts
         </button>
         <button
+          onClick={() => setSection("social")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "social"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconHeart className="w-3.5 h-3.5" /> Social proof
+        </button>
+        <button
           onClick={() => openGated("links")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "links"
@@ -286,6 +301,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <ProfileSection />
           ) : section === "posts" ? (
             <PostsManager />
+          ) : section === "social" ? (
+            <SocialProofManager />
           ) : section === "editor" ? (
             <InvitePageEditor />
           ) : section === "apikey" ? (

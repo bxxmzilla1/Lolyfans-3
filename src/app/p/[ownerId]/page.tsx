@@ -3,17 +3,18 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
+import { postStats } from "@/lib/posts";
 import { mediaUrl } from "@/lib/utils";
 import GuestFooter from "@/components/GuestFooter";
 import FollowButton from "@/components/FollowButton";
-import PostGrid, { type GridPost } from "@/components/PostGrid";
+import PostFeed, { formatCount, type FeedPost } from "@/components/PostFeed";
 import { IconUser, IconVerified } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** A creator's public profile: picture, name, follow button and post grid. */
+/** A creator's public profile: OnlyFans-style feed with likes and comments. */
 export default async function CreatorProfilePage({
   params,
 }: {
@@ -25,39 +26,57 @@ export default async function CreatorProfilePage({
   const requestHeaders = await headers();
   const db = supabaseAdmin();
 
-  const [profiles, chats, { data: posts }] = await Promise.all([
-    ownerProfiles([ownerId]),
-    guestChats(requestHeaders),
-    db
-      .from("posts")
-      .select("*")
-      .eq("owner_id", ownerId)
-      .order("created_at", { ascending: false })
-      .limit(90),
-  ]);
+  const [profiles, chats, { data: posts }, { count: realFollowers }] =
+    await Promise.all([
+      ownerProfiles([ownerId]),
+      guestChats(requestHeaders),
+      db
+        .from("posts")
+        .select("*")
+        .eq("owner_id", ownerId)
+        .order("created_at", { ascending: false })
+        .limit(90),
+      db
+        .from("follows")
+        .select("chat_id", { count: "exact", head: true })
+        .eq("owner_id", ownerId),
+    ]);
 
   const profile = profiles.get(ownerId);
   if (!profile) notFound();
 
+  const chatIds = chats.map((c) => c.id);
+  const postIds = (posts ?? []).map((p) => p.id);
+  const stats = await postStats(postIds, chatIds);
+
   // Is this guest already following the creator?
   let following = false;
-  if (chats.length) {
+  if (chatIds.length) {
     const { data: follow } = await db
       .from("follows")
       .select("owner_id")
-      .in("chat_id", chats.map((c) => c.id))
+      .in("chat_id", chatIds)
       .eq("owner_id", ownerId)
       .limit(1)
       .maybeSingle();
     following = !!follow;
   }
   const hasChatWithOwner = chats.some((c) => c.owner_id === ownerId);
+  const followers = profile.followerBase + (realFollowers ?? 0);
 
-  const gridPosts: GridPost[] = (posts ?? []).map((post) => ({
+  const feedPosts: FeedPost[] = (posts ?? []).map((post) => ({
     id: post.id,
+    ownerId,
+    ownerName: profile.name,
+    ownerAvatar: profile.avatarPath,
+    verified: profile.verified,
     url: mediaUrl(post.media_path),
     type: post.media_type as "image" | "video",
     caption: post.caption,
+    createdAt: post.created_at,
+    likes: (post.like_count ?? 0) + (stats.likes.get(post.id) ?? 0),
+    comments: stats.comments.get(post.id) ?? 0,
+    liked: stats.likedByMe.has(post.id),
   }));
 
   return (
@@ -93,7 +112,9 @@ export default async function CreatorProfilePage({
             {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
           </p>
           <p className="text-xs text-muted -mt-2">
-            {gridPosts.length} {gridPosts.length === 1 ? "post" : "posts"}
+            {formatCount(followers)} {followers === 1 ? "follower" : "followers"}
+            {" · "}
+            {feedPosts.length} {feedPosts.length === 1 ? "post" : "posts"}
           </p>
           <div className="flex items-center gap-2">
             {chats.length > 0 && (
@@ -111,7 +132,11 @@ export default async function CreatorProfilePage({
         </section>
 
         <div className="border-t border-line">
-          <PostGrid posts={gridPosts} />
+          <PostFeed
+            posts={feedPosts}
+            canInteract={chats.length > 0}
+            showOwnerHeader={false}
+          />
         </div>
       </main>
 

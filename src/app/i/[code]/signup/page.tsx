@@ -6,7 +6,6 @@ import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invit
 import { mediaUrl } from "@/lib/utils";
 import JoinForm from "@/components/JoinForm";
 import InviteProfile from "@/components/InviteProfile";
-import InviteTheme from "@/components/InviteTheme";
 
 export const dynamic = "force-dynamic";
 
@@ -57,24 +56,13 @@ export default async function InviteSignupPage({
   const meta = (ownerUser?.user?.user_metadata ?? {}) as {
     display_name?: string;
     avatar_path?: string;
-    theme?: string;
     invite_verified?: boolean;
     invite_button_text?: string;
   };
   const ownerName = meta.display_name || "Lolyfans";
-  const ownerTheme = meta.theme === "light" ? "light" : "dark";
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
-      {/* Match the inviter's chosen theme on first paint (no flash) */}
-      <script
-        dangerouslySetInnerHTML={{
-          __html: `document.documentElement.classList.${
-            ownerTheme === "light" ? "add" : "remove"
-          }('light')`,
-        }}
-      />
-      <InviteTheme theme={ownerTheme} />
       <div className="w-full max-w-sm flex flex-col items-center gap-6">
         <InviteProfile
           name={ownerName}

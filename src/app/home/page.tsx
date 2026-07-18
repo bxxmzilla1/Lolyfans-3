@@ -3,9 +3,11 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
-import { mediaUrl, formatTime } from "@/lib/utils";
+import { postStats } from "@/lib/posts";
+import { mediaUrl } from "@/lib/utils";
 import GuestFooter from "@/components/GuestFooter";
 import FollowButton from "@/components/FollowButton";
+import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import { IconUser, IconVerified } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +43,28 @@ export default async function GuestHomePage() {
   const suggestions = [...new Set(chats.map((c) => c.owner_id))].filter(
     (id) => !followed.includes(id)
   );
+
+  const stats = await postStats(
+    (posts ?? []).map((p) => p.id),
+    chatIds
+  );
+  const feedPosts: FeedPost[] = (posts ?? []).map((post) => {
+    const p = profiles.get(post.owner_id);
+    return {
+      id: post.id,
+      ownerId: post.owner_id,
+      ownerName: p?.name || "Lolyfans",
+      ownerAvatar: p?.avatarPath || null,
+      verified: !!p?.verified,
+      url: mediaUrl(post.media_path),
+      type: post.media_type as "image" | "video",
+      caption: post.caption,
+      createdAt: post.created_at,
+      likes: (post.like_count ?? 0) + (stats.likes.get(post.id) ?? 0),
+      comments: stats.comments.get(post.id) ?? 0,
+      liked: stats.likedByMe.has(post.id),
+    };
+  });
 
   return (
     <div className="min-h-dvh pb-24">
@@ -86,7 +110,7 @@ export default async function GuestHomePage() {
           </section>
         )}
 
-        {(posts ?? []).length === 0 ? (
+        {feedPosts.length === 0 ? (
           <div className="px-6 py-16 text-center">
             <p className="font-semibold mb-1">No posts yet</p>
             <p className="text-sm text-muted">
@@ -94,63 +118,7 @@ export default async function GuestHomePage() {
             </p>
           </div>
         ) : (
-          <div className="py-4 space-y-4">
-            {(posts ?? []).map((post) => {
-              const p = profiles.get(post.owner_id);
-              return (
-                <article
-                  key={post.id}
-                  className="mx-4 rounded-2xl border border-line2 bg-card overflow-hidden"
-                >
-                  <Link
-                    href={`/p/${post.owner_id}`}
-                    className="flex items-center gap-2.5 px-3.5 py-2.5"
-                  >
-                    {p?.avatarPath ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={mediaUrl(p.avatarPath)}
-                        alt={p?.name || ""}
-                        className="w-8 h-8 rounded-full object-cover bg-bg"
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-card2 flex items-center justify-center">
-                        <IconUser className="w-4 h-4 text-muted" />
-                      </div>
-                    )}
-                    <span className="font-semibold text-sm flex items-center gap-1 min-w-0 truncate">
-                      {p?.name}
-                      {p?.verified && <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />}
-                    </span>
-                    <span className="ml-auto text-[11px] text-muted shrink-0">
-                      {formatTime(post.created_at)}
-                    </span>
-                  </Link>
-                  {post.media_type === "video" ? (
-                    <video
-                      src={mediaUrl(post.media_path)}
-                      controls
-                      playsInline
-                      preload="metadata"
-                      className="w-full max-h-[70vh] bg-black"
-                    />
-                  ) : (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={mediaUrl(post.media_path)}
-                      alt={post.caption || "Post"}
-                      className="w-full max-h-[70vh] object-cover bg-card2"
-                    />
-                  )}
-                  {post.caption && (
-                    <p className="px-3.5 py-2.5 text-sm whitespace-pre-wrap break-words">
-                      {post.caption}
-                    </p>
-                  )}
-                </article>
-              );
-            })}
-          </div>
+          <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
         )}
       </main>
 

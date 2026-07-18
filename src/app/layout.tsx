@@ -24,7 +24,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#0c0a11",
+  themeColor: "#f5f3fb",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -37,17 +37,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} h-full antialiased`}>
-      <head>
-        <script
-          // Applies the saved theme before first paint so there's no flash of
-          // the wrong colors. Guest-facing pages (invite links and the guest
-          // chat) default to light so they never flash a black screen.
-          dangerouslySetInnerHTML={{
-            __html: `(function(){var p=location.pathname;var g=p.slice(0,3)==='/i/'||p.slice(0,3)==='/p/'||p.slice(0,5)==='/chat'||p==='/home'||p==='/chats'||p==='/profile';var t=null;try{t=localStorage.getItem('theme');}catch(e){}if(t==='light'||(g&&t!=='dark')){document.documentElement.classList.add('light');}})();`,
-          }}
-        />
-      </head>
+    // The whole app is light-mode only — the class is baked into the markup
+    // so there's never a flash of dark colors.
+    <html lang="en" className={`light ${geistSans.variable} h-full antialiased`}>
       <body className="min-h-full flex flex-col">
         <RegisterSW />
         {children}

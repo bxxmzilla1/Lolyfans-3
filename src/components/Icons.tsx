@@ -289,6 +289,22 @@ export function IconKey({ className }: IconProps) {
   );
 }
 
+export function IconHeart({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M19.5 12.6 12 20l-7.5-7.4A5 5 0 1 1 12 6.3a5 5 0 1 1 7.5 6.3z" />
+    </Svg>
+  );
+}
+
+export function IconHeartFilled({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor">
+      <path d="M19.5 12.6 12 20l-7.5-7.4A5 5 0 1 1 12 6.3a5 5 0 1 1 7.5 6.3z" />
+    </svg>
+  );
+}
+
 export function IconHome({ className }: IconProps) {
   return (
     <Svg className={className}>

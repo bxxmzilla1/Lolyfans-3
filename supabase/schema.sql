@@ -230,6 +230,32 @@ alter table follows enable row level security;
 alter table chats add column if not exists guest_avatar_path text;
 alter table chats add column if not exists guest_last_read_at timestamptz;
 
+-- Social proof: the owner can set a base like count per post (shown on top of
+-- real guest likes). The base follower count lives in the owner's metadata.
+alter table posts add column if not exists like_count int not null default 0;
+
+-- Real likes from guests (one per guest per post).
+create table if not exists post_likes (
+  post_id uuid not null references posts(id) on delete cascade,
+  chat_id uuid not null references chats(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (post_id, chat_id)
+);
+alter table post_likes enable row level security;
+
+-- Comments on posts: from guests (chat_id set) or seeded by the owner via
+-- the Social proof tab (chat_id null, generated author names).
+create table if not exists post_comments (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references posts(id) on delete cascade,
+  chat_id uuid references chats(id) on delete set null,
+  author_name text not null,
+  body text not null,
+  created_at timestamptz not null default now()
+);
+alter table post_comments enable row level security;
+create index if not exists post_comments_post_idx on post_comments (post_id, created_at);
+
 -- Public storage bucket for chat media and vault files
 insert into storage.buckets (id, name, public)
 values ('media', 'media', true)

@@ -37,6 +37,8 @@ export type OwnerProfile = {
   name: string;
   avatarPath: string | null;
   verified: boolean;
+  /** Owner-set base follower count (Social proof tab). */
+  followerBase: number;
 };
 
 /** Display profiles (name, picture, checkmark) for a set of creators. */
@@ -53,6 +55,7 @@ export async function ownerProfiles(
         display_name?: string;
         avatar_path?: string;
         invite_verified?: boolean;
+        social_followers?: number;
       };
       return [
         id,
@@ -60,6 +63,7 @@ export async function ownerProfiles(
           name: meta.display_name || "Lolyfans",
           avatarPath: meta.avatar_path || null,
           verified: !!meta.invite_verified,
+          followerBase: Number(meta.social_followers) || 0,
         },
       ] as const;
     })
