@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useGuestShell } from "./GuestShellContext";
 import { useInboxSignals, type ChatOwnerPair } from "@/lib/useInboxSignals";
+import GuestAppPresence from "./GuestAppPresence";
 import { IconChat, IconHome, IconUser } from "./Icons";
 
 /**
@@ -89,6 +90,9 @@ export default function GuestNav() {
 
   return (
     <>
+      {/* Fan counts as online anywhere in the app, not just inside a chat */}
+      <GuestAppPresence />
+
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-40 w-60 flex-col border-r border-line bg-card/70 backdrop-blur-lg">
         <div className="px-6 py-6">
           <p className="text-2xl font-bold ig-gradient-text tracking-tight">
