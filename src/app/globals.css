@@ -1,37 +1,37 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #0c0a11;
-  --card: #131019;
-  --card-2: #1a1524;
-  --line: #262033;
-  --line-strong: #3d3454;
-  --fg: #f5f3f9;
-  --muted: #8f8a9d;
-  --accent: #8b5cf6;
-  --accent-press: #7c3aed;
-  --ig-gradient: linear-gradient(135deg, #c084fc 0%, #8b5cf6 55%, #7c3aed 100%);
-  --glow-1: rgba(139, 92, 246, 0.14);
-  --glow-2: rgba(124, 58, 237, 0.1);
-  --glow-3: rgba(192, 132, 252, 0.06);
+  --bg: #0a1016;
+  --card: #10171f;
+  --card-2: #16212c;
+  --line: #202d3b;
+  --line-strong: #35485c;
+  --fg: #f2f6f9;
+  --muted: #8b98a5;
+  --accent: #00aff0;
+  --accent-press: #0098d4;
+  --ig-gradient: linear-gradient(135deg, #4fc9ff 0%, #00aff0 55%, #0086c9 100%);
+  --glow-1: rgba(0, 175, 240, 0.14);
+  --glow-2: rgba(0, 152, 212, 0.1);
+  --glow-3: rgba(79, 201, 255, 0.06);
   --track: rgba(255, 255, 255, 0.25);
   color-scheme: dark;
 }
 
 html.light {
-  --bg: #f5f3fb;
+  --bg: #f4f8fb;
   --card: #ffffff;
-  --card-2: #efeaf8;
-  --line: #e0d9ef;
-  --line-strong: #c3b7dd;
-  --fg: #1a1524;
-  --muted: #6b6577;
-  --accent: #7c3aed;
-  --accent-press: #6d28d9;
-  --ig-gradient: linear-gradient(135deg, #a855f7 0%, #8b5cf6 55%, #7c3aed 100%);
-  --glow-1: rgba(139, 92, 246, 0.12);
-  --glow-2: rgba(124, 58, 237, 0.08);
-  --glow-3: rgba(168, 85, 247, 0.06);
+  --card-2: #ecf3f8;
+  --line: #dbe5ec;
+  --line-strong: #b7c9d6;
+  --fg: #19212a;
+  --muted: #66757f;
+  --accent: #00aff0;
+  --accent-press: #009ad8;
+  --ig-gradient: linear-gradient(135deg, #4fc9ff 0%, #00aff0 55%, #0092d6 100%);
+  --glow-1: rgba(0, 175, 240, 0.12);
+  --glow-2: rgba(0, 154, 216, 0.08);
+  --glow-3: rgba(79, 201, 255, 0.06);
   --track: rgba(0, 0, 0, 0.14);
   color-scheme: light;
 }
@@ -69,7 +69,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Soft ambient violet glow behind everything */
+/* Soft ambient blue glow behind everything */
 body::before {
   content: "";
   position: fixed;
@@ -102,13 +102,13 @@ body::before {
 
 /* Chat bubble for own messages */
 .bubble-own {
-  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  background: linear-gradient(135deg, #0098d4, #29bdff);
   color: #fff;
 }
 
 /* Glowing app mark */
 .glow-accent {
-  box-shadow: 0 0 22px rgba(139, 92, 246, 0.45);
+  box-shadow: 0 0 22px rgba(0, 175, 240, 0.45);
 }
 
 ::-webkit-scrollbar {
@@ -205,7 +205,7 @@ textarea {
   height: 12px;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.7);
+  box-shadow: 0 0 8px rgba(0, 175, 240, 0.7);
 }
 .video-range::-moz-range-thumb {
   width: 12px;
@@ -213,7 +213,7 @@ textarea {
   border: none;
   border-radius: 50%;
   background: var(--accent);
-  box-shadow: 0 0 8px rgba(139, 92, 246, 0.7);
+  box-shadow: 0 0 8px rgba(0, 175, 240, 0.7);
 }
 
 /* Fullscreen video fills the screen */
