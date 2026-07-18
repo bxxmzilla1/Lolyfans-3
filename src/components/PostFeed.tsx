@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import Portal from "./Portal";
-import { formatTime } from "@/lib/utils";
-import { mediaUrl } from "@/lib/utils";
+import { formatCount, formatTime, mediaUrl } from "@/lib/utils";
 import { IconChat, IconHeart, IconHeartFilled, IconSend, IconUser, IconVerified } from "./Icons";
 
 export type FeedPost = {
@@ -29,12 +28,6 @@ type Comment = {
   body: string;
   createdAt: string;
 };
-
-export function formatCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
-  return String(n);
-}
 
 /** Bottom sheet with a post's comments and (for guests) a composer. */
 function CommentsSheet({
@@ -206,12 +199,10 @@ export default function PostFeed({
   }
 
   return (
-    <div className="py-4 space-y-4">
+    // Instagram-style: full-width posts separated by a hairline, no cards.
+    <div className="pb-4 divide-y divide-line">
       {posts.map((post) => (
-        <article
-          key={post.id}
-          className="mx-4 rounded-2xl border border-line2 bg-card overflow-hidden"
-        >
+        <article key={post.id}>
           {showOwnerHeader && (
             <Link
               href={`/p/${post.ownerId}`}

@@ -16,6 +16,13 @@ export function formatTime(iso: string): string {
     d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
+/** 1234 -> "1.2K", 2500000 -> "2.5M" — social-style compact counts. */
+export function formatCount(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1).replace(/\.0$/, "")}K`;
+  return String(n);
+}
+
 export type MediaKind = "image" | "video";
 
 export function fileKind(file: File): MediaKind | null {

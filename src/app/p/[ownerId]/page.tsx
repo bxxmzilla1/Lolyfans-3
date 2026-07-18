@@ -4,10 +4,10 @@ import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
-import { mediaUrl } from "@/lib/utils";
+import { formatCount, mediaUrl } from "@/lib/utils";
 import GuestFooter from "@/components/GuestFooter";
 import FollowButton from "@/components/FollowButton";
-import PostFeed, { formatCount, type FeedPost } from "@/components/PostFeed";
+import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import { IconUser, IconVerified } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
