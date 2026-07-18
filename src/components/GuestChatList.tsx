@@ -16,10 +16,20 @@ export type GuestChatRow = {
 };
 
 /** The guest's conversations; tapping one opens it in the chat page. */
-export default function GuestChatList({ chats }: { chats: GuestChatRow[] }) {
+export default function GuestChatList({
+  chats,
+  onOpenChat,
+}: {
+  chats: GuestChatRow[];
+  /** Clear this chat's unread badge in the shell before navigating away. */
+  onOpenChat?: (chatId: string) => void;
+}) {
   const router = useRouter();
 
   async function open(chatId: string) {
+    // Drop the list badge immediately (and persist guest_last_read_at) so it's
+    // already gone when the fan comes back from the conversation.
+    onOpenChat?.(chatId);
     // Point the guest session at this chat, then open it.
     await fetch("/api/guest/open", {
       method: "POST",

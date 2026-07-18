@@ -6,12 +6,18 @@ export type GuestShellCtx = {
   hasShell: boolean;
   unread: number;
   refresh: () => void;
+  /** Clear every chat's unread (footer Chats tab was opened). */
+  clearAllUnread: () => void;
+  /** Clear one chat's unread (that conversation was opened). */
+  clearChatUnread: (chatId: string) => void;
 };
 
 const Ctx = createContext<GuestShellCtx>({
   hasShell: false,
   unread: 0,
   refresh: () => {},
+  clearAllUnread: () => {},
+  clearChatUnread: () => {},
 });
 
 export function GuestShellProvider({

@@ -50,6 +50,20 @@ export default function GuestNav() {
   const onChats = pathname === "/chats";
 
   function go(href: string) {
+    // Footer/sidebar Chats with a badge: clear it in the DB right away so it
+    // doesn't come back the moment they leave the tab.
+    if (href === "/chats" && unread > 0) {
+      if (shell.hasShell) {
+        shell.clearAllUnread();
+      } else {
+        setFallbackUnread(0);
+        fetch("/api/guest/read", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ all: true }),
+        }).catch(() => {});
+      }
+    }
     startTransition(() => {
       router.push(href);
     });

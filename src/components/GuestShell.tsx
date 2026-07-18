@@ -175,6 +175,58 @@ export default function GuestShell() {
     });
   }, []);
 
+  /** Optimistically zero every unread badge and persist that to Supabase. */
+  const clearAllUnread = useCallback(() => {
+    setData((prev) => {
+      if (!prev || prev.unread === 0) return prev;
+      const next = {
+        ...prev,
+        unread: 0,
+        chats: prev.chats.map((c) => (c.unread ? { ...c, unread: 0 } : c)),
+      };
+      cached = next;
+      return next;
+    });
+    fetch("/api/guest/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ all: true }),
+    }).catch(() => {});
+  }, []);
+
+  /** Optimistically clear one chat's badge and persist that to Supabase. */
+  const clearChatUnread = useCallback((chatId: string) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      const chat = prev.chats.find((c) => c.id === chatId);
+      if (!chat || chat.unread === 0) return prev;
+      const next = {
+        ...prev,
+        unread: Math.max(0, prev.unread - chat.unread),
+        chats: prev.chats.map((c) =>
+          c.id === chatId ? { ...c, unread: 0 } : c
+        ),
+      };
+      cached = next;
+      return next;
+    });
+    // /api/guest/open also marks it read; this covers any other caller.
+    fetch("/api/guest/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId }),
+    }).catch(() => {});
+  }, []);
+
+  // Opening the Chats tab acknowledges the footer badge — clear every unread
+  // in the DB so it stays gone after leaving the tab. Only runs on the tab
+  // switch itself (not when a new message arrives while already on Chats).
+  useEffect(() => {
+    if (tab !== "chats") return;
+    clearAllUnread();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
+
   // Every message send broadcasts a realtime signal — reload the shell data
   // the moment one lands in any of this guest's chats, so the footer badge
   // and the chat list update instantly.
@@ -220,7 +272,13 @@ export default function GuestShell() {
 
   return (
     <GuestShellProvider
-      value={{ hasShell: true, unread: data?.unread ?? 0, refresh }}
+      value={{
+        hasShell: true,
+        unread: data?.unread ?? 0,
+        refresh,
+        clearAllUnread,
+        clearChatUnread,
+      }}
     >
       <div className="min-h-dvh pb-[calc(88px+env(safe-area-inset-bottom))] lg:pb-10 lg:pl-60">
         {loading || !data ? (
@@ -241,7 +299,10 @@ export default function GuestShell() {
                 aria-hidden={tab !== "chats"}
               >
                 <PanelShell title="Chats">
-                  <GuestChatList chats={data.chats} />
+                  <GuestChatList
+                    chats={data.chats}
+                    onOpenChat={clearChatUnread}
+                  />
                 </PanelShell>
               </div>
             )}
