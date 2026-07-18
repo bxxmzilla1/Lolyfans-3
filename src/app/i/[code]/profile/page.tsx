@@ -5,8 +5,9 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
 import { ownerProfiles } from "@/lib/guest";
+import { postStats } from "@/lib/posts";
 import { formatCount, mediaUrl } from "@/lib/utils";
-import { IconUser, IconVerified } from "@/components/Icons";
+import { IconChat, IconHeart, IconUser, IconVerified } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -55,16 +56,18 @@ export default async function InviteProfilePreviewPage({
   if (!usable.ok || !allowed) redirect(`/i/${code}`);
 
   const ownerId = invite!.owner_id;
-  const [profiles, { data: latestPost }, { count: postCount }, { count: realFollowers }] =
+  // Only image posts in the locked preview — they blur nicely and load much
+  // faster than videos.
+  const [profiles, { data: imagePosts }, { count: postCount }, { count: realFollowers }] =
     await Promise.all([
       ownerProfiles([ownerId]),
       db
         .from("posts")
         .select("*")
         .eq("owner_id", ownerId)
+        .eq("media_type", "image")
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
+        .limit(30),
       db
         .from("posts")
         .select("id", { count: "exact", head: true })
@@ -77,6 +80,9 @@ export default async function InviteProfilePreviewPage({
 
   const profile = profiles.get(ownerId);
   if (!profile) redirect(`/i/${code}`);
+
+  const teasers = imagePosts ?? [];
+  const stats = await postStats(teasers.map((p) => p.id), []);
 
   const followers = profile.followerBase + (realFollowers ?? 0);
   const posts = postCount ?? 0;
@@ -127,61 +133,74 @@ export default async function InviteProfilePreviewPage({
           </Link>
         </section>
 
-        {/* One locked post as a teaser */}
-        {latestPost && (
-          <div className="border-t border-line">
-            <div className="flex items-center gap-2.5 px-3.5 py-2.5">
-              {profile.avatarPath ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={mediaUrl(profile.avatarPath)}
-                  alt={profile.name}
-                  className="w-9 h-9 rounded-full object-cover bg-bg"
-                />
-              ) : (
-                <div className="w-9 h-9 rounded-full bg-card2 flex items-center justify-center">
-                  <IconUser className="w-4.5 h-4.5 text-muted" />
+        {/* All image posts as locked teasers: blurred media, visible caption
+            and counts, nothing clickable */}
+        {teasers.length > 0 && (
+          <div className="border-t border-line divide-y divide-line pointer-events-none select-none">
+            {teasers.map((post) => (
+              <article key={post.id}>
+                <div className="flex items-center gap-2.5 px-3.5 py-2.5">
+                  {profile.avatarPath ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={mediaUrl(profile.avatarPath)}
+                      alt={profile.name}
+                      className="w-9 h-9 rounded-full object-cover bg-bg"
+                    />
+                  ) : (
+                    <div className="w-9 h-9 rounded-full bg-card2 flex items-center justify-center">
+                      <IconUser className="w-4.5 h-4.5 text-muted" />
+                    </div>
+                  )}
+                  <span className="font-semibold text-sm flex items-center gap-1 min-w-0 truncate">
+                    {profile.name}
+                    {profile.verified && (
+                      <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />
+                    )}
+                  </span>
                 </div>
-              )}
-              <span className="font-semibold text-sm flex items-center gap-1 min-w-0 truncate">
-                {profile.name}
-                {profile.verified && (
-                  <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />
+
+                {post.caption && (
+                  <p className="px-3.5 pb-2.5 text-sm whitespace-pre-wrap break-words">
+                    {post.caption}
+                  </p>
                 )}
-              </span>
-            </div>
 
-            <div className="relative overflow-hidden">
-              {latestPost.media_type === "video" ? (
-                <video
-                  src={`${mediaUrl(latestPost.media_path)}#t=0.001`}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  tabIndex={-1}
-                  className="w-full h-auto max-h-[70vh] object-contain blur-2xl scale-105 pointer-events-none select-none"
-                />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={mediaUrl(latestPost.media_path)}
-                  alt=""
-                  className="w-full h-auto max-h-[70vh] object-contain blur-2xl scale-105 pointer-events-none select-none"
-                />
-              )}
-            </div>
+                <div className="relative overflow-hidden">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={mediaUrl(post.media_path)}
+                    alt=""
+                    loading="lazy"
+                    className="w-full h-auto max-h-[70vh] object-contain blur-2xl scale-105"
+                  />
+                </div>
 
-            <div className="px-4 py-5 text-center space-y-3">
-              <p className="text-sm font-semibold">Follow this creator to see more</p>
-              <Link
-                href={`/i/${code}/signup`}
-                className="inline-block px-10 py-2.5 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity"
-              >
-                Follow
-              </Link>
-            </div>
+                <div className="px-3.5 py-2.5 flex items-center gap-4 text-sm font-semibold">
+                  <span className="flex items-center gap-1.5">
+                    <IconHeart className="w-6 h-6" />
+                    {formatCount((post.like_count ?? 0) + (stats.likes.get(post.id) ?? 0))}
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <IconChat className="w-6 h-6" />
+                    {formatCount(stats.comments.get(post.id) ?? 0)}
+                  </span>
+                </div>
+              </article>
+            ))}
           </div>
         )}
+
+        {/* Follow gate under the locked feed */}
+        <div className="border-t border-line px-4 py-6 text-center space-y-3">
+          <p className="text-sm font-semibold">Follow this creator to see more</p>
+          <Link
+            href={`/i/${code}/signup`}
+            className="inline-block px-10 py-2.5 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity"
+          >
+            Follow
+          </Link>
+        </div>
       </main>
     </div>
   );
