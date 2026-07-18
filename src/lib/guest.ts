@@ -57,6 +57,7 @@ export async function guestChats(requestHeaders: Headers): Promise<GuestChat[]> 
 export type OwnerProfile = {
   name: string;
   avatarPath: string | null;
+  bannerPath: string | null;
   verified: boolean;
   /** Owner-set base follower count (Social proof tab). */
   followerBase: number;
@@ -78,6 +79,7 @@ export async function ownerProfiles(
       const meta = (data.user.user_metadata ?? {}) as {
         display_name?: string;
         avatar_path?: string;
+        banner_path?: string;
         invite_verified?: boolean;
         social_followers?: number;
         profile_bio?: string;
@@ -88,6 +90,7 @@ export async function ownerProfiles(
         {
           name: meta.display_name || "Lolyfans",
           avatarPath: meta.avatar_path || null,
+          bannerPath: meta.banner_path || null,
           verified: !!meta.invite_verified,
           followerBase: Number(meta.social_followers) || 0,
           bio: meta.profile_bio?.trim() || null,

@@ -38,10 +38,12 @@ function ProfileSection() {
   const [showLocation, setShowLocation] = useState(false);
   const [email, setEmail] = useState("");
   const [avatarPath, setAvatarPath] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [bannerPath, setBannerPath] = useState<string | null>(null);
+  const [uploading, setUploading] = useState<"avatar" | "banner" | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const bannerRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     supabaseBrowser()
@@ -54,11 +56,12 @@ function ProfileSection() {
         setBio((user.user_metadata?.profile_bio as string) ?? "");
         setShowLocation(!!user.user_metadata?.profile_show_location);
         setAvatarPath((user.user_metadata?.avatar_path as string) ?? null);
+        setBannerPath((user.user_metadata?.banner_path as string) ?? null);
       });
   }, []);
 
   async function uploadAvatar(original: File) {
-    setUploading(true);
+    setUploading("avatar");
     try {
       // Profile pictures are shown small everywhere — store a 480p version
       // so they download and render fast.
@@ -79,8 +82,44 @@ function ProfileSection() {
         setAvatarPath(path);
       }
     } finally {
-      setUploading(false);
+      setUploading(null);
       if (fileRef.current) fileRef.current.value = "";
+    }
+  }
+
+  async function uploadBanner(original: File) {
+    setUploading("banner");
+    try {
+      // Banners are wide — keep more detail than avatars.
+      const file = await resizeImage(original, 1600);
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, scope: "banner" }),
+      });
+      if (!res.ok) return;
+      const { path, token } = await res.json();
+      const supabase = supabaseBrowser();
+      const { error } = await supabase.storage
+        .from("media")
+        .uploadToSignedUrl(path, token, file, { cacheControl: "31536000" });
+      if (!error) {
+        await supabase.auth.updateUser({ data: { banner_path: path } });
+        setBannerPath(path);
+      }
+    } finally {
+      setUploading(null);
+      if (bannerRef.current) bannerRef.current.value = "";
+    }
+  }
+
+  async function removeBanner() {
+    setUploading("banner");
+    try {
+      await supabaseBrowser().auth.updateUser({ data: { banner_path: "" } });
+      setBannerPath(null);
+    } finally {
+      setUploading(null);
     }
   }
 
@@ -103,10 +142,78 @@ function ProfileSection() {
 
   return (
     <div className="space-y-6 max-w-lg">
+      <div>
+        <p className="text-sm font-semibold mb-2">Banner image</p>
+        <button
+          type="button"
+          onClick={() => bannerRef.current?.click()}
+          disabled={uploading === "banner"}
+          className="relative w-full h-32 rounded-2xl overflow-hidden border border-line bg-card2 group/banner text-left"
+          aria-label="Change banner image"
+        >
+          {bannerPath ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={mediaUrl(bannerPath)}
+              alt="Banner"
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          ) : (
+            <div
+              className="absolute inset-0"
+              style={{
+                background:
+                  "linear-gradient(145deg, color-mix(in oklab, var(--accent) 22%, var(--card2)) 0%, var(--card2) 55%, color-mix(in oklab, var(--line) 80%, var(--card2)) 100%)",
+              }}
+            />
+          )}
+          <span className="absolute inset-0 bg-black/40 opacity-0 group-hover/banner:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-semibold">
+            {uploading === "banner" ? "Uploading…" : bannerPath ? "Change banner" : "Add banner"}
+          </span>
+          {/* Mini avatar preview so creators see how it sits on the banner */}
+          <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 pointer-events-none">
+            <span className="block rounded-full p-[2px] bg-bg shadow-sm">
+              {avatarPath ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={mediaUrl(avatarPath)}
+                  alt=""
+                  className="w-12 h-12 rounded-full object-cover"
+                />
+              ) : (
+                <span className="w-12 h-12 rounded-full bg-card2 flex items-center justify-center">
+                  <IconUser className="w-5 h-5 text-muted" />
+                </span>
+              )}
+            </span>
+          </span>
+        </button>
+        <div className="flex items-center justify-between mt-5">
+          <p className="text-xs text-muted">Shown across the top of your public profile.</p>
+          {bannerPath && (
+            <button
+              type="button"
+              onClick={removeBanner}
+              disabled={uploading === "banner"}
+              className="text-xs font-semibold text-red-400 hover:text-red-500 disabled:opacity-50"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+        <input
+          ref={bannerRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => e.target.files?.[0] && uploadBanner(e.target.files[0])}
+        />
+      </div>
+
       <div className="flex items-center gap-4">
         <button
           onClick={() => fileRef.current?.click()}
-          disabled={uploading}
+          disabled={!!uploading}
           className="relative shrink-0 group/avatar"
           aria-label="Change profile picture"
         >
@@ -125,7 +232,7 @@ function ProfileSection() {
             )}
           </div>
           <span className="absolute inset-0 rounded-full bg-black/50 opacity-0 group-hover/avatar:opacity-100 transition-opacity flex items-center justify-center text-white text-[11px] font-semibold">
-            {uploading ? "…" : "Change"}
+            {uploading === "avatar" ? "…" : "Change"}
           </span>
         </button>
         <div className="min-w-0">

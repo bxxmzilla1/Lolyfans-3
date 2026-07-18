@@ -9,7 +9,8 @@ import { formatCount, mediaUrl } from "@/lib/utils";
 import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
-import { IconMapPin, IconUser, IconVerified } from "@/components/Icons";
+import CreatorBanner from "@/components/CreatorBanner";
+import { IconMapPin, IconVerified } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -90,58 +91,48 @@ export default async function CreatorProfilePage({
         </>
       }
     >
-        <section className="px-4 pt-6 pb-4 flex flex-col items-center gap-3">
-          <div className="relative">
-            <div className="ig-ring">
-              {profile.avatarPath ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={mediaUrl(profile.avatarPath)}
-                  alt={profile.name}
-                  className="w-24 h-24 rounded-full object-cover bg-bg"
-                />
-              ) : (
-                <div className="w-24 h-24 rounded-full bg-card2 flex items-center justify-center">
-                  <IconUser className="w-10 h-10 text-muted" />
-                </div>
+        <section className="pb-4">
+          <CreatorBanner
+            name={profile.name}
+            avatarPath={profile.avatarPath}
+            bannerPath={profile.bannerPath}
+          />
+          <div className="px-4 pt-3 flex flex-col items-center gap-3">
+            <p className="font-bold text-lg flex items-center gap-1">
+              {profile.name}
+              {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
+            </p>
+            <p className="text-xs text-muted -mt-2">
+              {formatCount(followers)} {followers === 1 ? "follower" : "followers"}
+              {" · "}
+              {feedPosts.length} {feedPosts.length === 1 ? "post" : "posts"}
+            </p>
+            {(profile.bio || (profile.showLocation && location)) && (
+              <div className="w-full text-center space-y-1.5">
+                {profile.bio && (
+                  <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
+                )}
+                {profile.showLocation && location && (
+                  <p className="flex items-center justify-center gap-1 text-xs text-muted">
+                    <IconMapPin className="w-3.5 h-3.5 text-accent shrink-0" />
+                    {location}
+                  </p>
+                )}
+              </div>
+            )}
+            <div className="flex items-center gap-2">
+              {chats.length > 0 && (
+                <FollowButton ownerId={ownerId} initialFollowing={following} />
+              )}
+              {hasChatWithOwner && (
+                <Link
+                  href="/chat"
+                  className="px-6 py-2.5 rounded-full bg-card2 border border-line2 text-sm font-semibold"
+                >
+                  Message
+                </Link>
               )}
             </div>
-            <span className="absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-bg bg-green-500" />
-          </div>
-          <p className="font-bold text-lg flex items-center gap-1">
-            {profile.name}
-            {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
-          </p>
-          <p className="text-xs text-muted -mt-2">
-            {formatCount(followers)} {followers === 1 ? "follower" : "followers"}
-            {" · "}
-            {feedPosts.length} {feedPosts.length === 1 ? "post" : "posts"}
-          </p>
-          {(profile.bio || (profile.showLocation && location)) && (
-            <div className="w-full text-center space-y-1.5">
-              {profile.bio && (
-                <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
-              )}
-              {profile.showLocation && location && (
-                <p className="flex items-center justify-center gap-1 text-xs text-muted">
-                  <IconMapPin className="w-3.5 h-3.5 text-accent shrink-0" />
-                  {location}
-                </p>
-              )}
-            </div>
-          )}
-          <div className="flex items-center gap-2">
-            {chats.length > 0 && (
-              <FollowButton ownerId={ownerId} initialFollowing={following} />
-            )}
-            {hasChatWithOwner && (
-              <Link
-                href="/chat"
-                className="px-6 py-2.5 rounded-full bg-card2 border border-line2 text-sm font-semibold"
-              >
-                Message
-              </Link>
-            )}
           </div>
         </section>
 

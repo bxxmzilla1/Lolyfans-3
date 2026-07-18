@@ -17,7 +17,11 @@ export async function POST(req: NextRequest) {
   const { fileName, scope } = await req.json();
   const ext = String(fileName || "file").split(".").pop()?.toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
   const folder =
-    (scope === "vault" || scope === "avatar" || scope === "post") && ownerId
+    (scope === "vault" ||
+      scope === "avatar" ||
+      scope === "banner" ||
+      scope === "post") &&
+    ownerId
       ? scope
       : scope === "avatar" && guestChatId
       ? "avatar"
