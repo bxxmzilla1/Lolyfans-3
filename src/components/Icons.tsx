@@ -278,6 +278,17 @@ export function IconMoon({ className }: IconProps) {
   );
 }
 
+export function IconKey({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <circle cx="7.5" cy="15.5" r="4.5" />
+      <path d="M10.7 12.3 20 3" />
+      <path d="M17 6l2.5 2.5" />
+      <path d="M14 9l2.5 2.5" />
+    </Svg>
+  );
+}
+
 export function IconVerified({ className }: IconProps) {
   return (
     <svg

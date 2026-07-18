@@ -162,6 +162,23 @@ create policy "Owners can read messages in their chats" on messages
     )
   );
 
+-- API keys: let external apps (e.g. the Orion chatbot) read the owner's chats
+-- and send replies on their behalf. One active key per owner (regenerating
+-- replaces it). The token is a random string checked on every external call.
+create table if not exists api_keys (
+  owner_id uuid primary key references auth.users(id) on delete cascade,
+  token text unique not null,
+  created_at timestamptz not null default now(),
+  last_used_at timestamptz
+);
+alter table api_keys enable row level security;
+
+-- Track what an external app has already answered so auto-respond never
+-- double-replies to the same fan message.
+alter table chats add column if not exists bot_replied_at timestamptz;
+
+create index if not exists api_keys_token_idx on api_keys (token);
+
 -- Public storage bucket for chat media and vault files
 insert into storage.buckets (id, name, public)
 values ('media', 'media', true)

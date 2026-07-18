@@ -6,12 +6,13 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
 import InviteManager from "./InviteManager";
 import InvitePageEditor from "./InvitePageEditor";
+import ApiKeyManager from "./ApiKeyManager";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
 import ThemeToggle from "./ThemeToggle";
-import { IconEdit, IconLink, IconLogout, IconUser } from "./Icons";
+import { IconEdit, IconKey, IconLink, IconLogout, IconUser } from "./Icons";
 
-type Section = "profile" | "links" | "editor";
+type Section = "profile" | "links" | "editor" | "apikey";
 
 function ProfileSection() {
   const [displayName, setDisplayName] = useState("");
@@ -220,6 +221,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         >
           <IconEdit className="w-3.5 h-3.5" /> Invite Page Editor
         </button>
+        <button
+          onClick={() => openGated("apikey")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "apikey"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconKey className="w-3.5 h-3.5" /> API Key
+        </button>
       </div>
 
       {askAdminFor && (
@@ -227,6 +238,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           message={
             askAdminFor === "editor"
               ? "Enter the admin code to open the invite page editor."
+              : askAdminFor === "apikey"
+              ? "Enter the admin code to manage your API key."
               : "Enter the admin code to open invite links."
           }
           onVerified={() => {
@@ -247,6 +260,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <ProfileSection />
           ) : section === "editor" ? (
             <InvitePageEditor />
+          ) : section === "apikey" ? (
+            <ApiKeyManager />
           ) : (
             <InviteManager />
           )}
