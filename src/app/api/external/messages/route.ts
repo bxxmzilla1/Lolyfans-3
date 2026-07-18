@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid API key" }, { status: 401, headers: CORS });
   }
 
-  const { chatId, content, mediaPath, mediaType, locked } = await req.json();
+  const { chatId, content, mediaPath, mediaType, locked, notify } = await req.json();
   if (!chatId) {
     return NextResponse.json({ error: "chatId required" }, { status: 400, headers: CORS });
   }
@@ -71,10 +71,13 @@ export async function POST(req: NextRequest) {
     broadcast(`inbox:${ownerId}`, "new-message", { chatId }),
   ]);
 
-  // Offline guest? Nudge them by SMS (one per offline period, so a burst of
-  // chatbot bubbles still sends a single text).
-  const origin = requestOrigin(req.headers);
-  after(() => notifyGuestSms(chatId, origin));
+  // Offline guest? Nudge them by SMS. Orion sends `notify: false` on every
+  // bubble except its last one, so the text goes out exactly once, after the
+  // reply is complete.
+  if (notify !== false) {
+    const origin = requestOrigin(req.headers);
+    after(() => notifyGuestSms(chatId, origin));
+  }
 
   return NextResponse.json({ message }, { headers: CORS });
 }

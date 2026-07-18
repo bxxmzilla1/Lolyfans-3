@@ -5,10 +5,10 @@ import { sendSms } from "@/lib/twilio";
 // (the page pings every 45s while open).
 const ONLINE_WINDOW_MS = 90_000;
 
-// Minimum gap between SMS nudges to a guest who stays offline. Keeps a burst
-// of messages (e.g. chatbot bubbles) down to one text, but still re-nudges
-// them when new messages arrive later.
-const RENOTIFY_AFTER_MS = 10 * 60_000;
+// Minimum gap between SMS nudges to a guest who stays offline. Can be short:
+// Orion only asks for a nudge after its final bubble, so bursts are already
+// grouped at the sender side.
+const RENOTIFY_AFTER_MS = 30_000;
 
 /** The public URL of the app, from the request's proxy headers. */
 export function requestOrigin(headers: Headers): string {
@@ -20,9 +20,9 @@ export function requestOrigin(headers: Headers): string {
 
 /**
  * Text the guest that the creator messaged them — but only when they're
- * offline, and at most once per 10 minutes (so a burst of chat bubbles or
- * rapid-fire messages don't turn into an SMS flood). Coming back online
- * resets the timer, so the next offline message nudges them right away.
+ * offline, and at most once per 30 seconds (rapid-fire messages don't turn
+ * into an SMS flood). Coming back online resets the timer, so the next
+ * offline message nudges them right away.
  */
 export async function notifyGuestSms(chatId: string, origin: string): Promise<void> {
   try {
