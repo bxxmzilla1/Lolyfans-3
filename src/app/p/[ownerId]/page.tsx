@@ -118,12 +118,12 @@ export default async function CreatorProfilePage({
             {feedPosts.length} {feedPosts.length === 1 ? "post" : "posts"}
           </p>
           {(profile.bio || (profile.showLocation && location)) && (
-            <div className="w-full text-left space-y-1.5">
+            <div className="w-full text-center space-y-1.5">
               {profile.bio && (
                 <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
               )}
               {profile.showLocation && location && (
-                <p className="flex items-center gap-1 text-xs text-muted">
+                <p className="flex items-center justify-center gap-1 text-xs text-muted">
                   <IconMapPin className="w-3.5 h-3.5 text-accent shrink-0" />
                   {location}
                 </p>
