@@ -83,14 +83,7 @@ export default async function CreatorProfilePage({
   }));
 
   return (
-    <GuestPage
-      title={
-        <>
-          {profile.name}
-          {profile.verified && <IconVerified className="w-4 h-4 text-sky-500" />}
-        </>
-      }
-    >
+    <GuestPage hideHeader>
         <section className="pb-4">
           <CreatorBanner
             name={profile.name}
