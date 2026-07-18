@@ -24,6 +24,7 @@ export default function InviteManager() {
   const [refreshing, setRefreshing] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   // Multi-select for bulk country changes
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -100,25 +101,40 @@ export default function InviteManager() {
     });
   }
 
+  /** Surface a failed save (e.g. missing DB migration) instead of failing silently. */
+  async function reportSaveError(res: Response) {
+    const { error } = await res.json().catch(() => ({ error: "" }));
+    const missingColumn = /skip_landing/.test(String(error));
+    setSaveError(
+      missingColumn
+        ? "The database is missing the skip_landing column. Run this in the Supabase SQL Editor: alter table invites add column if not exists skip_landing boolean not null default false;"
+        : String(error) || "Couldn't save. Try again."
+    );
+  }
+
   /** Toggle whether one link opens the profile preview directly. */
   async function toggleSkipLanding(invite: Invite) {
-    await fetch("/api/invites", {
+    setSaveError(null);
+    const res = await fetch("/api/invites", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: invite.id, skipLanding: !invite.skip_landing }),
     });
+    if (!res.ok) await reportSaveError(res);
     load();
   }
 
   /** Apply the landing behaviour to every selected link at once. */
   async function applyLanding(skipLanding: boolean) {
     if (applying || selected.size === 0) return;
+    setSaveError(null);
     setApplying(true);
-    await fetch("/api/invites", {
+    const res = await fetch("/api/invites", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: [...selected], skipLanding }),
     });
+    if (!res.ok) await reportSaveError(res);
     setApplying(false);
     setSelectMode(false);
     setSelected(new Set());
@@ -240,6 +256,12 @@ export default function InviteManager() {
               {creating ? "Creating…" : "Create link"}
             </button>
           </div>
+        </div>
+      )}
+
+      {saveError && (
+        <div className="bg-red-500/10 border border-red-500/40 rounded-xl px-4 py-3 text-sm text-red-500 break-words fade-up">
+          {saveError}
         </div>
       )}
 
