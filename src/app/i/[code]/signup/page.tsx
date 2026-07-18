@@ -11,8 +11,8 @@ import InviteTheme from "@/components/InviteTheme";
 export const dynamic = "force-dynamic";
 
 /**
- * Step 2 of an invite link: the sign-up page (name, phone, password, SMS
- * code). Reached from the invite page's "Start chatting" button.
+ * Step 2 of an invite link: the sign-up page (name, email, password).
+ * Reached from the invite page's "Start chatting" button.
  */
 export default async function InviteSignupPage({
   params,
@@ -84,15 +84,11 @@ export default async function InviteSignupPage({
 
         <div className="text-center -mt-2">
           <p className="text-muted text-sm">
-            Sign up with your phone number to start chatting with {ownerName}.
+            Sign up with your email to start chatting with {ownerName}.
           </p>
         </div>
 
-        <JoinForm
-          code={code}
-          buttonText={meta.invite_button_text}
-          defaultCountry={country}
-        />
+        <JoinForm code={code} buttonText={meta.invite_button_text} />
       </div>
     </main>
   );

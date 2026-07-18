@@ -2,24 +2,24 @@ import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createToken, GUEST_COOKIE, cookieOptions } from "@/lib/session";
 import { getRequestCountry, ipFromHeaders, inviteUsable, countryAllowed } from "@/lib/invites";
-import { checkSmsVerification, isE164 } from "@/lib/twilio";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { broadcast } from "@/lib/realtime";
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
 /**
- * Creates (or resumes) a guest chat after phone sign-up: the guest registered
- * with a phone number + password and proved ownership of the number with the
- * SMS code Twilio sent them.
+ * Creates (or resumes) a guest chat after sign-up: the guest registers with
+ * an email + password. No verification step — the account works right away.
  */
 export async function POST(req: NextRequest) {
-  const { code, name, phone, password, otp } = await req.json();
+  const { code, name, email, password } = await req.json();
 
   if (!code) {
     return NextResponse.json({ error: "Invalid link" }, { status: 400 });
   }
-  const phoneStr = String(phone || "");
-  if (!isE164(phoneStr)) {
-    return NextResponse.json({ error: "Enter a valid phone number" }, { status: 400 });
+  const emailStr = String(email || "").trim().toLowerCase();
+  if (!EMAIL_RE.test(emailStr)) {
+    return NextResponse.json({ error: "Enter a valid email address" }, { status: 400 });
   }
   const passwordStr = String(password || "");
   if (passwordStr.length < 6) {
@@ -27,10 +27,6 @@ export async function POST(req: NextRequest) {
       { error: "Password must be at least 6 characters" },
       { status: 400 }
     );
-  }
-  const otpStr = String(otp || "").trim();
-  if (!/^\d{4,10}$/.test(otpStr)) {
-    return NextResponse.json({ error: "Enter the verification code" }, { status: 400 });
   }
 
   const db = supabaseAdmin();
@@ -50,25 +46,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // The phone must be verified through Twilio before anything is created.
-  const otpError = await checkSmsVerification(phoneStr, otpStr);
-  if (otpError) {
-    return NextResponse.json({ error: otpError }, { status: 400 });
-  }
-
-  // This phone already has an account with this creator? Check the password
+  // This email already has an account with this creator? Check the password
   // and resume the existing chat instead of creating a duplicate.
   const { data: existing } = await db
     .from("chats")
     .select("id, guest_name, guest_password")
     .eq("owner_id", invite!.owner_id)
-    .eq("guest_phone", phoneStr)
+    .eq("guest_email", emailStr)
     .maybeSingle();
 
   if (existing) {
     if (!verifyPassword(passwordStr, existing.guest_password || "")) {
       return NextResponse.json(
-        { error: "This phone number is already registered, but the password is wrong" },
+        { error: "This email is already registered, but the password is wrong" },
         { status: 403 }
       );
     }
@@ -97,7 +87,7 @@ export async function POST(req: NextRequest) {
       guest_name: guestName,
       guest_country: country,
       guest_ip: ip,
-      guest_phone: phoneStr,
+      guest_email: emailStr,
       guest_password: hashPassword(passwordStr),
     })
     .select()

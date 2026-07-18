@@ -179,14 +179,20 @@ alter table chats add column if not exists bot_replied_at timestamptz;
 
 create index if not exists api_keys_token_idx on api_keys (token);
 
--- Guest sign-up: guests register with a phone number (verified by SMS via
--- Twilio) and a password before their chat is created. The password is stored
--- as a salted scrypt hash, never in plain text.
+-- Guest sign-up: guests register with an email + password (no verification
+-- step). The password is stored as a salted scrypt hash, never in plain text.
+-- guest_phone remains from the earlier SMS sign-up flow; it's still used to
+-- text offline nudges to guests who registered with a number.
 alter table chats add column if not exists guest_phone text;
+alter table chats add column if not exists guest_email text;
 alter table chats add column if not exists guest_password text;
 
--- One account per phone number per owner: the same phone always resumes the
--- same chat (with the right password) instead of creating duplicates.
+-- One account per email per owner: the same email always resumes the same
+-- chat (with the right password) instead of creating duplicates.
+create unique index if not exists chats_owner_email_idx
+  on chats (owner_id, guest_email)
+  where guest_email is not null;
+
 create unique index if not exists chats_owner_phone_idx
   on chats (owner_id, guest_phone)
   where guest_phone is not null;
