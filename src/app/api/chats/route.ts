@@ -9,20 +9,12 @@ export async function GET() {
   }
 
   const db = supabaseAdmin();
-  // One round trip: chats, recent messages (previews + unread counts) and
-  // categories all load in parallel instead of waiting on each other.
-  const [chatsRes, msgsRes, catsRes] = await Promise.all([
+  const [chatsRes, catsRes] = await Promise.all([
     db
       .from("chats")
       .select("*, invites(label, code), chat_category_members(category_id)")
       .eq("owner_id", ownerId)
       .order("last_message_at", { ascending: false }),
-    db
-      .from("messages")
-      .select("chat_id, content, media_type, created_at, sender, chats!inner(owner_id)")
-      .eq("chats.owner_id", ownerId)
-      .order("created_at", { ascending: false })
-      .limit(1000),
     db
       .from("chat_categories")
       .select("*")
@@ -33,26 +25,41 @@ export async function GET() {
   const { data: chats, error } = chatsRes;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Attach a preview of the latest message and an unread count per chat
-  type Preview = { chat_id: string; content: string | null; media_type: string | null; created_at: string; sender: string };
-  const previews: Record<string, Preview> = {};
-  const unread: Record<string, number> = {};
-  const lastRead = new Map((chats ?? []).map((c) => [c.id, c.last_read_at]));
-  for (const m of msgsRes.data ?? []) {
-    if (!previews[m.chat_id]) {
-      previews[m.chat_id] = {
-        chat_id: m.chat_id,
-        content: m.content,
-        media_type: m.media_type,
-        created_at: m.created_at,
-        sender: m.sender,
+  type Preview = {
+    chat_id: string;
+    content: string | null;
+    media_type: string | null;
+    created_at: string;
+    sender: string;
+  };
+
+  // One latest message + unread count per chat (the old global 1000-row fetch
+  // missed previews once an owner had more than that many messages total).
+  const stats = await Promise.all(
+    (chats ?? []).map(async (chat) => {
+      const [{ data: latest }, { count }] = await Promise.all([
+        db
+          .from("messages")
+          .select("chat_id, content, media_type, created_at, sender")
+          .eq("chat_id", chat.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        db
+          .from("messages")
+          .select("id", { count: "exact", head: true })
+          .eq("chat_id", chat.id)
+          .eq("sender", "guest")
+          .gt("created_at", chat.last_read_at || "1970-01-01T00:00:00Z"),
+      ]);
+      return {
+        id: chat.id,
+        preview: (latest as Preview | null) ?? null,
+        unread: count ?? 0,
       };
-    }
-    const readAt = lastRead.get(m.chat_id);
-    if (m.sender === "guest" && (!readAt || m.created_at > readAt)) {
-      unread[m.chat_id] = (unread[m.chat_id] ?? 0) + 1;
-    }
-  }
+    })
+  );
+  const byId = new Map(stats.map((s) => [s.id, s]));
 
   return NextResponse.json({
     ownerId,
@@ -62,8 +69,8 @@ export async function GET() {
       categories: ((chat_category_members ?? []) as { category_id: string }[]).map(
         (m) => m.category_id
       ),
-      preview: previews[c.id] ?? null,
-      unread: unread[c.id] ?? 0,
+      preview: byId.get(c.id)?.preview ?? null,
+      unread: byId.get(c.id)?.unread ?? 0,
     })),
   });
 }

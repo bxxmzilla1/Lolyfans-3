@@ -3,7 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { guestChats, ownerProfiles, guestUnreadCounts } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
-import { mediaUrl } from "@/lib/utils";
+import { mediaUrl, messagePreviewText } from "@/lib/utils";
 
 /**
  * One round-trip for the fan shell: profile, chat list, and home feed.
@@ -49,9 +49,14 @@ export async function GET(req: NextRequest) {
           .maybeSingle();
         if (!data) return [chat.id, "Say hi!"] as const;
         const prefix = data.sender === "guest" ? "You: " : "";
+        const text = data.content ? messagePreviewText(data.content) : "";
         const body =
-          data.content ||
-          (data.media_type === "video" ? "Sent a video" : "Sent a photo");
+          text ||
+          (data.media_type === "video"
+            ? "Sent a video"
+            : data.media_type === "image"
+              ? "Sent a photo"
+              : "Say hi!");
         return [chat.id, prefix + body] as const;
       })
     ),

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl, MediaKind, messagePreviewText } from "@/lib/utils";
-import MessageBubble, { Message, formatPrice } from "./MessageBubble";
+import MessageBubble, { Message } from "./MessageBubble";
 import Portal from "./Portal";
 import {
   IconChat,
@@ -23,13 +23,11 @@ export default function ChatView({
   role,
   header,
   initialMessages,
-  initialBalanceCents = 0,
 }: {
   chatId: string;
   role: "owner" | "guest";
   header: React.ReactNode;
   initialMessages?: Message[];
-  initialBalanceCents?: number;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [text, setText] = useState("");
@@ -43,10 +41,7 @@ export default function ChatView({
   const [dragOver, setDragOver] = useState(false);
   const [sendLocked, setSendLocked] = useState(false);
   const [lockPrice, setLockPrice] = useState("");
-  // Fan wallet: prepaid balance + the top-up sheet.
-  const [balanceCents, setBalanceCents] = useState(initialBalanceCents);
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
-  const [topup, setTopup] = useState<{ needCents: number } | null>(null);
   const [peerTyping, setPeerTyping] = useState(false);
   const [msgSelectMode, setMsgSelectMode] = useState(false);
   const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
@@ -175,6 +170,13 @@ export default function ChatView({
         // Refetch: guests get the filtered list, the owner gets updated labels
         load();
       })
+      .on("broadcast", { event: "message-unlocked" }, ({ payload }) => {
+        const messageId = (payload as { messageId?: string } | null)?.messageId;
+        if (!messageId) return;
+        setMessages((prev) =>
+          prev.map((m) => (m.id === messageId ? { ...m, unlocked: true } : m))
+        );
+      })
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         if ((payload as { sender: string }).sender === role) return;
         setPeerTyping(true);
@@ -194,30 +196,14 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, load]);
 
-  // Fans: keep the wallet balance live (top-up credited by the IPN broadcasts
-  // here) and refresh it when returning from the hosted checkout.
+  // After Stripe Checkout, the URL has ?paid=<messageId> — refresh unlocks.
   useEffect(() => {
     if (role !== "guest") return;
-    const refresh = () =>
-      fetch(`/api/wallet?chatId=${chatId}`)
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => d && typeof d.balanceCents === "number" && setBalanceCents(d.balanceCents))
-        .catch(() => {});
-    refresh();
-    const supabase = supabaseBrowser();
-    const channel = supabase
-      .channel(`wallet:${chatId}`)
-      .on("broadcast", { event: "balance" }, ({ payload }) => {
-        const b = (payload as { balanceCents?: number } | null)?.balanceCents;
-        if (typeof b === "number") setBalanceCents(b);
-      })
-      .subscribe();
-    window.addEventListener("focus", refresh);
-    return () => {
-      supabase.removeChannel(channel);
-      window.removeEventListener("focus", refresh);
-    };
-  }, [chatId, role]);
+    const paid = new URLSearchParams(window.location.search).get("paid");
+    if (!paid) return;
+    load();
+    window.history.replaceState({}, "", "/chat");
+  }, [role, load]);
 
   useEffect(() => {
     scrollToBottom(true);
@@ -308,42 +294,27 @@ export default function ChatView({
     }
   }
 
-  // One-click unlock: pay from the wallet, reveal on success, otherwise open
-  // the top-up sheet pre-sized to cover the price.
+  // One-tap Stripe unlock: charges the saved card, or opens Checkout the
+  // first time (which saves the card for next unlocks).
   async function unlockMessage(message: Message) {
     if (unlockingId) return;
     setUnlockingId(message.id);
     try {
-      const res = await fetch("/api/wallet/unlock", {
+      const res = await fetch("/api/payments/unlock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messageId: message.id }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        if (typeof data.balanceCents === "number") setBalanceCents(data.balanceCents);
+      if (res.ok && data.unlocked) {
         setMessages((prev) =>
           prev.map((m) => (m.id === message.id ? { ...m, unlocked: true } : m))
         );
-      } else if (res.status === 402) {
-        if (typeof data.balanceCents === "number") setBalanceCents(data.balanceCents);
-        const need = Math.max(0, (message.price_cents ?? 0) - (data.balanceCents ?? 0));
-        setTopup({ needCents: need });
+      } else if (res.ok && data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
       }
     } finally {
       setUnlockingId(null);
-    }
-  }
-
-  async function startTopup(amountCents: number) {
-    const res = await fetch("/api/wallet/topup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chatId, amountCents }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && data.invoiceUrl) {
-      window.location.href = data.invoiceUrl;
     }
   }
 
@@ -627,21 +598,6 @@ export default function ChatView({
         </div>
       )}
 
-      {role === "guest" && (
-        <div className="mx-3 mb-1 flex items-center justify-between">
-          <span className="text-xs text-muted">
-            Wallet balance:{" "}
-            <span className="font-semibold text-fg">{formatPrice(balanceCents)}</span>
-          </span>
-          <button
-            onClick={() => setTopup({ needCents: 0 })}
-            className="text-xs font-semibold text-accent hover:opacity-80"
-          >
-            + Add funds
-          </button>
-        </div>
-      )}
-
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="flex items-end gap-2 bg-card2/80 border border-line2 rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
@@ -744,15 +700,6 @@ export default function ChatView({
           </button>
         </div>
       </div>
-
-      {topup && (
-        <TopupSheet
-          balanceCents={balanceCents}
-          needCents={topup.needCents}
-          onClose={() => setTopup(null)}
-          onChoose={startTopup}
-        />
-      )}
 
       {labelDialog && (
         <Portal>
@@ -891,96 +838,5 @@ export default function ChatView({
         </div>
       )}
     </div>
-  );
-}
-
-/** Bottom sheet to top up the wallet — preset amounts or a custom amount. */
-function TopupSheet({
-  balanceCents,
-  needCents,
-  onClose,
-  onChoose,
-}: {
-  balanceCents: number;
-  needCents: number;
-  onClose: () => void;
-  onChoose: (amountCents: number) => Promise<void>;
-}) {
-  const presets = [1000, 2500, 5000, 10000];
-  const [custom, setCustom] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  async function choose(amountCents: number) {
-    if (busy || amountCents < 100) return;
-    setBusy(true);
-    await onChoose(amountCents);
-    // If the redirect didn't happen (error), let them try again.
-    setBusy(false);
-  }
-
-  const customCents = Math.round(parseFloat(custom.replace(/[^\d.]/g, "")) * 100) || 0;
-
-  return (
-    <Portal>
-      <div
-        className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-0 sm:p-4"
-        onClick={onClose}
-      >
-        <div
-          className="bg-card border border-line rounded-t-2xl sm:rounded-2xl p-5 w-full sm:max-w-sm space-y-4 fade-up"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div>
-            <p className="font-bold text-lg">Add funds</p>
-            <p className="text-xs text-muted mt-0.5">
-              Balance: <span className="font-semibold text-fg">{formatPrice(balanceCents)}</span>
-              {needCents > 0 && ` · ${formatPrice(needCents)} more to unlock`}
-            </p>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            {presets.map((cents) => (
-              <button
-                key={cents}
-                onClick={() => choose(cents)}
-                disabled={busy}
-                className="py-3 rounded-xl bg-card2 border border-line font-semibold text-sm hover:border-accent disabled:opacity-50"
-              >
-                {formatPrice(cents)}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted">$</span>
-            <input
-              value={custom}
-              onChange={(e) => setCustom(e.target.value.replace(/[^\d.]/g, ""))}
-              inputMode="decimal"
-              placeholder="Custom amount"
-              className="flex-1 bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
-            />
-            <button
-              onClick={() => choose(customCents)}
-              disabled={busy || customCents < 100}
-              className="px-4 py-2.5 rounded-xl bg-accent text-white text-sm font-semibold disabled:opacity-40"
-            >
-              Add
-            </button>
-          </div>
-
-          <p className="text-[11px] text-muted text-center">
-            Paid securely by card or crypto. Your balance updates automatically
-            once the payment confirms.
-          </p>
-          <button
-            onClick={onClose}
-            className="w-full py-2.5 rounded-xl bg-card2 border border-line text-sm font-semibold"
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </Portal>
   );
 }

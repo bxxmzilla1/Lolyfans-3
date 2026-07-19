@@ -181,7 +181,7 @@ export default function MessageBubble({
           )
         )}
       </div>
-      {/* Priced media → tapping runs the one-click wallet unlock */}
+      {/* Priced media → one-tap Stripe unlock (Checkout the first time) */}
       {payToUnlock ? (
         <button
           onClick={(e) => {

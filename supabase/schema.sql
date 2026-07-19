@@ -277,13 +277,8 @@ create index if not exists post_comments_post_idx on post_comments (post_id, cre
 -- stats keep working either way.
 alter table invites add column if not exists skip_landing boolean not null default false;
 
--- Pay-to-unlock wallet: each fan (identified by their chat) keeps a prepaid
--- balance in integer cents. Topping up once lets every later unlock be a single
--- tap (the balance is debited instantly, no checkout).
-alter table chats add column if not exists wallet_balance_cents int not null default 0;
-
--- Unlock price of a locked media message, in cents. 0 = no wallet price (the
--- owner unlocks it manually for everyone, the classic blur toggle).
+-- Unlock price of a locked media message, in cents. 0 = manual lock only
+-- (owner blur toggle). A positive price makes it pay-to-unlock via Stripe.
 alter table messages add column if not exists price_cents int not null default 0;
 
 -- Which fan has unlocked which locked message (one row = revealed for them).
@@ -297,22 +292,9 @@ create table if not exists message_unlocks (
 alter table message_unlocks enable row level security;
 create index if not exists message_unlocks_chat_idx on message_unlocks (chat_id);
 
--- Wallet top-ups paid through NOWPayments. order_id points back at this row so
--- the IPN callback can credit the right fan; crediting is idempotent (only once,
--- guarded by credited_at) even if several notifications arrive.
-create table if not exists wallet_topups (
-  id uuid primary key default gen_random_uuid(),
-  chat_id uuid not null references chats(id) on delete cascade,
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  invoice_id text,
-  payment_id text,
-  amount_cents int not null,
-  status text not null default 'pending',
-  created_at timestamptz not null default now(),
-  credited_at timestamptz
-);
-alter table wallet_topups enable row level security;
-create index if not exists wallet_topups_chat_idx on wallet_topups (chat_id, created_at desc);
+-- Stripe customer + saved card for one-tap unlocks after the first Checkout.
+alter table chats add column if not exists stripe_customer_id text;
+alter table chats add column if not exists stripe_payment_method_id text;
 
 -- Public storage bucket for chat media and vault files
 insert into storage.buckets (id, name, public)

@@ -2,7 +2,7 @@ import { guestChats } from "@/lib/guest";
 
 /**
  * Confirm the current guest owns `chatId` (via cookie / IP / email match).
- * Wallet actions are always scoped to a chat the fan actually holds.
+ * Payment and unlock actions are always scoped to a chat the fan holds.
  */
 export async function guestOwnsChat(
   requestHeaders: Headers,

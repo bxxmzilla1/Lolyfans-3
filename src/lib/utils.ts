@@ -14,7 +14,9 @@ export const LABELED_LINK_REGEX =
 
 /** "[Payment Link](https://x)" -> "Payment Link" for chat previews and reply quotes. */
 export function messagePreviewText(content: string): string {
-  return content.replace(LABELED_LINK_REGEX, "$1").trim();
+  return content
+    .replace(LABELED_LINK_REGEX, (_m, label: string) => label?.trim() || "Link")
+    .trim();
 }
 
 /** First link in a message — labeled or bare. Locked media opens this on tap. */

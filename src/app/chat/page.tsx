@@ -32,7 +32,7 @@ export default async function GuestChatPage() {
         .limit(500),
       db
         .from("chats")
-        .select("owner_id, guest_ip, wallet_balance_cents")
+        .select("owner_id, guest_ip")
         .eq("id", chatId)
         .maybeSingle(),
       db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
@@ -85,7 +85,6 @@ export default async function GuestChatPage() {
         role="guest"
         header={header}
         initialMessages={initialMessages}
-        initialBalanceCents={chat.wallet_balance_cents ?? 0}
       />
       <GuestNav />
     </div>
