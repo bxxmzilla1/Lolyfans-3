@@ -20,20 +20,32 @@ export default async function GuestChatPage() {
   const db = supabaseAdmin();
   const requestHeaders = await headers();
 
-  // Messages, chat, and the guest's location all load at the same time.
-  const [{ data: messages }, { data: chat }, location] = await Promise.all([
-    db
-      .from("messages")
-      .select("*")
-      .eq("chat_id", chatId)
-      .eq("hidden", false)
-      .order("created_at", { ascending: true })
-      .limit(500),
-    db.from("chats").select("owner_id, guest_ip").eq("id", chatId).maybeSingle(),
-    visitorLocation(requestHeaders),
-  ]);
+  // Messages, chat, unlocks, and the guest's location all load at the same time.
+  const [{ data: messages }, { data: chat }, { data: unlocks }, location] =
+    await Promise.all([
+      db
+        .from("messages")
+        .select("*")
+        .eq("chat_id", chatId)
+        .eq("hidden", false)
+        .order("created_at", { ascending: true })
+        .limit(500),
+      db
+        .from("chats")
+        .select("owner_id, guest_ip, wallet_balance_cents")
+        .eq("id", chatId)
+        .maybeSingle(),
+      db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
+      visitorLocation(requestHeaders),
+    ]);
   // Chat was deleted: skip the IP resume so we land on the sign-in page, not a loop
   if (!chat) redirect("/?resume=0");
+
+  const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id));
+  const initialMessages = (messages ?? []).map((m) => ({
+    ...m,
+    unlocked: unlockedIds.has(m.id),
+  }));
 
   // Keep the remembered IP fresh so this device finds its chat again even
   // after clearing history or switching browsers (IPs drift over time).
@@ -72,7 +84,8 @@ export default async function GuestChatPage() {
         chatId={chatId}
         role="guest"
         header={header}
-        initialMessages={messages ?? []}
+        initialMessages={initialMessages}
+        initialBalanceCents={chat.wallet_balance_cents ?? 0}
       />
       <GuestNav />
     </div>

@@ -112,6 +112,22 @@ on conflict do nothing;
 
 alter table vault_item_albums enable row level security;
 
+-- AI analysis of each vault item (written by Orion): what's in the media and
+-- sales tags, keyed by the item's unique id so it's found instantly.
+create table if not exists vault_analyses (
+  item_id uuid primary key references vault_items(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  media_type text,
+  description text not null default '',
+  tags jsonb not null default '[]'::jsonb,
+  albums jsonb not null default '[]'::jsonb,
+  analyzed_at timestamptz not null default now()
+);
+
+create index if not exists vault_analyses_owner_idx on vault_analyses (owner_id);
+
+alter table vault_analyses enable row level security;
+
 -- Custom inbox categories (tabs); a chat can belong to any number of them
 create table if not exists chat_categories (
   id uuid primary key default gen_random_uuid(),
@@ -260,6 +276,43 @@ create index if not exists post_comments_post_idx on post_comments (post_id, cre
 -- the creator's locked profile preview. Clicks are recorded there too, so the
 -- stats keep working either way.
 alter table invites add column if not exists skip_landing boolean not null default false;
+
+-- Pay-to-unlock wallet: each fan (identified by their chat) keeps a prepaid
+-- balance in integer cents. Topping up once lets every later unlock be a single
+-- tap (the balance is debited instantly, no checkout).
+alter table chats add column if not exists wallet_balance_cents int not null default 0;
+
+-- Unlock price of a locked media message, in cents. 0 = no wallet price (the
+-- owner unlocks it manually for everyone, the classic blur toggle).
+alter table messages add column if not exists price_cents int not null default 0;
+
+-- Which fan has unlocked which locked message (one row = revealed for them).
+create table if not exists message_unlocks (
+  message_id uuid not null references messages(id) on delete cascade,
+  chat_id uuid not null references chats(id) on delete cascade,
+  price_cents int not null default 0,
+  created_at timestamptz not null default now(),
+  primary key (message_id, chat_id)
+);
+alter table message_unlocks enable row level security;
+create index if not exists message_unlocks_chat_idx on message_unlocks (chat_id);
+
+-- Wallet top-ups paid through NOWPayments. order_id points back at this row so
+-- the IPN callback can credit the right fan; crediting is idempotent (only once,
+-- guarded by credited_at) even if several notifications arrive.
+create table if not exists wallet_topups (
+  id uuid primary key default gen_random_uuid(),
+  chat_id uuid not null references chats(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  invoice_id text,
+  payment_id text,
+  amount_cents int not null,
+  status text not null default 'pending',
+  created_at timestamptz not null default now(),
+  credited_at timestamptz
+);
+alter table wallet_topups enable row level security;
+create index if not exists wallet_topups_chat_idx on wallet_topups (chat_id, created_at desc);
 
 -- Public storage bucket for chat media and vault files
 insert into storage.buckets (id, name, public)

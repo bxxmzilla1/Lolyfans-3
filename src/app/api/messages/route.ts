@@ -52,15 +52,24 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Hidden messages are only visible to the owner
-  const messages =
-    auth.role === "guest" ? (data ?? []).filter((m) => !m.hidden) : data;
+  // Hidden messages are only visible to the owner; guests also get an
+  // `unlocked` flag per priced-locked message so paid ones reveal.
+  let messages = data ?? [];
+  if (auth.role === "guest") {
+    messages = messages.filter((m) => !m.hidden);
+    const { data: unlocks } = await supabaseAdmin()
+      .from("message_unlocks")
+      .select("message_id")
+      .eq("chat_id", chatId);
+    const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id));
+    messages = messages.map((m) => ({ ...m, unlocked: unlockedIds.has(m.id) }));
+  }
   return NextResponse.json({ messages, role: auth.role });
 }
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { chatId, content, mediaPath, mediaType, replyToId, locked } = body;
+  const { chatId, content, mediaPath, mediaType, replyToId, locked, priceCents } = body;
   if (!chatId) return NextResponse.json({ error: "chatId required" }, { status: 400 });
   if (!content?.trim() && !mediaPath) {
     return NextResponse.json({ error: "Empty message" }, { status: 400 });
@@ -80,6 +89,11 @@ export async function POST(req: NextRequest) {
       media_type: mediaType || null,
       reply_to_id: replyToId || null,
       locked: !!locked && !!mediaPath,
+      // Only the owner can price media; a positive price makes it pay-to-unlock.
+      price_cents:
+        auth.role === "owner" && !!mediaPath && Number.isFinite(priceCents)
+          ? Math.max(0, Math.round(Number(priceCents)))
+          : 0,
     })
     .select()
     .single();

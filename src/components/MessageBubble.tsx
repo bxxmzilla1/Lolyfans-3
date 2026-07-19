@@ -14,8 +14,17 @@ export type Message = {
   reply_to_id: string | null;
   locked?: boolean;
   hidden?: boolean;
+  // Pay-to-unlock price in cents (owner-set); 0 = manual lock only.
+  price_cents?: number;
+  // Guest-side: has this fan unlocked the priced media?
+  unlocked?: boolean;
   created_at: string;
 };
+
+export function formatPrice(cents: number): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+}
 
 /**
  * Attached links ("[Payment Link]{25}(https://…)") show their label — or the
@@ -96,6 +105,7 @@ export default function MessageBubble({
   onReply,
   onMediaClick,
   onToggleLock,
+  onUnlock,
   selectMode = false,
   selected = false,
   onSelectToggle,
@@ -106,19 +116,33 @@ export default function MessageBubble({
   onReply: (m: Message) => void;
   onMediaClick: (m: Message) => void;
   onToggleLock: (m: Message) => void;
+  onUnlock?: (m: Message) => void;
   selectMode?: boolean;
   selected?: boolean;
   onSelectToggle?: (m: Message) => void;
 }) {
   const locked = !!message.locked;
-  // Receiver of a locked message: blurred, unclickable
-  const blurred = locked && !mine;
+  const price = message.price_cents ?? 0;
+  // A fan who paid for this priced media sees it revealed.
+  const paidUnlocked = !mine && locked && price > 0 && !!message.unlocked;
+  // Receiver of a locked message: blurred, unless they've paid to unlock it.
+  const blurred = locked && !mine && !paidUnlocked;
+  // Priced + not yet unlocked → show the pay-to-unlock overlay.
+  const payToUnlock = blurred && price > 0;
   // Locked media with a link attached: tapping the blurred preview opens the
   // link (e.g. a payment page) in a new tab.
   const blurredLink = blurred && message.content ? firstLinkIn(message.content) : null;
   const blurredPrice = blurred && message.content ? linkPriceIn(message.content) : null;
-  // Creator's own bubble: the attached price shows tiny in the bottom corner.
-  const myPrice = mine && message.content ? linkPriceIn(message.content) : null;
+  // Creator's own bubble: the price shows tiny in the bottom corner — the
+  // pay-to-unlock price when set, otherwise a link-attached price label.
+  const linkPrice = message.content ? linkPriceIn(message.content) : null;
+  const myPriceLabel = mine
+    ? price > 0
+      ? formatPrice(price)
+      : linkPrice
+        ? `$${linkPrice}`
+        : null
+    : null;
   // A locked media message whose content is only a hidden link renders no text row.
   const showText =
     !!message.content &&
@@ -147,21 +171,38 @@ export default function MessageBubble({
           <IconLock className="w-5 h-5 text-white" />
         </span>
         <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
-        {blurredPrice && (
-          <span className="text-white text-sm font-bold drop-shadow">{`$${blurredPrice}`}</span>
+        {payToUnlock ? (
+          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent text-white text-sm font-bold px-4 py-1.5 shadow-lg">
+            Unlock {formatPrice(price)}
+          </span>
+        ) : (
+          blurredPrice && (
+            <span className="text-white text-sm font-bold drop-shadow">{`$${blurredPrice}`}</span>
+          )
         )}
       </div>
-      {/* A link came with the locked media → the blurred preview is a tap
-          target that opens it in a new tab */}
-      {blurredLink && (
-        <a
-          href={blurredLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          aria-label="Open link"
+      {/* Priced media → tapping runs the one-click wallet unlock */}
+      {payToUnlock ? (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onUnlock?.(message);
+          }}
+          aria-label={`Unlock for ${formatPrice(price)}`}
           className="absolute inset-0 z-[15] cursor-pointer"
         />
+      ) : (
+        // A link came with the locked media → tap opens it in a new tab
+        blurredLink && (
+          <a
+            href={blurredLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Open link"
+            className="absolute inset-0 z-[15] cursor-pointer"
+          />
+        )
       )}
     </>
   );
@@ -266,8 +307,8 @@ export default function MessageBubble({
             mine ? "text-white/60 justify-end" : "text-muted"
           } ${!showText && message.media_path ? "pt-1.5" : "-mt-1"}`}
         >
-          {myPrice && (
-            <span className="mr-auto font-semibold">{`$${myPrice}`}</span>
+          {myPriceLabel && (
+            <span className="mr-auto font-semibold">{myPriceLabel}</span>
           )}
           {formatTime(message.created_at)}
         </p>
