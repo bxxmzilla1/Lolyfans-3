@@ -196,13 +196,25 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, load]);
 
-  // After Stripe Checkout, the URL has ?paid=<messageId> — refresh unlocks.
+  // After Stripe Checkout: confirm the session (covers webhook 308 failures),
+  // then refresh messages so the media unlocks immediately.
   useEffect(() => {
     if (role !== "guest") return;
-    const paid = new URLSearchParams(window.location.search).get("paid");
-    if (!paid) return;
-    load();
+    const params = new URLSearchParams(window.location.search);
+    const sessionId = params.get("session_id");
+    const paid = params.get("paid");
+    if (!sessionId && !paid) return;
     window.history.replaceState({}, "", "/chat");
+    (async () => {
+      if (sessionId) {
+        await fetch("/api/payments/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sessionId }),
+        }).catch(() => {});
+      }
+      await load();
+    })();
   }, [role, load]);
 
   useEffect(() => {

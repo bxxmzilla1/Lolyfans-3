@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { recordUnlock } from "@/lib/payments";
+import { fulfillUnlockCheckout, recordUnlock } from "@/lib/payments";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 
+export const runtime = "nodejs";
+
 /**
- * Stripe webhook: after Checkout completes, save the card for one-tap unlocks
- * and mark the media as unlocked for that fan.
+ * Stripe webhook. Must be pointed at the *canonical* host that does not 308
+ * redirect (e.g. https://www.lolyfans.com/... if apex redirects to www).
+ * Stripe does not follow redirects — a 308 means the unlock never runs.
  */
 export async function POST(req: NextRequest) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -26,49 +29,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (event.type === "checkout.session.completed") {
-    const session = event.data.object as Stripe.Checkout.Session;
-    if (session.metadata?.kind !== "unlock") {
-      return NextResponse.json({ ok: true });
-    }
-    const chatId = session.metadata.chatId;
-    const messageId = session.metadata.messageId;
-    if (!chatId || !messageId) return NextResponse.json({ ok: true });
-
-    const db = supabaseAdmin();
-    const customerId =
-      typeof session.customer === "string" ? session.customer : session.customer?.id;
-    const paymentIntentId =
-      typeof session.payment_intent === "string"
-        ? session.payment_intent
-        : session.payment_intent?.id;
-
-    let paymentMethodId: string | null = null;
-    if (paymentIntentId) {
-      const pi = await stripe().paymentIntents.retrieve(paymentIntentId);
-      paymentMethodId =
-        typeof pi.payment_method === "string"
-          ? pi.payment_method
-          : pi.payment_method?.id ?? null;
-    }
-
-    const patch: Record<string, string> = {};
-    if (customerId) patch.stripe_customer_id = customerId;
-    if (paymentMethodId) patch.stripe_payment_method_id = paymentMethodId;
-    if (Object.keys(patch).length) {
-      await db.from("chats").update(patch).eq("id", chatId);
-    }
-
-    const { data: message } = await db
-      .from("messages")
-      .select("price_cents")
-      .eq("id", messageId)
-      .maybeSingle();
-
-    await recordUnlock({
-      messageId,
-      chatId,
-      priceCents: message?.price_cents ?? session.amount_total ?? 0,
-    });
+    await fulfillUnlockCheckout(event.data.object as Stripe.Checkout.Session);
   }
 
   if (event.type === "payment_intent.succeeded") {
@@ -99,5 +60,5 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ received: true });
 }

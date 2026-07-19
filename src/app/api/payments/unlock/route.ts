@@ -146,7 +146,9 @@ export async function POST(req: NextRequest) {
       messageId: message.id,
       kind: "unlock",
     },
-    success_url: `${origin}/chat?paid=${message.id}`,
+    // session_id lets /api/payments/confirm unlock even when the webhook
+    // fails (common when the apex domain 308-redirects to www).
+    success_url: `${origin}/chat?paid=${message.id}&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/chat`,
   });
 
