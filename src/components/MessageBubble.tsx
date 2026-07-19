@@ -1,8 +1,17 @@
 "use client";
 
-import { mediaUrl, formatTime, messagePreviewText, firstLinkIn, linkPriceIn } from "@/lib/utils";
-import { IconCheck, IconEyeOff, IconLink, IconLock, IconReply, IconUnlock } from "./Icons";
+import {
+  mediaUrl,
+  formatTime,
+  messagePreviewText,
+  firstLinkIn,
+  linkPriceIn,
+  stripPaymentReceipt,
+} from "@/lib/utils";
+import { IconCheck, IconEyeOff, IconLink, IconLock, IconReply, IconTip, IconUnlock } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
+
+const TIP_LINE_RE = /^💸 Tip · \$([\d.]+)(?:\n([\s\S]*))?$/;
 
 export type Message = {
   id: string;
@@ -106,6 +115,7 @@ export default function MessageBubble({
   onMediaClick,
   onToggleLock,
   onUnlock,
+  unlocking = false,
   selectMode = false,
   selected = false,
   onSelectToggle,
@@ -117,6 +127,7 @@ export default function MessageBubble({
   onMediaClick: (m: Message) => void;
   onToggleLock: (m: Message) => void;
   onUnlock?: (m: Message) => void;
+  unlocking?: boolean;
   selectMode?: boolean;
   selected?: boolean;
   onSelectToggle?: (m: Message) => void;
@@ -143,10 +154,14 @@ export default function MessageBubble({
         ? `$${linkPrice}`
         : null
     : null;
+  const displayContent = message.content ? stripPaymentReceipt(message.content) : "";
+  const tipMatch = displayContent.match(TIP_LINE_RE);
+  const isTip = !!tipMatch;
   // A locked media message whose content is only a hidden link renders no text row.
   const showText =
-    !!message.content &&
-    !(message.media_path && locked && messagePreviewText(message.content) === "");
+    !!displayContent &&
+    !isTip &&
+    !(message.media_path && locked && messagePreviewText(displayContent) === "");
 
   const lockToggle = mine && message.media_path && (
     <button
@@ -167,22 +182,33 @@ export default function MessageBubble({
   const lockedOverlay = blurred && (
     <>
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 pointer-events-none">
-        <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
-          <IconLock className="w-5 h-5 text-white" />
-        </span>
-        <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
-        {payToUnlock ? (
-          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent text-white text-sm font-bold px-4 py-1.5 shadow-lg">
-            Unlock {formatPrice(price)}
-          </span>
+        {unlocking ? (
+          <>
+            <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
+              <span className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+            </span>
+            <span className="text-white text-xs font-semibold drop-shadow">Unlocking…</span>
+          </>
         ) : (
-          blurredPrice && (
-            <span className="text-white text-sm font-bold drop-shadow">{`$${blurredPrice}`}</span>
-          )
+          <>
+            <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
+              <IconLock className="w-5 h-5 text-white" />
+            </span>
+            <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
+            {payToUnlock ? (
+              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent text-white text-sm font-bold px-4 py-1.5 shadow-lg">
+                Unlock {formatPrice(price)}
+              </span>
+            ) : (
+              blurredPrice && (
+                <span className="text-white text-sm font-bold drop-shadow">{`$${blurredPrice}`}</span>
+              )
+            )}
+          </>
         )}
       </div>
       {/* Priced media → one-tap Stripe unlock (Checkout the first time) */}
-      {payToUnlock ? (
+      {payToUnlock && !unlocking ? (
         <button
           onClick={(e) => {
             e.stopPropagation();
@@ -191,8 +217,9 @@ export default function MessageBubble({
           aria-label={`Unlock for ${formatPrice(price)}`}
           className="absolute inset-0 z-[15] cursor-pointer"
         />
+      ) : unlocking ? (
+        <div className="absolute inset-0 z-[15] cursor-wait" />
       ) : (
-        // A link came with the locked media → tap opens it in a new tab
         blurredLink && (
           <a
             href={blurredLink}
@@ -296,16 +323,40 @@ export default function MessageBubble({
           </div>
         )}
 
-        {showText && message.content && (
+        {isTip && tipMatch && (
+          <div className={`px-4 py-3 flex items-start gap-2.5 ${mine ? "" : ""}`}>
+            <span
+              className={`mt-0.5 w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                mine ? "bg-white/15 text-white" : "bg-accent/15 text-accent"
+              }`}
+            >
+              <IconTip className="w-4 h-4" />
+            </span>
+            <div className="min-w-0">
+              <p className={`text-[15px] font-semibold leading-snug ${mine ? "text-white" : "text-fg"}`}>
+                Tip · ${tipMatch[1]}
+              </p>
+              {tipMatch[2]?.trim() && (
+                <p className={`mt-0.5 text-[14px] leading-snug whitespace-pre-wrap break-words ${
+                  mine ? "text-white/85" : "text-fg/80"
+                }`}>
+                  {tipMatch[2].trim()}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {showText && displayContent && (
           <p className="px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words">
-            {renderContent(message.content, mine, !!message.media_path, locked)}
+            {renderContent(displayContent, mine, !!message.media_path, locked)}
           </p>
         )}
 
         <p
           className={`px-4 pb-1.5 text-[10px] flex items-center gap-2 ${
             mine ? "text-white/60 justify-end" : "text-muted"
-          } ${!showText && message.media_path ? "pt-1.5" : "-mt-1"}`}
+          } ${!showText && !isTip && message.media_path ? "pt-1.5" : "-mt-1"}`}
         >
           {myPriceLabel && (
             <span className="mr-auto font-semibold">{myPriceLabel}</span>

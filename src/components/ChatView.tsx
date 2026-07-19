@@ -15,8 +15,16 @@ import {
   IconLock,
   IconPlus,
   IconSend,
+  IconTip,
   IconUnlock,
 } from "./Icons";
+
+const TIP_PRESETS_CENTS = [500, 1000, 2500, 5000, 10000];
+
+function formatTipDollars(cents: number) {
+  const dollars = (cents / 100).toFixed(2).replace(/\.00$/, "");
+  return `$${dollars}`;
+}
 
 export default function ChatView({
   chatId,
@@ -42,6 +50,10 @@ export default function ChatView({
   const [sendLocked, setSendLocked] = useState(false);
   const [lockPrice, setLockPrice] = useState("");
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
+  const [tipCents, setTipCents] = useState<number | null>(null);
+  const [tipPickerOpen, setTipPickerOpen] = useState(false);
+  const [tipCustom, setTipCustom] = useState("");
+  const [tipping, setTipping] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const [msgSelectMode, setMsgSelectMode] = useState(false);
   const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
@@ -197,12 +209,12 @@ export default function ChatView({
   }, [chatId, load]);
 
   // After Stripe Checkout: confirm the session (covers webhook 308 failures),
-  // then refresh messages so the media unlocks immediately.
+  // then refresh so unlocks/tips appear immediately.
   useEffect(() => {
     if (role !== "guest") return;
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
-    const paid = params.get("paid");
+    const paid = params.get("paid") || params.get("tipped");
     if (!sessionId && !paid) return;
     window.history.replaceState({}, "", "/chat");
     (async () => {
@@ -233,7 +245,52 @@ export default function ChatView({
     });
   }
 
+  function pickTipAmount(cents: number) {
+    setTipCents(cents);
+    setTipPickerOpen(false);
+    setTipCustom("");
+    setAttachment(null);
+    setLinkAttachment(null);
+    setReplyTo(null);
+  }
+
+  async function sendTip() {
+    if (role !== "guest" || !tipCents || tipping) return;
+    const caption = text.trim();
+    setTipping(true);
+    try {
+      const res = await fetch("/api/payments/tip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, amountCents: tipCents, caption }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.tipped && data.message) {
+        setMessages((prev) =>
+          prev.some((m) => m.id === data.message.id) ? prev : [...prev, data.message]
+        );
+        setText("");
+        setTipCents(null);
+        setTipping(false);
+        return;
+      }
+      if (res.ok && data.checkoutUrl) {
+        // Keep tipping spinner until Stripe navigates away.
+        window.location.href = data.checkoutUrl;
+        return;
+      }
+      alert(data.error || "Could not send tip");
+    } catch {
+      alert("Could not send tip");
+    }
+    setTipping(false);
+  }
+
   async function send(mediaPathArg?: string, mediaTypeArg?: string) {
+    if (tipCents && !mediaPathArg) {
+      await sendTip();
+      return;
+    }
     const mediaPath = mediaPathArg ?? attachment?.path;
     const mediaType = mediaTypeArg ?? attachment?.type;
     const usedAttachment = !mediaPathArg ? attachment : null;
@@ -323,11 +380,16 @@ export default function ChatView({
           prev.map((m) => (m.id === message.id ? { ...m, unlocked: true } : m))
         );
       } else if (res.ok && data.checkoutUrl) {
+        // Keep the unlocking spinner until Stripe navigates away.
         window.location.href = data.checkoutUrl;
+        return;
+      } else if (!res.ok) {
+        alert(data.error || "Could not unlock");
       }
-    } finally {
-      setUnlockingId(null);
+    } catch {
+      alert("Could not unlock");
     }
+    setUnlockingId(null);
   }
 
   async function toggleLock(message: Message) {
@@ -459,6 +521,7 @@ export default function ChatView({
             onMediaClick={setLightbox}
             onToggleLock={toggleLock}
             onUnlock={unlockMessage}
+            unlocking={unlockingId === m.id}
             selectMode={msgSelectMode}
             selected={selectedMsgs.has(m.id)}
             onSelectToggle={toggleMsgSelected}
@@ -558,6 +621,35 @@ export default function ChatView({
         </div>
       )}
 
+      {tipCents != null && (
+        <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line flex items-center gap-3 fade-up">
+          <span className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center shrink-0">
+            <IconTip className="w-4 h-4" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-accent">
+              Tip {formatTipDollars(tipCents)}
+            </p>
+            <p className="text-xs text-muted">
+              Add an optional note below, then send to pay
+            </p>
+          </div>
+          <button
+            onClick={() => setTipPickerOpen(true)}
+            className="text-xs font-semibold text-accent px-1"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => setTipCents(null)}
+            className="text-muted text-sm px-1"
+            aria-label="Cancel tip"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {attachment && (
         <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line flex items-center gap-3 fade-up">
           {attachment.type === "image" ? (
@@ -613,8 +705,11 @@ export default function ChatView({
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <div className="flex items-end gap-2 bg-card2/80 border border-line2 rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
+            onClick={() => {
+              setTipCents(null);
+              fileRef.current?.click();
+            }}
+            disabled={uploading || tipping}
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-50 flex items-center justify-center active:opacity-80 transition-opacity"
             aria-label="Attach media"
           >
@@ -631,6 +726,21 @@ export default function ChatView({
             hidden
             onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
           />
+          {role === "guest" && (
+            <button
+              onClick={() => setTipPickerOpen(true)}
+              disabled={tipping}
+              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center transition-colors disabled:opacity-50 ${
+                tipCents != null
+                  ? "bg-accent text-white glow-accent"
+                  : "bg-transparent border border-line text-muted hover:text-fg"
+              }`}
+              aria-label="Send a tip"
+              title="Send a tip"
+            >
+              <IconTip className="w-4.5 h-4.5" />
+            </button>
+          )}
           {role === "owner" && (
             <button
               onClick={() => {
@@ -690,28 +800,109 @@ export default function ChatView({
             value={text}
             onChange={(e) => {
               setText(e.target.value);
-              if (e.target.value) notifyTyping();
+              if (e.target.value && tipCents == null) notifyTyping();
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                send();
+                if (tipCents != null) sendTip();
+                else send();
               }
             }}
-            placeholder="Message…"
+            placeholder={tipCents != null ? "Add a note (optional)…" : "Message…"}
             rows={1}
-            className="flex-1 bg-transparent resize-none max-h-32 py-2 text-[15px] placeholder:text-muted"
+            disabled={tipping}
+            className="flex-1 bg-transparent resize-none max-h-32 py-2 text-[15px] placeholder:text-muted disabled:opacity-60"
           />
           <button
-            onClick={() => send()}
-            disabled={!text.trim() && !attachment && !linkAttachment}
+            onClick={() => (tipCents != null ? sendTip() : send())}
+            disabled={
+              tipping ||
+              (tipCents == null && !text.trim() && !attachment && !linkAttachment)
+            }
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-40 flex items-center justify-center active:opacity-80 transition-opacity"
-            aria-label="Send"
+            aria-label={tipCents != null ? "Send tip" : "Send"}
           >
-            <IconSend className="w-4.5 h-4.5" />
+            {tipping ? (
+              <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+            ) : (
+              <IconSend className="w-4.5 h-4.5" />
+            )}
           </button>
         </div>
       </div>
+
+      {tipPickerOpen && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
+            onClick={() => setTipPickerOpen(false)}
+          >
+            <div
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-4 fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-bold">Send a tip</p>
+                <button
+                  onClick={() => setTipPickerOpen(false)}
+                  className="text-muted text-sm px-1"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="text-sm text-muted -mt-2">
+                Pick an amount. You can add a note in the chat box before sending.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {TIP_PRESETS_CENTS.map((cents) => (
+                  <button
+                    key={cents}
+                    onClick={() => pickTipAmount(cents)}
+                    className={`rounded-xl border px-3 py-3 text-sm font-semibold transition-colors ${
+                      tipCents === cents
+                        ? "bg-accent text-white border-accent"
+                        : "bg-card2 border-line hover:border-accent"
+                    }`}
+                  >
+                    {formatTipDollars(cents)}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted">Custom amount</label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted">$</span>
+                  <input
+                    value={tipCustom}
+                    onChange={(e) => setTipCustom(e.target.value.replace(/[^\d.]/g, ""))}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      const cents = Math.round(parseFloat(tipCustom) * 100);
+                      if (cents >= 100) pickTipAmount(cents);
+                    }}
+                    inputMode="decimal"
+                    placeholder="25"
+                    className="flex-1 bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                  />
+                  <button
+                    onClick={() => {
+                      const cents = Math.round(parseFloat(tipCustom) * 100);
+                      if (cents >= 100) pickTipAmount(cents);
+                    }}
+                    disabled={!(Math.round(parseFloat(tipCustom) * 100) >= 100)}
+                    className="rounded-xl bg-accent text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
+                  >
+                    Use
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted">Minimum $1</p>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
 
       {labelDialog && (
         <Portal>

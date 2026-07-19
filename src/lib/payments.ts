@@ -23,21 +23,57 @@ export async function recordUnlock(opts: {
   });
 }
 
-/**
- * After a paid Checkout session: save the card for one-tap unlocks and mark
- * the media unlocked. Safe to call from the webhook or from the return URL.
- */
-export async function fulfillUnlockCheckout(session: Stripe.Checkout.Session) {
-  if (session.metadata?.kind !== "unlock") return false;
-  if (session.payment_status !== "paid" && session.status !== "complete") {
-    return false;
-  }
+/** Format a tip bubble's text content. */
+export function tipMessageContent(amountCents: number, caption: string): string {
+  const dollars = (amountCents / 100).toFixed(2).replace(/\.00$/, "");
+  const head = `💸 Tip · $${dollars}`;
+  const body = caption.trim();
+  return body ? `${head}\n${body}` : head;
+}
 
-  const chatId = session.metadata.chatId;
-  const messageId = session.metadata.messageId;
-  if (!chatId || !messageId) return false;
-
+/** Persist a tip as a guest chat message and notify both sides. */
+export async function postTipMessage(opts: {
+  chatId: string;
+  amountCents: number;
+  caption: string;
+  ownerId: string;
+}) {
   const db = supabaseAdmin();
+  const content = tipMessageContent(opts.amountCents, opts.caption);
+  const { data: message, error } = await db
+    .from("messages")
+    .insert({
+      chat_id: opts.chatId,
+      sender: "guest",
+      content,
+    })
+    .select()
+    .single();
+  if (error || !message) throw new Error(error?.message || "Could not post tip");
+
+  const now = message.created_at as string;
+  await Promise.all([
+    db.from("chats").update({ last_message_at: now }).eq("id", opts.chatId),
+    broadcast(`chat:${opts.chatId}`, "new-message", message),
+    broadcast(`inbox:${opts.ownerId}`, "new-message", { chatId: opts.chatId }),
+  ]);
+  return message;
+}
+
+/** Save Stripe customer + card on the chat for future one-tap charges. */
+export async function saveStripePaymentMethod(
+  chatId: string,
+  customerId: string | null | undefined,
+  paymentMethodId: string | null | undefined
+) {
+  const patch: Record<string, string> = {};
+  if (customerId) patch.stripe_customer_id = customerId;
+  if (paymentMethodId) patch.stripe_payment_method_id = paymentMethodId;
+  if (!Object.keys(patch).length) return;
+  await supabaseAdmin().from("chats").update(patch).eq("id", chatId);
+}
+
+async function paymentMethodFromSession(session: Stripe.Checkout.Session) {
   const customerId =
     typeof session.customer === "string" ? session.customer : session.customer?.id;
   const paymentIntentId =
@@ -53,24 +89,95 @@ export async function fulfillUnlockCheckout(session: Stripe.Checkout.Session) {
         ? pi.payment_method
         : pi.payment_method?.id ?? null;
   }
+  return { customerId, paymentMethodId };
+}
 
-  const patch: Record<string, string> = {};
-  if (customerId) patch.stripe_customer_id = customerId;
-  if (paymentMethodId) patch.stripe_payment_method_id = paymentMethodId;
-  if (Object.keys(patch).length) {
-    await db.from("chats").update(patch).eq("id", chatId);
+/**
+ * After a paid Checkout session: save the card and fulfill unlock or tip.
+ * Safe to call from the webhook or from the return URL.
+ */
+export async function fulfillCheckout(session: Stripe.Checkout.Session) {
+  if (session.payment_status !== "paid" && session.status !== "complete") {
+    return { ok: false as const, kind: null };
+  }
+  const kind = session.metadata?.kind;
+  const chatId = session.metadata?.chatId;
+  if (!chatId || (kind !== "unlock" && kind !== "tip")) {
+    return { ok: false as const, kind: null };
   }
 
-  const { data: message } = await db
-    .from("messages")
-    .select("price_cents")
-    .eq("id", messageId)
-    .maybeSingle();
+  const { customerId, paymentMethodId } = await paymentMethodFromSession(session);
+  await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
 
-  await recordUnlock({
-    messageId,
-    chatId,
-    priceCents: message?.price_cents ?? session.amount_total ?? 0,
-  });
-  return true;
+  if (kind === "unlock") {
+    const messageId = session.metadata?.messageId;
+    if (!messageId) return { ok: false as const, kind: "unlock" as const };
+    const { data: message } = await supabaseAdmin()
+      .from("messages")
+      .select("price_cents")
+      .eq("id", messageId)
+      .maybeSingle();
+    await recordUnlock({
+      messageId,
+      chatId,
+      priceCents: message?.price_cents ?? session.amount_total ?? 0,
+    });
+    return { ok: true as const, kind: "unlock" as const, messageId };
+  }
+
+  // Tip: post the chat message once (idempotent via stripe session id in content? —
+  // better: check if we already posted for this payment_intent).
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id;
+  if (paymentIntentId) {
+    const { data: existing } = await supabaseAdmin()
+      .from("messages")
+      .select("id")
+      .eq("chat_id", chatId)
+      .eq("sender", "guest")
+      .ilike("content", `%${paymentIntentId}%`)
+      .maybeSingle();
+    if (existing) return { ok: true as const, kind: "tip" as const, messageId: existing.id };
+  }
+
+  const amountCents = Number(session.metadata?.amountCents || session.amount_total || 0);
+  const caption = session.metadata?.caption || "";
+  const { data: chat } = await supabaseAdmin()
+    .from("chats")
+    .select("owner_id")
+    .eq("id", chatId)
+    .maybeSingle();
+  if (!chat) return { ok: false as const, kind: "tip" as const };
+
+  // Append a hidden receipt token so retries don't double-post the tip.
+  const base = tipMessageContent(amountCents, caption);
+  const content = paymentIntentId ? `${base}\n⌞${paymentIntentId}⌟` : base;
+
+  const db = supabaseAdmin();
+  const { data: message, error } = await db
+    .from("messages")
+    .insert({ chat_id: chatId, sender: "guest", content })
+    .select()
+    .single();
+  if (error || !message) return { ok: false as const, kind: "tip" as const };
+
+  await Promise.all([
+    db.from("chats").update({ last_message_at: message.created_at }).eq("id", chatId),
+    broadcast(`chat:${chatId}`, "new-message", {
+      ...message,
+      // Clients strip the receipt token for display via messagePreviewText / render
+      content: base,
+    }),
+    broadcast(`inbox:${chat.owner_id}`, "new-message", { chatId }),
+  ]);
+
+  return { ok: true as const, kind: "tip" as const, messageId: message.id as string };
+}
+
+/** @deprecated use fulfillCheckout */
+export async function fulfillUnlockCheckout(session: Stripe.Checkout.Session) {
+  const result = await fulfillCheckout(session);
+  return result.ok && result.kind === "unlock";
 }

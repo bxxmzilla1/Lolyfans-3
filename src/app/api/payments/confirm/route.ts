@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guestOwnsChat } from "@/lib/guestAuth";
-import { fulfillUnlockCheckout } from "@/lib/payments";
+import { fulfillCheckout } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 
 /**
  * Called when the fan returns from Stripe Checkout. Verifies the session was
- * paid and unlocks media even if the webhook failed (e.g. host 308 redirect).
+ * paid and fulfills unlock/tip even if the webhook failed (e.g. host 308).
  */
 export async function POST(req: NextRequest) {
   if (!stripeConfigured()) {
@@ -23,8 +23,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const ok = await fulfillUnlockCheckout(session);
-  if (!ok) {
+  const result = await fulfillCheckout(session);
+  if (!result.ok) {
     return NextResponse.json(
       { error: "Payment not completed", status: session.payment_status },
       { status: 402 }
@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    unlocked: true,
-    messageId: session.metadata?.messageId ?? null,
+    kind: result.kind,
+    messageId: result.messageId ?? null,
   });
 }

@@ -12,11 +12,19 @@ export const URL_REGEX = /(https?:\/\/[^\s<>"')\]]+)/g;
 export const LABELED_LINK_REGEX =
   /\[([^\]\n]{0,200})\](?:\{[^}\n]{0,20}\})?\((https?:\/\/[^\s)]+)\)/g;
 
+/** Strip internal Stripe tip receipt tokens from stored message text. */
+export function stripPaymentReceipt(content: string): string {
+  return content.replace(/\n⌞[^⌟]+⌟\s*$/u, "").trimEnd();
+}
+
 /** "[Payment Link](https://x)" -> "Payment Link" for chat previews and reply quotes. */
 export function messagePreviewText(content: string): string {
-  return content
+  const cleaned = stripPaymentReceipt(content)
     .replace(LABELED_LINK_REGEX, (_m, label: string) => label?.trim() || "Link")
     .trim();
+  const tip = cleaned.match(/^💸 Tip · (\$[\d.]+)/);
+  if (tip) return `Tip · ${tip[1]}`;
+  return cleaned;
 }
 
 /** First link in a message — labeled or bare. Locked media opens this on tap. */

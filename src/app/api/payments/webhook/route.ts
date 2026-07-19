@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { fulfillUnlockCheckout, recordUnlock } from "@/lib/payments";
+import { fulfillCheckout, recordUnlock, saveStripePaymentMethod } from "@/lib/payments";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 
@@ -9,7 +9,6 @@ export const runtime = "nodejs";
 /**
  * Stripe webhook. Must be pointed at the *canonical* host that does not 308
  * redirect (e.g. https://www.lolyfans.com/... if apex redirects to www).
- * Stripe does not follow redirects — a 308 means the unlock never runs.
  */
 export async function POST(req: NextRequest) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -29,29 +28,24 @@ export async function POST(req: NextRequest) {
   }
 
   if (event.type === "checkout.session.completed") {
-    await fulfillUnlockCheckout(event.data.object as Stripe.Checkout.Session);
+    await fulfillCheckout(event.data.object as Stripe.Checkout.Session);
   }
 
+  // Off-session unlocks: tip messages are posted by /api/payments/tip directly;
+  // tip Checkout is fulfilled via checkout.session.completed above.
   if (event.type === "payment_intent.succeeded") {
     const pi = event.data.object as Stripe.PaymentIntent;
-    if (pi.metadata?.kind !== "unlock") return NextResponse.json({ ok: true });
+    if (pi.metadata?.kind !== "unlock") return NextResponse.json({ received: true });
     const chatId = pi.metadata.chatId;
     const messageId = pi.metadata.messageId;
-    if (!chatId || !messageId) return NextResponse.json({ ok: true });
+    if (!chatId || !messageId) return NextResponse.json({ received: true });
 
     const paymentMethodId =
       typeof pi.payment_method === "string"
         ? pi.payment_method
         : pi.payment_method?.id ?? null;
-    if (paymentMethodId && typeof pi.customer === "string") {
-      await supabaseAdmin()
-        .from("chats")
-        .update({
-          stripe_customer_id: pi.customer,
-          stripe_payment_method_id: paymentMethodId,
-        })
-        .eq("id", chatId);
-    }
+    const customerId = typeof pi.customer === "string" ? pi.customer : null;
+    await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
 
     await recordUnlock({
       messageId,

@@ -43,6 +43,16 @@ export function IconLink({ className }: IconProps) {
   );
 }
 
+export function IconTip({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M14.5 9.5a2.5 2.5 0 0 0-5 0c0 1.5 2.5 2 2.5 3.5a2.5 2.5 0 0 1-5 0" />
+      <path d="M12 7v1.5M12 15.5V17" />
+    </Svg>
+  );
+}
+
 export function IconGear({ className }: IconProps) {
   return (
     <Svg className={className}>
