@@ -46,9 +46,10 @@ export function IconLink({ className }: IconProps) {
 export function IconTip({ className }: IconProps) {
   return (
     <Svg className={className}>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M14.5 9.5a2.5 2.5 0 0 0-5 0c0 1.5 2.5 2 2.5 3.5a2.5 2.5 0 0 1-5 0" />
-      <path d="M12 7v1.5M12 15.5V17" />
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" />
+      <path d="M14.8 9a2 2 0 0 0 -1.8 -1h-2a2 2 0 1 0 0 4h2a2 2 0 1 1 0 4h-2a2 2 0 0 1 -1.8 -1" />
+      <path d="M12 7v10" />
     </Svg>
   );
 }
