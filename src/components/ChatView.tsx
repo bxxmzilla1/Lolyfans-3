@@ -970,8 +970,8 @@ function TopupSheet({
           </div>
 
           <p className="text-[11px] text-muted text-center">
-            Paid securely with crypto. Your balance updates automatically once
-            the payment confirms.
+            Paid securely by card or crypto. Your balance updates automatically
+            once the payment confirms.
           </p>
           <button
             onClick={onClose}
