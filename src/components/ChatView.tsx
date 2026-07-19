@@ -35,6 +35,7 @@ export default function ChatView({
   const [lightbox, setLightbox] = useState<Message | null>(null);
   const [labelDialog, setLabelDialog] = useState<{ url: string; label: string; price: string } | null>(null);
   const [linkAttachment, setLinkAttachment] = useState<{ url: string; label: string; price: string } | null>(null);
+  const [labelPresets, setLabelPresets] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [attachment, setAttachment] = useState<{ path: string; type: MediaKind } | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -48,6 +49,27 @@ export default function ChatView({
   const channelRef = useRef<RealtimeChannel | null>(null);
   const typingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingSentAtRef = useRef(0);
+
+  // Saved link-label presets live in the creator's profile metadata so they
+  // follow them across devices.
+  useEffect(() => {
+    if (role !== "owner") return;
+    supabaseBrowser()
+      .auth.getUser()
+      .then(({ data }) => {
+        const presets = data.user?.user_metadata?.link_label_presets;
+        if (Array.isArray(presets)) {
+          setLabelPresets(presets.filter((p): p is string => typeof p === "string"));
+        }
+      });
+  }, [role]);
+
+  function persistLabelPresets(next: string[]) {
+    setLabelPresets(next);
+    supabaseBrowser()
+      .auth.updateUser({ data: { link_label_presets: next } })
+      .then(() => {});
+  }
 
   function applyLinkLabel() {
     if (!labelDialog) return;
@@ -647,6 +669,48 @@ export default function ChatView({
                   placeholder="e.g. Payment Link"
                   className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
                 />
+                {labelPresets.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {labelPresets.map((preset) => (
+                      <span
+                        key={preset}
+                        className={`inline-flex items-center gap-1 rounded-full border pl-3 pr-1.5 py-1 text-xs font-semibold ${
+                          labelDialog.label === preset
+                            ? "bg-accent text-white border-accent"
+                            : "bg-card2 border-line text-fg"
+                        }`}
+                      >
+                        <button
+                          onClick={() =>
+                            setLabelDialog({ ...labelDialog, label: preset })
+                          }
+                        >
+                          {preset}
+                        </button>
+                        <button
+                          onClick={() =>
+                            persistLabelPresets(labelPresets.filter((p) => p !== preset))
+                          }
+                          aria-label={`Delete preset ${preset}`}
+                          className="opacity-60 hover:opacity-100 px-0.5"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {labelDialog.label.trim() &&
+                  !labelPresets.includes(labelDialog.label.trim()) && (
+                    <button
+                      onClick={() =>
+                        persistLabelPresets([...labelPresets, labelDialog.label.trim()])
+                      }
+                      className="text-xs font-semibold text-accent hover:opacity-80"
+                    >
+                      + Save “{labelDialog.label.trim()}” as preset
+                    </button>
+                  )}
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted">

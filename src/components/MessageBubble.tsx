@@ -18,15 +18,20 @@ export type Message = {
 };
 
 /**
- * Attached links ("[Payment Link]{25}(https://…)") show their label (plus the
- * price when there's no media to carry it); an empty label on a media message
- * hides the link entirely — the blurred media itself is the tap target. Bare
- * URLs show as-is. Everything opens in a new tab.
+ * Attached links ("[Payment Link]{25}(https://…)") show their label — or the
+ * URL itself when no label was given. Only on LOCKED media does an unlabeled
+ * link disappear entirely (the blurred media is the tap target, price rides
+ * on the Locked badge). Bare URLs show as-is. Everything opens in a new tab.
  */
 const LINK_TOKEN_REGEX =
   /\[([^\]\n]{0,200})\](?:\{([^}\n]{1,20})\})?\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"')\]]+)/g;
 
-function renderContent(text: string, mine: boolean, hasMedia: boolean) {
+function renderContent(
+  text: string,
+  mine: boolean,
+  hasMedia: boolean,
+  locked: boolean
+) {
   const nodes: React.ReactNode[] = [];
   let last = 0;
   let key = 0;
@@ -36,15 +41,15 @@ function renderContent(text: string, mine: boolean, hasMedia: boolean) {
     const label = match[1];
     const price = match[2];
     const url = match[3] ?? match[4];
-    const hidden = isAttached && !label && hasMedia;
+    const hidden = isAttached && !label && hasMedia && locked;
     if (index > last) {
       const segment = text.slice(last, index);
       // Don't leave a dangling blank line where a hidden link was.
       nodes.push(<span key={key++}>{hidden ? segment.replace(/\s+$/, "") : segment}</span>);
     }
     if (hidden) {
-      // Hidden link on a media message: the media opens it, nothing shows here.
-    } else if (isAttached && (label || price)) {
+      // Hidden link on locked media: the media opens it, nothing shows here.
+    } else if (isAttached) {
       nodes.push(
         <a
           key={key++}
@@ -59,7 +64,9 @@ function renderContent(text: string, mine: boolean, hasMedia: boolean) {
         >
           <IconLink className="w-4 h-4 shrink-0" />
           <span className="break-all">{label || url}</span>
-          {price && !hasMedia && <span className="shrink-0">· ${price}</span>}
+          {price && !(hasMedia && locked) && (
+            <span className="shrink-0">· ${price}</span>
+          )}
         </a>
       );
     } else {
@@ -110,10 +117,12 @@ export default function MessageBubble({
   // link (e.g. a payment page) in a new tab.
   const blurredLink = blurred && message.content ? firstLinkIn(message.content) : null;
   const blurredPrice = blurred && message.content ? linkPriceIn(message.content) : null;
-  // A media message whose content is only a hidden link renders no text row.
+  // Creator's own bubble: the attached price shows tiny in the bottom corner.
+  const myPrice = mine && message.content ? linkPriceIn(message.content) : null;
+  // A locked media message whose content is only a hidden link renders no text row.
   const showText =
     !!message.content &&
-    (!message.media_path || messagePreviewText(message.content) !== "");
+    !(message.media_path && locked && messagePreviewText(message.content) === "");
 
   const lockToggle = mine && message.media_path && (
     <button
@@ -248,15 +257,18 @@ export default function MessageBubble({
 
         {showText && message.content && (
           <p className="px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words">
-            {renderContent(message.content, mine, !!message.media_path)}
+            {renderContent(message.content, mine, !!message.media_path, locked)}
           </p>
         )}
 
         <p
-          className={`px-4 pb-1.5 text-[10px] ${
-            mine ? "text-white/60 text-right" : "text-muted"
+          className={`px-4 pb-1.5 text-[10px] flex items-center gap-2 ${
+            mine ? "text-white/60 justify-end" : "text-muted"
           } ${!showText && message.media_path ? "pt-1.5" : "-mt-1"}`}
         >
+          {myPrice && (
+            <span className="mr-auto font-semibold">{`$${myPrice}`}</span>
+          )}
           {formatTime(message.created_at)}
         </p>
       </div>
