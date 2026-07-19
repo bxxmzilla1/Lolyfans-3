@@ -1,7 +1,7 @@
 "use client";
 
 import { mediaUrl, formatTime, messagePreviewText } from "@/lib/utils";
-import { IconCheck, IconEyeOff, IconLock, IconReply, IconUnlock } from "./Icons";
+import { IconCheck, IconEyeOff, IconLink, IconLock, IconReply, IconUnlock } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
 
 export type Message = {
@@ -24,7 +24,7 @@ export type Message = {
 const LINK_TOKEN_REGEX =
   /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"')\]]+)/g;
 
-function renderContent(text: string) {
+function renderContent(text: string, mine: boolean) {
   const nodes: React.ReactNode[] = [];
   let last = 0;
   let key = 0;
@@ -34,16 +34,33 @@ function renderContent(text: string) {
     const label = match[1];
     const url = match[2] ?? match[3];
     nodes.push(
-      <a
-        key={key++}
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        onClick={(e) => e.stopPropagation()}
-        className="underline break-all font-medium opacity-95 hover:opacity-100"
-      >
-        {label ?? url}
-      </a>
+      label ? (
+        <a
+          key={key++}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          // Blue label; on the own (blue) bubble white stays readable
+          className={`inline-flex items-center gap-1 align-middle underline font-semibold ${
+            mine ? "text-white" : "text-accent"
+          }`}
+        >
+          <IconLink className="w-4 h-4 shrink-0" />
+          <span className="break-all">{label}</span>
+        </a>
+      ) : (
+        <a
+          key={key++}
+          href={url}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          className="underline break-all font-medium opacity-95 hover:opacity-100"
+        >
+          {url}
+        </a>
+      )
     );
     last = index + match[0].length;
   }
@@ -192,7 +209,7 @@ export default function MessageBubble({
 
         {message.content && (
           <p className="px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words">
-            {renderContent(message.content)}
+            {renderContent(message.content, mine)}
           </p>
         )}
 
