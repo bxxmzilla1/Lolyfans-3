@@ -33,8 +33,8 @@ export default function ChatView({
   const [text, setText] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [lightbox, setLightbox] = useState<Message | null>(null);
-  const [labelDialog, setLabelDialog] = useState<{ url: string; label: string } | null>(null);
-  const [linkAttachment, setLinkAttachment] = useState<{ url: string; label: string } | null>(null);
+  const [labelDialog, setLabelDialog] = useState<{ url: string; label: string; price: string } | null>(null);
+  const [linkAttachment, setLinkAttachment] = useState<{ url: string; label: string; price: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [attachment, setAttachment] = useState<{ path: string; type: MediaKind } | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -51,11 +51,13 @@ export default function ChatView({
 
   function applyLinkLabel() {
     if (!labelDialog) return;
-    const label = labelDialog.label.trim();
+    // Label and price are both optional — only the link itself is required.
+    const label = labelDialog.label.trim().replace(/[[\]{}]/g, "");
+    const price = labelDialog.price.trim().replace(/[^\d.,]/g, "");
     let url = labelDialog.url.trim();
-    if (!label || !url) return;
+    if (!url) return;
     if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
-    setLinkAttachment({ url, label });
+    setLinkAttachment({ url, label, price });
     setLabelDialog(null);
   }
 
@@ -184,9 +186,12 @@ export default function ChatView({
     const usedAttachment = !mediaPathArg ? attachment : null;
     const usedLink = !mediaPathArg ? linkAttachment : null;
     const caption = text.trim();
-    // The labeled link travels inside the message text as [Label](url); the
-    // caption from the input goes above it.
-    const linkPart = usedLink ? `[${usedLink.label}](${usedLink.url})` : "";
+    // The attached link travels inside the message text as [Label]{price}(url)
+    // — empty label = hidden link (media becomes the tap target); the caption
+    // from the input goes above it.
+    const linkPart = usedLink
+      ? `[${usedLink.label}]${usedLink.price ? `{${usedLink.price}}` : ""}(${usedLink.url})`
+      : "";
     const content = [caption, linkPart].filter(Boolean).join("\n");
     if (!content && !mediaPath) return;
     const locked = sendLocked && !!mediaPath;
@@ -445,7 +450,10 @@ export default function ChatView({
             <IconLink className="w-4 h-4" />
           </span>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-accent truncate">{linkAttachment.label}</p>
+            <p className="text-xs font-semibold text-accent truncate">
+              {linkAttachment.label || "Hidden link (media opens it)"}
+              {linkAttachment.price && ` · $${linkAttachment.price}`}
+            </p>
             <p className="text-xs text-muted truncate">{linkAttachment.url}</p>
           </div>
           <button
@@ -543,7 +551,7 @@ export default function ChatView({
                 setLabelDialog(
                   linkAttachment
                     ? { ...linkAttachment }
-                    : { url: "", label: "" }
+                    : { url: "", label: "", price: "" }
                 )
               }
               className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center transition-colors ${
@@ -626,7 +634,9 @@ export default function ChatView({
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted">Link label</label>
+                <label className="text-xs font-semibold text-muted">
+                  Link label <span className="font-normal">(optional)</span>
+                </label>
                 <input
                   value={labelDialog.label}
                   onChange={(e) =>
@@ -638,9 +648,28 @@ export default function ChatView({
                   className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
                 />
               </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted">
+                  Price <span className="font-normal">(optional)</span>
+                </label>
+                <input
+                  value={labelDialog.price}
+                  onChange={(e) =>
+                    setLabelDialog({ ...labelDialog, price: e.target.value })
+                  }
+                  onKeyDown={(e) => e.key === "Enter" && applyLinkLabel()}
+                  inputMode="decimal"
+                  maxLength={12}
+                  placeholder="e.g. 25"
+                  className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                />
+              </div>
               <p className="text-xs text-muted">
-                The bubble shows only the label — tapping it opens your link in a
-                new tab. You can still type a caption in the message box.
+                With a label the bubble shows it as a clickable link. Leave the
+                label empty on a locked photo/video and the blurred media itself
+                opens the link — nothing shows in the message. The price appears
+                under the “Locked” badge, or next to the label when there’s no
+                media. You can still type a caption in the message box.
               </p>
               <div className="flex gap-2">
                 <button
@@ -651,7 +680,7 @@ export default function ChatView({
                 </button>
                 <button
                   onClick={applyLinkLabel}
-                  disabled={!labelDialog.label.trim() || !labelDialog.url.trim()}
+                  disabled={!labelDialog.url.trim()}
                   className="flex-1 py-2.5 rounded-xl bg-accent text-white text-sm font-semibold disabled:opacity-40"
                 >
                   Apply

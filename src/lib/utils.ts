@@ -4,20 +4,33 @@ export function mediaUrl(path: string): string {
 
 export const URL_REGEX = /(https?:\/\/[^\s<>"')\]]+)/g;
 
-/** Markdown-style labeled link: [Payment Link](https://…) */
-export const LABELED_LINK_REGEX = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]+)\)/g;
+/**
+ * Attached chat link: [Label](https://…) with two optional parts — the label
+ * may be empty (hidden link, the media itself becomes the tap target) and a
+ * price can ride along as [Label]{25}(https://…).
+ */
+export const LABELED_LINK_REGEX =
+  /\[([^\]\n]{0,200})\](?:\{[^}\n]{0,20}\})?\((https?:\/\/[^\s)]+)\)/g;
 
 /** "[Payment Link](https://x)" -> "Payment Link" for chat previews and reply quotes. */
 export function messagePreviewText(content: string): string {
-  return content.replace(LABELED_LINK_REGEX, "$1");
+  return content.replace(LABELED_LINK_REGEX, "$1").trim();
 }
 
 /** First link in a message — labeled or bare. Locked media opens this on tap. */
 export function firstLinkIn(content: string): string | null {
-  const labeled = content.match(/\[[^\]\n]{1,200}\]\((https?:\/\/[^\s)]+)\)/);
+  const labeled = content.match(
+    /\[[^\]\n]{0,200}\](?:\{[^}\n]{0,20}\})?\((https?:\/\/[^\s)]+)\)/
+  );
   if (labeled) return labeled[1];
   const bare = content.match(/https?:\/\/[^\s<>"')\]]+/);
   return bare ? bare[0] : null;
+}
+
+/** Price attached to the message's link ([Label]{25}(url)), if any. */
+export function linkPriceIn(content: string): string | null {
+  const m = content.match(/\[[^\]\n]{0,200}\]\{([^}\n]{1,20})\}\(https?:\/\/[^\s)]+\)/);
+  return m ? m[1] : null;
 }
 
 export function formatTime(iso: string): string {

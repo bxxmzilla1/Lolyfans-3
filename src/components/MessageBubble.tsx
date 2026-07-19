@@ -1,6 +1,6 @@
 "use client";
 
-import { mediaUrl, formatTime, messagePreviewText, firstLinkIn } from "@/lib/utils";
+import { mediaUrl, formatTime, messagePreviewText, firstLinkIn, linkPriceIn } from "@/lib/utils";
 import { IconCheck, IconEyeOff, IconLink, IconLock, IconReply, IconUnlock } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
 
@@ -18,23 +18,34 @@ export type Message = {
 };
 
 /**
- * Labeled links ("[Payment Link](https://…)") show only their label; bare
- * URLs show as-is. Both open in a new tab.
+ * Attached links ("[Payment Link]{25}(https://…)") show their label (plus the
+ * price when there's no media to carry it); an empty label on a media message
+ * hides the link entirely — the blurred media itself is the tap target. Bare
+ * URLs show as-is. Everything opens in a new tab.
  */
 const LINK_TOKEN_REGEX =
-  /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"')\]]+)/g;
+  /\[([^\]\n]{0,200})\](?:\{([^}\n]{1,20})\})?\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"')\]]+)/g;
 
-function renderContent(text: string, mine: boolean) {
+function renderContent(text: string, mine: boolean, hasMedia: boolean) {
   const nodes: React.ReactNode[] = [];
   let last = 0;
   let key = 0;
   for (const match of text.matchAll(LINK_TOKEN_REGEX)) {
     const index = match.index ?? 0;
-    if (index > last) nodes.push(<span key={key++}>{text.slice(last, index)}</span>);
+    const isAttached = match[3] !== undefined;
     const label = match[1];
-    const url = match[2] ?? match[3];
-    nodes.push(
-      label ? (
+    const price = match[2];
+    const url = match[3] ?? match[4];
+    const hidden = isAttached && !label && hasMedia;
+    if (index > last) {
+      const segment = text.slice(last, index);
+      // Don't leave a dangling blank line where a hidden link was.
+      nodes.push(<span key={key++}>{hidden ? segment.replace(/\s+$/, "") : segment}</span>);
+    }
+    if (hidden) {
+      // Hidden link on a media message: the media opens it, nothing shows here.
+    } else if (isAttached && (label || price)) {
+      nodes.push(
         <a
           key={key++}
           href={url}
@@ -47,9 +58,12 @@ function renderContent(text: string, mine: boolean) {
           }`}
         >
           <IconLink className="w-4 h-4 shrink-0" />
-          <span className="break-all">{label}</span>
+          <span className="break-all">{label || url}</span>
+          {price && !hasMedia && <span className="shrink-0">· ${price}</span>}
         </a>
-      ) : (
+      );
+    } else {
+      nodes.push(
         <a
           key={key++}
           href={url}
@@ -60,8 +74,8 @@ function renderContent(text: string, mine: boolean) {
         >
           {url}
         </a>
-      )
-    );
+      );
+    }
     last = index + match[0].length;
   }
   if (last < text.length) nodes.push(<span key={key++}>{text.slice(last)}</span>);
@@ -95,6 +109,11 @@ export default function MessageBubble({
   // Locked media with a link attached: tapping the blurred preview opens the
   // link (e.g. a payment page) in a new tab.
   const blurredLink = blurred && message.content ? firstLinkIn(message.content) : null;
+  const blurredPrice = blurred && message.content ? linkPriceIn(message.content) : null;
+  // A media message whose content is only a hidden link renders no text row.
+  const showText =
+    !!message.content &&
+    (!message.media_path || messagePreviewText(message.content) !== "");
 
   const lockToggle = mine && message.media_path && (
     <button
@@ -119,6 +138,9 @@ export default function MessageBubble({
           <IconLock className="w-5 h-5 text-white" />
         </span>
         <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
+        {blurredPrice && (
+          <span className="text-white text-sm font-bold drop-shadow">{`$${blurredPrice}`}</span>
+        )}
       </div>
       {/* A link came with the locked media → the blurred preview is a tap
           target that opens it in a new tab */}
@@ -224,16 +246,16 @@ export default function MessageBubble({
           </div>
         )}
 
-        {message.content && (
+        {showText && message.content && (
           <p className="px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words">
-            {renderContent(message.content, mine)}
+            {renderContent(message.content, mine, !!message.media_path)}
           </p>
         )}
 
         <p
           className={`px-4 pb-1.5 text-[10px] ${
             mine ? "text-white/60 text-right" : "text-muted"
-          } ${!message.content && message.media_path ? "pt-1.5" : "-mt-1"}`}
+          } ${!showText && message.media_path ? "pt-1.5" : "-mt-1"}`}
         >
           {formatTime(message.created_at)}
         </p>
