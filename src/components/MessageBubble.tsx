@@ -1,6 +1,6 @@
 "use client";
 
-import { mediaUrl, formatTime, messagePreviewText } from "@/lib/utils";
+import { mediaUrl, formatTime, messagePreviewText, firstLinkIn } from "@/lib/utils";
 import { IconCheck, IconEyeOff, IconLink, IconLock, IconReply, IconUnlock } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
 
@@ -92,6 +92,9 @@ export default function MessageBubble({
   const locked = !!message.locked;
   // Receiver of a locked message: blurred, unclickable
   const blurred = locked && !mine;
+  // Locked media with a link attached: tapping the blurred preview opens the
+  // link (e.g. a payment page) in a new tab.
+  const blurredLink = blurred && message.content ? firstLinkIn(message.content) : null;
 
   const lockToggle = mine && message.media_path && (
     <button
@@ -110,12 +113,26 @@ export default function MessageBubble({
   );
 
   const lockedOverlay = blurred && (
-    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 pointer-events-none">
-      <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
-        <IconLock className="w-5 h-5 text-white" />
-      </span>
-      <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
-    </div>
+    <>
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 pointer-events-none">
+        <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
+          <IconLock className="w-5 h-5 text-white" />
+        </span>
+        <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
+      </div>
+      {/* A link came with the locked media → the blurred preview is a tap
+          target that opens it in a new tab */}
+      {blurredLink && (
+        <a
+          href={blurredLink}
+          target="_blank"
+          rel="noopener noreferrer"
+          onClick={(e) => e.stopPropagation()}
+          aria-label="Open link"
+          className="absolute inset-0 z-[15] cursor-pointer"
+        />
+      )}
+    </>
   );
 
   return (

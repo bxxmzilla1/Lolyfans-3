@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { fileKind, mediaUrl, MediaKind, messagePreviewText, URL_REGEX } from "@/lib/utils";
+import { fileKind, mediaUrl, MediaKind, messagePreviewText } from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
 import Portal from "./Portal";
 import {
@@ -34,6 +34,7 @@ export default function ChatView({
   const [replyTo, setReplyTo] = useState<Message | null>(null);
   const [lightbox, setLightbox] = useState<Message | null>(null);
   const [labelDialog, setLabelDialog] = useState<{ url: string; label: string } | null>(null);
+  const [linkAttachment, setLinkAttachment] = useState<{ url: string; label: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [attachment, setAttachment] = useState<{ path: string; type: MediaKind } | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -48,20 +49,13 @@ export default function ChatView({
   const typingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingSentAtRef = useRef(0);
 
-  // Last bare URL in the input (ignoring links that already carry a label) —
-  // when present, the owner gets a "label this link" button.
-  const bareUrl = (() => {
-    if (role !== "owner") return null;
-    const stripped = text.replace(/\[[^\]\n]*\]\(https?:\/\/[^\s)]+\)/g, "");
-    const matches = stripped.match(URL_REGEX);
-    return matches ? matches[matches.length - 1] : null;
-  })();
-
   function applyLinkLabel() {
     if (!labelDialog) return;
     const label = labelDialog.label.trim();
-    if (!label) return;
-    setText((t) => t.replace(labelDialog.url, `[${label}](${labelDialog.url})`));
+    let url = labelDialog.url.trim();
+    if (!label || !url) return;
+    if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
+    setLinkAttachment({ url, label });
     setLabelDialog(null);
   }
 
@@ -88,6 +82,7 @@ export default function ChatView({
     setPeerTyping(false);
     setReplyTo(null);
     setAttachment(null);
+    setLinkAttachment(null);
     setMsgSelectMode(false);
     setSelectedMsgs(new Set());
     // Wait a frame so the list has laid out its content
@@ -187,7 +182,12 @@ export default function ChatView({
     const mediaPath = mediaPathArg ?? attachment?.path;
     const mediaType = mediaTypeArg ?? attachment?.type;
     const usedAttachment = !mediaPathArg ? attachment : null;
-    const content = text.trim();
+    const usedLink = !mediaPathArg ? linkAttachment : null;
+    const caption = text.trim();
+    // The labeled link travels inside the message text as [Label](url); the
+    // caption from the input goes above it.
+    const linkPart = usedLink ? `[${usedLink.label}](${usedLink.url})` : "";
+    const content = [caption, linkPart].filter(Boolean).join("\n");
     if (!content && !mediaPath) return;
     const locked = sendLocked && !!mediaPath;
 
@@ -209,6 +209,7 @@ export default function ChatView({
     setText("");
     setReplyTo(null);
     setAttachment(null);
+    if (usedLink) setLinkAttachment(null);
     if (locked) setSendLocked(false);
 
     try {
@@ -227,13 +228,15 @@ export default function ChatView({
         });
       } else {
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
-        setText(content);
+        setText(caption);
         if (usedAttachment) setAttachment(usedAttachment);
+        if (usedLink) setLinkAttachment(usedLink);
       }
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
-      setText(content);
+      setText(caption);
       if (usedAttachment) setAttachment(usedAttachment);
+      if (usedLink) setLinkAttachment(usedLink);
     }
   }
 
@@ -436,6 +439,31 @@ export default function ChatView({
         </div>
       )}
 
+      {linkAttachment && (
+        <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line flex items-center gap-3 fade-up">
+          <span className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center shrink-0">
+            <IconLink className="w-4 h-4" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-accent truncate">{linkAttachment.label}</p>
+            <p className="text-xs text-muted truncate">{linkAttachment.url}</p>
+          </div>
+          <button
+            onClick={() => setLabelDialog({ ...linkAttachment })}
+            className="text-xs font-semibold text-accent px-1"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => setLinkAttachment(null)}
+            className="text-muted text-sm px-1"
+            aria-label="Remove link"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {attachment && (
         <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line flex items-center gap-3 fade-up">
           {attachment.type === "image" ? (
@@ -509,12 +537,22 @@ export default function ChatView({
               <IconCheck className="w-4.5 h-4.5" />
             </button>
           )}
-          {bareUrl && (
+          {role === "owner" && (
             <button
-              onClick={() => setLabelDialog({ url: bareUrl, label: "" })}
-              className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-transparent border border-line text-muted hover:text-fg transition-colors"
-              aria-label="Label this link"
-              title="Label this link (show custom text instead of the URL)"
+              onClick={() =>
+                setLabelDialog(
+                  linkAttachment
+                    ? { ...linkAttachment }
+                    : { url: "", label: "" }
+                )
+              }
+              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center transition-colors ${
+                linkAttachment
+                  ? "bg-accent text-white glow-accent"
+                  : "bg-transparent border border-line text-muted hover:text-fg"
+              }`}
+              aria-label="Attach a labeled link"
+              title="Attach a link with a custom label"
             >
               <IconLink className="w-4.5 h-4.5" />
             </button>
@@ -555,7 +593,7 @@ export default function ChatView({
           />
           <button
             onClick={() => send()}
-            disabled={!text.trim() && !attachment}
+            disabled={!text.trim() && !attachment && !linkAttachment}
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-40 flex items-center justify-center active:opacity-80 transition-opacity"
             aria-label="Send"
           >
@@ -574,22 +612,35 @@ export default function ChatView({
               className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
               onClick={(e) => e.stopPropagation()}
             >
-              <p className="font-bold">Label this link</p>
-              <p className="text-xs text-muted break-all">{labelDialog.url}</p>
-              <input
-                autoFocus
-                value={labelDialog.label}
-                onChange={(e) =>
-                  setLabelDialog({ ...labelDialog, label: e.target.value })
-                }
-                onKeyDown={(e) => e.key === "Enter" && applyLinkLabel()}
-                maxLength={80}
-                placeholder="e.g. Payment Link"
-                className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
-              />
+              <p className="font-bold">Add a link</p>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted">Link</label>
+                <input
+                  autoFocus
+                  value={labelDialog.url}
+                  onChange={(e) =>
+                    setLabelDialog({ ...labelDialog, url: e.target.value })
+                  }
+                  placeholder="https://…"
+                  className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted">Link label</label>
+                <input
+                  value={labelDialog.label}
+                  onChange={(e) =>
+                    setLabelDialog({ ...labelDialog, label: e.target.value })
+                  }
+                  onKeyDown={(e) => e.key === "Enter" && applyLinkLabel()}
+                  maxLength={80}
+                  placeholder="e.g. Payment Link"
+                  className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                />
+              </div>
               <p className="text-xs text-muted">
-                The bubble will show only this text — tapping it opens your link
-                in a new tab.
+                The bubble shows only the label — tapping it opens your link in a
+                new tab. You can still type a caption in the message box.
               </p>
               <div className="flex gap-2">
                 <button
@@ -600,7 +651,7 @@ export default function ChatView({
                 </button>
                 <button
                   onClick={applyLinkLabel}
-                  disabled={!labelDialog.label.trim()}
+                  disabled={!labelDialog.label.trim() || !labelDialog.url.trim()}
                   className="flex-1 py-2.5 rounded-xl bg-accent text-white text-sm font-semibold disabled:opacity-40"
                 >
                   Apply

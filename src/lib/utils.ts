@@ -12,6 +12,14 @@ export function messagePreviewText(content: string): string {
   return content.replace(LABELED_LINK_REGEX, "$1");
 }
 
+/** First link in a message — labeled or bare. Locked media opens this on tap. */
+export function firstLinkIn(content: string): string | null {
+  const labeled = content.match(/\[[^\]\n]{1,200}\]\((https?:\/\/[^\s)]+)\)/);
+  if (labeled) return labeled[1];
+  const bare = content.match(/https?:\/\/[^\s<>"')\]]+/);
+  return bare ? bare[0] : null;
+}
+
 export function formatTime(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
