@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { formatTime } from "@/lib/utils";
+import { formatTime, messagePreviewText } from "@/lib/utils";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
 import { IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
@@ -516,7 +516,7 @@ export default function ChatList() {
                     <p className={`text-[13px] truncate ${
                       chat.unread > 0 && !active ? "text-fg font-medium" : "text-muted"
                     }`}>
-                      {chat.preview?.content ||
+                      {(chat.preview?.content && messagePreviewText(chat.preview.content)) ||
                         (chat.preview?.media_type === "image"
                           ? "Photo"
                           : chat.preview?.media_type === "video"

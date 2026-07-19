@@ -1,6 +1,6 @@
 "use client";
 
-import { mediaUrl, formatTime, URL_REGEX } from "@/lib/utils";
+import { mediaUrl, formatTime, messagePreviewText } from "@/lib/utils";
 import { IconCheck, IconEyeOff, IconLock, IconReply, IconUnlock } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
 
@@ -17,24 +17,38 @@ export type Message = {
   created_at: string;
 };
 
-function renderContent(text: string, onLinkClick: (url: string) => void) {
-  const parts = text.split(URL_REGEX);
-  return parts.map((part, i) =>
-    /^https?:\/\//.test(part) ? (
-      <button
-        key={i}
-        onClick={(e) => {
-          e.stopPropagation();
-          onLinkClick(part);
-        }}
-        className="underline break-all text-left font-medium opacity-95 hover:opacity-100"
+/**
+ * Labeled links ("[Payment Link](https://…)") show only their label; bare
+ * URLs show as-is. Both open in a new tab.
+ */
+const LINK_TOKEN_REGEX =
+  /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]+)\)|(https?:\/\/[^\s<>"')\]]+)/g;
+
+function renderContent(text: string) {
+  const nodes: React.ReactNode[] = [];
+  let last = 0;
+  let key = 0;
+  for (const match of text.matchAll(LINK_TOKEN_REGEX)) {
+    const index = match.index ?? 0;
+    if (index > last) nodes.push(<span key={key++}>{text.slice(last, index)}</span>);
+    const label = match[1];
+    const url = match[2] ?? match[3];
+    nodes.push(
+      <a
+        key={key++}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => e.stopPropagation()}
+        className="underline break-all font-medium opacity-95 hover:opacity-100"
       >
-        {part}
-      </button>
-    ) : (
-      <span key={i}>{part}</span>
-    )
-  );
+        {label ?? url}
+      </a>
+    );
+    last = index + match[0].length;
+  }
+  if (last < text.length) nodes.push(<span key={key++}>{text.slice(last)}</span>);
+  return nodes;
 }
 
 export default function MessageBubble({
@@ -42,7 +56,6 @@ export default function MessageBubble({
   mine,
   repliedTo,
   onReply,
-  onLinkClick,
   onMediaClick,
   onToggleLock,
   selectMode = false,
@@ -53,7 +66,6 @@ export default function MessageBubble({
   mine: boolean;
   repliedTo: Message | null;
   onReply: (m: Message) => void;
-  onLinkClick: (url: string) => void;
   onMediaClick: (m: Message) => void;
   onToggleLock: (m: Message) => void;
   selectMode?: boolean;
@@ -132,7 +144,7 @@ export default function MessageBubble({
               {repliedTo.sender === message.sender ? "Replying to self" : "Reply"}
             </p>
             <p className="truncate">
-              {repliedTo.content ||
+              {(repliedTo.content && messagePreviewText(repliedTo.content)) ||
                 (repliedTo.media_type === "image" ? "Photo" : "Video")}
             </p>
           </div>
@@ -180,7 +192,7 @@ export default function MessageBubble({
 
         {message.content && (
           <p className="px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words">
-            {renderContent(message.content, onLinkClick)}
+            {renderContent(message.content)}
           </p>
         )}
 

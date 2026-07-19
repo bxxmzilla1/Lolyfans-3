@@ -3,14 +3,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { fileKind, mediaUrl, MediaKind } from "@/lib/utils";
+import { fileKind, mediaUrl, MediaKind, messagePreviewText, URL_REGEX } from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
-import LinkPopup from "./LinkPopup";
+import Portal from "./Portal";
 import {
   IconChat,
   IconCheck,
   IconEye,
   IconEyeOff,
+  IconLink,
   IconLock,
   IconPlus,
   IconSend,
@@ -31,8 +32,8 @@ export default function ChatView({
   const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [text, setText] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
-  const [popupUrl, setPopupUrl] = useState<string | null>(null);
   const [lightbox, setLightbox] = useState<Message | null>(null);
+  const [labelDialog, setLabelDialog] = useState<{ url: string; label: string } | null>(null);
   const [uploading, setUploading] = useState(false);
   const [attachment, setAttachment] = useState<{ path: string; type: MediaKind } | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -46,6 +47,23 @@ export default function ChatView({
   const channelRef = useRef<RealtimeChannel | null>(null);
   const typingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingSentAtRef = useRef(0);
+
+  // Last bare URL in the input (ignoring links that already carry a label) —
+  // when present, the owner gets a "label this link" button.
+  const bareUrl = (() => {
+    if (role !== "owner") return null;
+    const stripped = text.replace(/\[[^\]\n]*\]\(https?:\/\/[^\s)]+\)/g, "");
+    const matches = stripped.match(URL_REGEX);
+    return matches ? matches[matches.length - 1] : null;
+  })();
+
+  function applyLinkLabel() {
+    if (!labelDialog) return;
+    const label = labelDialog.label.trim();
+    if (!label) return;
+    setText((t) => t.replace(labelDialog.url, `[${label}](${labelDialog.url})`));
+    setLabelDialog(null);
+  }
 
   const scrollToBottom = useCallback((smooth = true) => {
     const list = listRef.current;
@@ -345,7 +363,6 @@ export default function ChatView({
             mine={m.sender === role}
             repliedTo={m.reply_to_id ? byId.get(m.reply_to_id) ?? null : null}
             onReply={setReplyTo}
-            onLinkClick={setPopupUrl}
             onMediaClick={setLightbox}
             onToggleLock={toggleLock}
             selectMode={msgSelectMode}
@@ -373,7 +390,7 @@ export default function ChatView({
               Replying to {replyTo.sender === role ? "yourself" : "them"}
             </p>
             <p className="text-xs text-muted truncate">
-              {replyTo.content ||
+              {(replyTo.content && messagePreviewText(replyTo.content)) ||
                 (replyTo.media_type === "image" ? "Photo" : "Video")}
             </p>
           </div>
@@ -492,6 +509,16 @@ export default function ChatView({
               <IconCheck className="w-4.5 h-4.5" />
             </button>
           )}
+          {bareUrl && (
+            <button
+              onClick={() => setLabelDialog({ url: bareUrl, label: "" })}
+              className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-transparent border border-line text-muted hover:text-fg transition-colors"
+              aria-label="Label this link"
+              title="Label this link (show custom text instead of the URL)"
+            >
+              <IconLink className="w-4.5 h-4.5" />
+            </button>
+          )}
           {role === "owner" && (
             <button
               onClick={() => setSendLocked((v) => !v)}
@@ -537,7 +564,52 @@ export default function ChatView({
         </div>
       </div>
 
-      {popupUrl && <LinkPopup url={popupUrl} onClose={() => setPopupUrl(null)} />}
+      {labelDialog && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setLabelDialog(null)}
+          >
+            <div
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="font-bold">Label this link</p>
+              <p className="text-xs text-muted break-all">{labelDialog.url}</p>
+              <input
+                autoFocus
+                value={labelDialog.label}
+                onChange={(e) =>
+                  setLabelDialog({ ...labelDialog, label: e.target.value })
+                }
+                onKeyDown={(e) => e.key === "Enter" && applyLinkLabel()}
+                maxLength={80}
+                placeholder="e.g. Payment Link"
+                className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+              />
+              <p className="text-xs text-muted">
+                The bubble will show only this text — tapping it opens your link
+                in a new tab.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setLabelDialog(null)}
+                  className="flex-1 py-2.5 rounded-xl bg-card2 border border-line text-sm font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={applyLinkLabel}
+                  disabled={!labelDialog.label.trim()}
+                  className="flex-1 py-2.5 rounded-xl bg-accent text-white text-sm font-semibold disabled:opacity-40"
+                >
+                  Apply
+                </button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
 
       {lightbox && lightbox.media_path && (
         <div

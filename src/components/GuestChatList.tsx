@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { mediaUrl, formatTime } from "@/lib/utils";
+import { mediaUrl, formatTime, messagePreviewText } from "@/lib/utils";
 import { IconUser, IconVerified } from "./Icons";
 
 export type GuestChatRow = {
@@ -63,7 +63,7 @@ export default function GuestChatList({ chats }: { chats: GuestChatRow[] }) {
                   chat.unread > 0 ? "text-fg font-medium" : "text-muted"
                 }`}
               >
-                {chat.preview}
+                {messagePreviewText(chat.preview)}
               </p>
             </div>
             <div className="shrink-0 flex flex-col items-end gap-1.5">

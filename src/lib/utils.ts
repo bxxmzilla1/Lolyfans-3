@@ -4,6 +4,14 @@ export function mediaUrl(path: string): string {
 
 export const URL_REGEX = /(https?:\/\/[^\s<>"')\]]+)/g;
 
+/** Markdown-style labeled link: [Payment Link](https://…) */
+export const LABELED_LINK_REGEX = /\[([^\]\n]{1,200})\]\((https?:\/\/[^\s)]+)\)/g;
+
+/** "[Payment Link](https://x)" -> "Payment Link" for chat previews and reply quotes. */
+export function messagePreviewText(content: string): string {
+  return content.replace(LABELED_LINK_REGEX, "$1");
+}
+
 export function formatTime(iso: string): string {
   const d = new Date(iso);
   const now = new Date();
