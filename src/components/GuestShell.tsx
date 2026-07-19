@@ -105,7 +105,12 @@ function HomePanel({ data }: { data: Bootstrap["home"] }) {
                   )}
                 </span>
               </Link>
-              <FollowButton ownerId={s.ownerId} initialFollowing={false} small />
+              <FollowButton
+                ownerId={s.ownerId}
+                initialFollowing={false}
+                plan={s.plan}
+                small
+              />
             </div>
           ))}
         </section>

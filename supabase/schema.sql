@@ -296,6 +296,22 @@ create index if not exists message_unlocks_chat_idx on message_unlocks (chat_id)
 alter table chats add column if not exists stripe_customer_id text;
 alter table chats add column if not exists stripe_payment_method_id text;
 
+-- Paid profile subscriptions (Stripe Billing). One row per fan chat + creator.
+-- status mirrors Stripe: trialing / active / canceling / past_due / canceled.
+create table if not exists subscriptions (
+  chat_id uuid not null references chats(id) on delete cascade,
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  stripe_subscription_id text,
+  status text not null default 'active',
+  price_cents int not null default 0,
+  billing_interval text not null default 'month',
+  current_period_end timestamptz,
+  created_at timestamptz not null default now(),
+  primary key (chat_id, owner_id)
+);
+alter table subscriptions enable row level security;
+create index if not exists subscriptions_owner_idx on subscriptions (owner_id);
+
 -- Public storage bucket for chat media and vault files
 insert into storage.buckets (id, name, public)
 values ('media', 'media', true)

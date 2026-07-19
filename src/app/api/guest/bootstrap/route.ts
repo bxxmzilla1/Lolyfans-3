@@ -77,6 +77,7 @@ export async function GET(req: NextRequest) {
         name: p?.name || "Lolyfans",
         avatarPath: p?.avatarPath || null,
         verified: !!p?.verified,
+        plan: p?.plan ?? null,
       };
     });
 

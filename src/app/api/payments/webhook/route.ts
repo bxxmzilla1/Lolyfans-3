@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { fulfillCheckout, recordUnlock, saveStripePaymentMethod } from "@/lib/payments";
+import {
+  fulfillCheckout,
+  recordUnlock,
+  saveStripePaymentMethod,
+  syncSubscription,
+} from "@/lib/payments";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 
@@ -29,6 +34,14 @@ export async function POST(req: NextRequest) {
 
   if (event.type === "checkout.session.completed") {
     await fulfillCheckout(event.data.object as Stripe.Checkout.Session);
+  }
+
+  // Profile subscriptions: renewals, trial → active, cancellations, failures.
+  if (
+    event.type === "customer.subscription.updated" ||
+    event.type === "customer.subscription.deleted"
+  ) {
+    await syncSubscription(event.data.object as Stripe.Subscription);
   }
 
   // Off-session unlocks: tip messages are posted by /api/payments/tip directly;

@@ -1,5 +1,6 @@
 import type { GuestChatRow } from "@/components/GuestChatList";
 import type { FeedPost } from "@/components/PostFeed";
+import type { SubPlan } from "@/lib/subscriptionPlan";
 
 export type GuestBootstrap = {
   profile: { name: string; avatarPath: string | null };
@@ -11,6 +12,7 @@ export type GuestBootstrap = {
       name: string;
       avatarPath: string | null;
       verified: boolean;
+      plan?: SubPlan | null;
     }>;
     posts: FeedPost[];
     canInteract: boolean;

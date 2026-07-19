@@ -10,6 +10,7 @@ import { postStats } from "@/lib/posts";
 import { visitorLocation } from "@/lib/geo";
 import { formatCount, mediaUrl } from "@/lib/utils";
 import CreatorBanner from "@/components/CreatorBanner";
+import { subCaption, subCtaLabel } from "@/lib/subscriptionPlan";
 import {
   IconChat,
   IconHeart,
@@ -110,6 +111,9 @@ export default async function InviteProfilePreviewPage({
 
   const followers = profile.followerBase + (realFollowers ?? 0);
   const posts = postCount ?? 0;
+  // Price label mirrors the creator's Settings → Subscriptions plan.
+  const ctaRight = subCtaLabel(profile.plan);
+  const ctaCaption = subCaption(profile.plan);
 
   return (
     <div className="min-h-dvh pb-10">
@@ -152,8 +156,11 @@ export default async function InviteProfilePreviewPage({
                 className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold flex items-center justify-between active:opacity-80 transition-opacity"
               >
                 <span>SUBSCRIBE</span>
-                <span>FREE</span>
+                <span>{ctaRight}</span>
               </Link>
+              {ctaCaption && (
+                <p className="text-xs text-muted text-center">{ctaCaption}</p>
+              )}
               <p className="text-xs text-muted text-center">
                 You must subscribe to this profile to send a message
               </p>
@@ -227,8 +234,9 @@ export default async function InviteProfilePreviewPage({
             className="w-full py-3.5 px-6 rounded-full bg-accent text-white text-base font-semibold flex items-center justify-between active:opacity-80 transition-opacity"
           >
             <span>SUBSCRIBE</span>
-            <span>FREE</span>
+            <span>{ctaRight}</span>
           </Link>
+          {ctaCaption && <p className="text-xs text-muted">{ctaCaption}</p>}
         </div>
       </main>
     </div>

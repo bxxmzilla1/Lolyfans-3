@@ -9,6 +9,7 @@ import InvitePageEditor from "./InvitePageEditor";
 import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
+import SubscriptionSettings from "./SubscriptionSettings";
 import WelcomeMessageEditor from "./WelcomeMessageEditor";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
@@ -20,6 +21,7 @@ import {
   IconLink,
   IconLogout,
   IconSend,
+  IconTip,
   IconUser,
 } from "./Icons";
 
@@ -27,6 +29,7 @@ type Section =
   | "profile"
   | "posts"
   | "social"
+  | "subscriptions"
   | "welcome"
   | "links"
   | "editor"
@@ -384,6 +387,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconHeart className="w-3.5 h-3.5" /> Social proof
         </button>
         <button
+          onClick={() => setSection("subscriptions")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "subscriptions"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconTip className="w-3.5 h-3.5" /> Subscriptions
+        </button>
+        <button
           onClick={() => setSection("welcome")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "welcome"
@@ -445,7 +458,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="flex-1 overflow-y-auto p-5 lg:p-8">
         <div
           className={`mx-auto w-full ${
-            section === "profile" || section === "welcome"
+            section === "profile" || section === "welcome" || section === "subscriptions"
               ? "max-w-2xl"
               : section === "editor" || section === "posts"
               ? "max-w-4xl"
@@ -458,6 +471,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <PostsManager />
           ) : section === "social" ? (
             <SocialProofManager />
+          ) : section === "subscriptions" ? (
+            <SubscriptionSettings />
           ) : section === "welcome" ? (
             <WelcomeMessageEditor />
           ) : section === "editor" ? (

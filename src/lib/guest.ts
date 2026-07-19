@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
+import { subPlanFromMetadata, type SubPlan } from "@/lib/subscriptionPlan";
 
 export type GuestChat = {
   id: string;
@@ -64,6 +65,8 @@ export type OwnerProfile = {
   bio: string | null;
   /** Show a location line (the visitor's own city) under the bio. */
   showLocation: boolean;
+  /** Profile-subscription plan (price 0 = free). */
+  plan: SubPlan;
 };
 
 /** Display profiles (name, picture, checkmark) for a set of creators. */
@@ -95,6 +98,7 @@ export async function ownerProfiles(
           followerBase: Number(meta.social_followers) || 0,
           bio: meta.profile_bio?.trim() || null,
           showLocation: !!meta.profile_show_location,
+          plan: subPlanFromMetadata(meta as Record<string, unknown>),
         },
       ] as const;
     })

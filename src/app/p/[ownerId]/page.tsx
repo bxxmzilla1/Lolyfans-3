@@ -52,17 +52,29 @@ export default async function CreatorProfilePage({
   const postIds = (posts ?? []).map((p) => p.id);
   const stats = await postStats(postIds, chatIds);
 
-  // Is this guest already following the creator?
+  // Is this guest already following (free) / subscribed (paid)?
   let following = false;
+  let subscribed = false;
   if (chatIds.length) {
-    const { data: follow } = await db
-      .from("follows")
-      .select("owner_id")
-      .in("chat_id", chatIds)
-      .eq("owner_id", ownerId)
-      .limit(1)
-      .maybeSingle();
+    const [{ data: follow }, { data: sub }] = await Promise.all([
+      db
+        .from("follows")
+        .select("owner_id")
+        .in("chat_id", chatIds)
+        .eq("owner_id", ownerId)
+        .limit(1)
+        .maybeSingle(),
+      db
+        .from("subscriptions")
+        .select("status")
+        .in("chat_id", chatIds)
+        .eq("owner_id", ownerId)
+        .in("status", ["trialing", "active", "past_due", "canceling"])
+        .limit(1)
+        .maybeSingle(),
+    ]);
     following = !!follow;
+    subscribed = !!sub;
   }
   const hasChatWithOwner = chats.some((c) => c.owner_id === ownerId);
   const followers = profile.followerBase + (realFollowers ?? 0);
@@ -129,7 +141,13 @@ export default async function CreatorProfilePage({
             {/* Full-width subscription bar under the bio, like OnlyFans */}
             {chats.length > 0 && (
               <div className="pt-1">
-                <FollowButton ownerId={ownerId} initialFollowing={following} full />
+                <FollowButton
+                  ownerId={ownerId}
+                  initialFollowing={following}
+                  plan={profile.plan}
+                  initialSubscribed={subscribed}
+                  full
+                />
               </div>
             )}
           </div>

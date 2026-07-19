@@ -73,6 +73,52 @@ export async function saveStripePaymentMethod(
   await supabaseAdmin().from("chats").update(patch).eq("id", chatId);
 }
 
+/**
+ * Mirror a Stripe subscription into the subscriptions table (created,
+ * renewed, canceled…) and keep the fan following the creator while active.
+ */
+export async function syncSubscription(sub: Stripe.Subscription) {
+  const chatId = sub.metadata?.chatId;
+  const ownerId = sub.metadata?.ownerId;
+  if (!chatId || !ownerId) return;
+
+  const db = supabaseAdmin();
+  const item = sub.items.data[0];
+  const priceCents = item?.price?.unit_amount ?? 0;
+  const interval = item?.price?.recurring?.interval ?? "month";
+  const periodEnd = (item as { current_period_end?: number } | undefined)
+    ?.current_period_end;
+
+  const status =
+    sub.status === "canceled" || sub.status === "incomplete_expired"
+      ? "canceled"
+      : sub.cancel_at_period_end
+        ? "canceling"
+        : sub.status;
+
+  await db.from("subscriptions").upsert(
+    {
+      chat_id: chatId,
+      owner_id: ownerId,
+      stripe_subscription_id: sub.id,
+      status,
+      price_cents: priceCents,
+      billing_interval: interval,
+      current_period_end: periodEnd
+        ? new Date(periodEnd * 1000).toISOString()
+        : null,
+    },
+    { onConflict: "chat_id,owner_id" }
+  );
+
+  if (status !== "canceled") {
+    await db.from("follows").upsert(
+      { chat_id: chatId, owner_id: ownerId },
+      { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
+    );
+  }
+}
+
 async function paymentMethodFromSession(session: Stripe.Checkout.Session) {
   const customerId =
     typeof session.customer === "string" ? session.customer : session.customer?.id;
@@ -93,8 +139,8 @@ async function paymentMethodFromSession(session: Stripe.Checkout.Session) {
 }
 
 /**
- * After a paid Checkout session: save the card and fulfill unlock or tip.
- * Safe to call from the webhook or from the return URL.
+ * After a paid Checkout session: save the card and fulfill unlock, tip, or
+ * subscription. Safe to call from the webhook or from the return URL.
  */
 export async function fulfillCheckout(session: Stripe.Checkout.Session) {
   if (session.payment_status !== "paid" && session.status !== "complete") {
@@ -102,8 +148,37 @@ export async function fulfillCheckout(session: Stripe.Checkout.Session) {
   }
   const kind = session.metadata?.kind;
   const chatId = session.metadata?.chatId;
-  if (!chatId || (kind !== "unlock" && kind !== "tip")) {
+  if (!chatId || (kind !== "unlock" && kind !== "tip" && kind !== "subscription")) {
     return { ok: false as const, kind: null };
+  }
+
+  if (kind === "subscription") {
+    const subId =
+      typeof session.subscription === "string"
+        ? session.subscription
+        : session.subscription?.id;
+    if (!subId) return { ok: false as const, kind: "subscription" as const };
+    const sub = await stripe().subscriptions.retrieve(subId);
+
+    // The card that pays the subscription doubles as the saved card for
+    // one-tap unlocks and tips.
+    const customerId =
+      typeof session.customer === "string" ? session.customer : session.customer?.id;
+    let pmId =
+      typeof sub.default_payment_method === "string"
+        ? sub.default_payment_method
+        : sub.default_payment_method?.id ?? null;
+    if (!pmId && customerId) {
+      const customer = await stripe().customers.retrieve(customerId);
+      if (!("deleted" in customer) || !customer.deleted) {
+        const dpm = (customer as Stripe.Customer).invoice_settings
+          ?.default_payment_method;
+        pmId = typeof dpm === "string" ? dpm : dpm?.id ?? null;
+      }
+    }
+    await saveStripePaymentMethod(chatId, customerId, pmId);
+    await syncSubscription(sub);
+    return { ok: true as const, kind: "subscription" as const, messageId: null };
   }
 
   const { customerId, paymentMethodId } = await paymentMethodFromSession(session);
