@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId, getGuestChatId } from "@/lib/session";
+import { ensureMediaBucketLimits } from "@/lib/mediaBucket";
 
 /**
  * Returns a signed upload URL so the browser uploads media straight to
@@ -27,6 +28,9 @@ export async function POST(req: NextRequest) {
       ? "avatar"
       : "chat";
   const path = `${folder}/${nanoid(16)}.${ext}`;
+
+  // Clear any tight per-bucket size cap before minting the signed URL.
+  await ensureMediaBucketLimits();
 
   const { data, error } = await supabaseAdmin()
     .storage.from("media")

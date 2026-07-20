@@ -317,7 +317,8 @@ create table if not exists subscriptions (
 alter table subscriptions enable row level security;
 create index if not exists subscriptions_owner_idx on subscriptions (owner_id);
 
--- Public storage bucket for chat media and vault files
-insert into storage.buckets (id, name, public)
-values ('media', 'media', true)
-on conflict (id) do nothing;
+-- Public storage bucket for chat media and vault files.
+-- file_size_limit null = no per-bucket cap (project global Storage limit applies).
+insert into storage.buckets (id, name, public, file_size_limit)
+values ('media', 'media', true, null)
+on conflict (id) do update set file_size_limit = null;

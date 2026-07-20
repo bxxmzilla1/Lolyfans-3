@@ -20,7 +20,25 @@ export function uploadWithProgress(
         onProgress?.(100);
         resolve();
       } else {
-        reject(new Error(xhr.responseText || `Upload failed (${xhr.status})`));
+        let message = xhr.responseText || `Upload failed (${xhr.status})`;
+        try {
+          const parsed = JSON.parse(xhr.responseText) as {
+            message?: string;
+            error?: string;
+            statusCode?: string | number;
+          };
+          if (String(parsed.statusCode) === "413" || /too large|maximum allowed size/i.test(message)) {
+            message =
+              "File is too large for Storage. In Supabase → Storage → Settings, raise the Global file size limit (Free max 50 MB; Pro up to 500 GB).";
+          } else if (parsed.message) {
+            message = parsed.message;
+          } else if (parsed.error) {
+            message = parsed.error;
+          }
+        } catch {
+          // keep raw response
+        }
+        reject(new Error(message));
       }
     };
     xhr.onerror = () => reject(new Error("Network error during upload"));
