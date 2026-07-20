@@ -60,6 +60,42 @@ export async function postTipMessage(opts: {
   return message;
 }
 
+/**
+ * Get (or create) the chat's Stripe customer, carrying the fan's signup
+ * name/email so Checkout never asks for them again.
+ */
+export async function ensureStripeCustomer(chatId: string): Promise<string> {
+  const db = supabaseAdmin();
+  const { data: chat } = await db
+    .from("chats")
+    .select("stripe_customer_id, guest_name, guest_email")
+    .eq("id", chatId)
+    .maybeSingle();
+  if (!chat) throw new Error("Chat not found");
+
+  const email = (chat.guest_email as string | null) || undefined;
+  const name = (chat.guest_name as string | null) || undefined;
+
+  if (chat.stripe_customer_id) {
+    // Backfill contact info onto customers created before we passed it, so
+    // their Checkout email is prefilled too.
+    if (email || name) {
+      await stripe()
+        .customers.update(chat.stripe_customer_id, { email, name })
+        .catch(() => {});
+    }
+    return chat.stripe_customer_id as string;
+  }
+
+  const customer = await stripe().customers.create({
+    email,
+    name,
+    metadata: { chatId },
+  });
+  await db.from("chats").update({ stripe_customer_id: customer.id }).eq("id", chatId);
+  return customer.id;
+}
+
 /** Save Stripe customer + card on the chat for future one-tap charges. */
 export async function saveStripePaymentMethod(
   chatId: string,
@@ -153,6 +189,32 @@ export async function fulfillCheckout(session: Stripe.Checkout.Session) {
   }
 
   if (kind === "subscription") {
+    // Lifetime plan: a one-time payment, no Stripe subscription object.
+    if (session.metadata?.interval === "lifetime") {
+      const ownerId = session.metadata?.ownerId;
+      if (!ownerId) return { ok: false as const, kind: "subscription" as const };
+      const { customerId, paymentMethodId } = await paymentMethodFromSession(session);
+      await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+      const db = supabaseAdmin();
+      await db.from("subscriptions").upsert(
+        {
+          chat_id: chatId,
+          owner_id: ownerId,
+          stripe_subscription_id: null,
+          status: "active",
+          price_cents: session.amount_total ?? 0,
+          billing_interval: "lifetime",
+          current_period_end: null,
+        },
+        { onConflict: "chat_id,owner_id" }
+      );
+      await db.from("follows").upsert(
+        { chat_id: chatId, owner_id: ownerId },
+        { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
+      );
+      return { ok: true as const, kind: "subscription" as const, messageId: null };
+    }
+
     const subId =
       typeof session.subscription === "string"
         ? session.subscription

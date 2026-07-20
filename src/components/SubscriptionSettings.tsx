@@ -9,10 +9,11 @@ import {
   type SubInterval,
 } from "@/lib/subscriptionPlan";
 
-const INTERVALS: Array<{ value: SubInterval; label: string }> = [
-  { value: "day", label: "Daily" },
-  { value: "week", label: "Weekly" },
-  { value: "month", label: "Monthly" },
+const INTERVALS: Array<{ value: SubInterval; label: string; hint: string }> = [
+  { value: "day", label: "Daily", hint: "billed every day" },
+  { value: "week", label: "Weekly", hint: "billed every week" },
+  { value: "month", label: "Monthly", hint: "billed every month" },
+  { value: "lifetime", label: "Lifetime", hint: "one-time payment" },
 ];
 
 /**
@@ -54,8 +55,16 @@ export default function SubscriptionSettings() {
   }, []);
 
   const priceCents = paid ? Math.round(parseFloat(price) * 100) || 0 : 0;
-  const trial = paid && trialOn ? Math.min(365, Math.max(0, Math.floor(Number(trialDays) || 0))) : 0;
-  const discount = paid && discountOn ? Math.min(95, Math.max(0, Math.floor(Number(discountPct) || 0))) : 0;
+  // Lifetime is a single payment — trials and first-period discounts don't apply.
+  const recurring = interval !== "lifetime";
+  const trial =
+    paid && recurring && trialOn
+      ? Math.min(365, Math.max(0, Math.floor(Number(trialDays) || 0)))
+      : 0;
+  const discount =
+    paid && recurring && discountOn
+      ? Math.min(95, Math.max(0, Math.floor(Number(discountPct) || 0)))
+      : 0;
   const previewPlan = { priceCents, interval, trialDays: trial, discountPct: discount };
   const previewCaption = subCaption(previewPlan);
   const priceInvalid = paid && priceCents < 100;
@@ -132,24 +141,33 @@ export default function SubscriptionSettings() {
 
           <div className="space-y-2">
             <label className="text-sm font-semibold">Billing period</label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {INTERVALS.map((opt) => (
                 <button
                   key={opt.value}
                   type="button"
                   onClick={() => setInterval_(opt.value)}
-                  className={`rounded-xl border px-3 py-2.5 text-sm font-semibold transition-colors ${
+                  className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
                     interval === opt.value
                       ? "bg-accent text-white border-accent"
                       : "bg-card2 border-line"
                   }`}
                 >
-                  {opt.label}
+                  <span className="block text-sm font-semibold">{opt.label}</span>
+                  <span
+                    className={`block text-[11px] ${
+                      interval === opt.value ? "text-white/75" : "text-muted"
+                    }`}
+                  >
+                    {opt.hint}
+                  </span>
                 </button>
               ))}
             </div>
           </div>
 
+          {recurring && (
+          <>
           <div className="rounded-xl border border-line bg-card2 px-3 py-2.5 space-y-2.5">
             <div className="flex items-center justify-between">
               <div>
@@ -221,6 +239,8 @@ export default function SubscriptionSettings() {
               </div>
             )}
           </div>
+          </>
+          )}
         </>
       )}
 

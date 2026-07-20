@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats } from "@/lib/guest";
+import { ensureStripeCustomer } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { requestOrigin } from "@/lib/smsNotify";
 import {
@@ -44,7 +45,10 @@ export async function POST(req: NextRequest) {
 
   if (action === "cancel") {
     if (!existing?.stripe_subscription_id || !ACTIVE_STATUSES.includes(existing.status)) {
-      return NextResponse.json({ error: "No active subscription" }, { status: 404 });
+      return NextResponse.json(
+        { error: "No active subscription to cancel" },
+        { status: 404 }
+      );
     }
     await s.subscriptions.update(existing.stripe_subscription_id, {
       cancel_at_period_end: true,
@@ -84,17 +88,50 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, alreadySubscribed: true });
   }
 
-  let customerId = (
-    await db.from("chats").select("stripe_customer_id").eq("id", chat.id).maybeSingle()
-  ).data?.stripe_customer_id as string | null | undefined;
-  if (!customerId) {
-    const customer = await s.customers.create({ metadata: { chatId: chat.id } });
-    customerId = customer.id;
-    await db.from("chats").update({ stripe_customer_id: customerId }).eq("id", chat.id);
-  }
+  // Customer carries the fan's signup name/email so Checkout is prefilled.
+  const customerId = await ensureStripeCustomer(chat.id);
 
   const ownerName = (meta.display_name as string) || "Creator";
   const origin = requestOrigin(req.headers);
+
+  // Lifetime plan: single one-time payment instead of a recurring subscription.
+  if (plan.interval === "lifetime") {
+    const lifetimeMeta = {
+      chatId: chat.id,
+      ownerId,
+      kind: "subscription",
+      interval: "lifetime",
+    };
+    const session = await s.checkout.sessions.create({
+      mode: "payment",
+      customer: customerId,
+      client_reference_id: chat.id,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: "usd",
+            unit_amount: plan.priceCents,
+            product_data: {
+              name: `${ownerName} — lifetime subscription`,
+              description: "One-time payment, lifetime access",
+            },
+          },
+        },
+      ],
+      payment_intent_data: {
+        setup_future_usage: "off_session",
+        metadata: lifetimeMeta,
+      },
+      metadata: lifetimeMeta,
+      success_url: `${origin}/p/${ownerId}?subscribed=1&session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${origin}/p/${ownerId}`,
+    });
+    if (!session.url) {
+      return NextResponse.json({ error: "Could not start checkout" }, { status: 502 });
+    }
+    return NextResponse.json({ checkoutUrl: session.url });
+  }
 
   // First-period percentage discount rides along as a one-time coupon.
   let couponId: string | undefined;

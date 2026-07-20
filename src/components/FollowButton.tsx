@@ -109,6 +109,10 @@ export default function FollowButton({
 
   async function cancelPaid() {
     if (busy) return;
+    if (plan?.interval === "lifetime") {
+      alert("You have lifetime access — there's nothing to cancel.");
+      return;
+    }
     if (
       !confirm(
         "Cancel your subscription? You'll keep access until the end of your current billing period."

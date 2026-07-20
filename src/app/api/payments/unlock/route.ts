@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
-import { recordUnlock } from "@/lib/payments";
+import { ensureStripeCustomer, recordUnlock } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { requestOrigin } from "@/lib/smsNotify";
 import Stripe from "stripe";
@@ -104,17 +104,8 @@ export async function POST(req: NextRequest) {
   }
 
   // First purchase (or retry): hosted Checkout that also saves the card.
-  let customerId = chat.stripe_customer_id;
-  if (!customerId) {
-    const customer = await s.customers.create({
-      metadata: { chatId: message.chat_id },
-    });
-    customerId = customer.id;
-    await db
-      .from("chats")
-      .update({ stripe_customer_id: customerId })
-      .eq("id", message.chat_id);
-  }
+  // The customer carries the fan's signup name/email so it's prefilled.
+  const customerId = await ensureStripeCustomer(message.chat_id);
 
   const session = await s.checkout.sessions.create({
     mode: "payment",
