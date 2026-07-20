@@ -25,7 +25,8 @@ export type Message = {
   hidden?: boolean;
   // Pay-to-unlock price in cents (owner-set); 0 = manual lock only.
   price_cents?: number;
-  // Guest-side: has this fan unlocked the priced media?
+  // Has the fan paid to unlock this priced media? (reveals it for them,
+  // turns the creator's own bubble green)
   unlocked?: boolean;
   created_at: string;
 };
@@ -136,6 +137,8 @@ export default function MessageBubble({
   const price = message.price_cents ?? 0;
   // A fan who paid for this priced media sees it revealed.
   const paidUnlocked = !mine && locked && price > 0 && !!message.unlocked;
+  // Creator's own priced media that the fan paid for → green bubble.
+  const soldByMe = mine && price > 0 && !!message.unlocked;
   // Receiver of a locked message: blurred, unless they've paid to unlock it.
   const blurred = locked && !mine && !paidUnlocked;
   // Priced + not yet unlocked → show the pay-to-unlock overlay.
@@ -238,7 +241,9 @@ export default function MessageBubble({
     <div className={`group msg-in flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
       <div
         className={`relative max-w-[78%] rounded-3xl overflow-hidden ${
-          mine ? "bubble-own rounded-br-lg" : "bg-card2 rounded-bl-lg"
+          mine
+            ? `${soldByMe ? "bubble-paid" : "bubble-own"} rounded-br-lg`
+            : "bg-card2 rounded-bl-lg"
         } ${message.hidden ? "opacity-60" : ""} ${
           selectMode && selected ? "ring-2 ring-accent" : ""
         }`}

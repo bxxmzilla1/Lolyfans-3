@@ -106,6 +106,12 @@ body::before {
   color: #fff;
 }
 
+/* Creator's priced media after the fan paid to unlock it */
+.bubble-paid {
+  background: linear-gradient(135deg, #0ca55f, #2fd47f);
+  color: #fff;
+}
+
 /* Glowing app mark */
 .glow-accent {
   box-shadow: 0 0 22px rgba(0, 175, 240, 0.45);

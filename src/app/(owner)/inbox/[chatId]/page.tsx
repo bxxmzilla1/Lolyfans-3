@@ -19,7 +19,7 @@ export default async function OwnerChatPage({
   const { chatId } = await params;
 
   const db = supabaseAdmin();
-  const [{ data: chat }, { data: messages }] = await Promise.all([
+  const [{ data: chat }, { data: messages }, { data: unlocks }] = await Promise.all([
     db
       .from("chats")
       .select("*, invites(label)")
@@ -32,6 +32,8 @@ export default async function OwnerChatPage({
       .eq("chat_id", chatId)
       .order("created_at", { ascending: true })
       .limit(500),
+    // Paid unlocks tint the creator's own bubble green.
+    db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
     // Opening the chat marks it as read (clears the sidebar badge)
     db
       .from("chats")
@@ -40,6 +42,12 @@ export default async function OwnerChatPage({
       .eq("owner_id", ownerId),
   ]);
   if (!chat) notFound();
+
+  const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id as string));
+  const initialMessages = (messages ?? []).map((m) => ({
+    ...m,
+    unlocked: unlockedIds.has(m.id),
+  }));
 
   // Where the guest is chatting from: precise City, Country from their IP,
   // falling back to the country stored when they joined.
@@ -86,7 +94,7 @@ export default async function OwnerChatPage({
       chatId={chatId}
       role="owner"
       header={header}
-      initialMessages={messages ?? []}
+      initialMessages={initialMessages}
     />
   );
 }

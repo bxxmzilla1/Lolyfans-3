@@ -52,18 +52,19 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  // Hidden messages are only visible to the owner; guests also get an
-  // `unlocked` flag per priced-locked message so paid ones reveal.
+  // Hidden messages are only visible to the owner. Both sides get an
+  // `unlocked` flag per priced-locked message: paid ones reveal for the fan
+  // and show as paid (green bubble) for the creator.
   let messages = data ?? [];
   if (auth.role === "guest") {
     messages = messages.filter((m) => !m.hidden);
-    const { data: unlocks } = await supabaseAdmin()
-      .from("message_unlocks")
-      .select("message_id")
-      .eq("chat_id", chatId);
-    const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id));
-    messages = messages.map((m) => ({ ...m, unlocked: unlockedIds.has(m.id) }));
   }
+  const { data: unlocks } = await supabaseAdmin()
+    .from("message_unlocks")
+    .select("message_id")
+    .eq("chat_id", chatId);
+  const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id));
+  messages = messages.map((m) => ({ ...m, unlocked: unlockedIds.has(m.id) }));
   return NextResponse.json({ messages, role: auth.role });
 }
 
