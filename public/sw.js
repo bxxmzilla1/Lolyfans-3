@@ -1,7 +1,10 @@
-const CACHE = "lolyfans-v7";
+const CACHE = "lolyfans-v8";
 const STATIC_ASSETS = [
   "/manifest.webmanifest",
   "/favicon.ico",
+  "/icons/favicon-16.png",
+  "/icons/favicon-32.png",
+  "/icons/favicon-48.png",
   "/icons/logo-180.png",
   "/icons/logo-192.png",
   "/icons/logo-512.png",

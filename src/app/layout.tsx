@@ -20,10 +20,13 @@ export const metadata: Metadata = {
   icons: {
     // ?v= busts stale favicon caches (browsers + old service workers)
     icon: [
-      { url: "/favicon.ico?v=4", sizes: "16x16 24x24 32x32 64x64" },
-      { url: "/icons/logo-192.png?v=4", type: "image/png", sizes: "192x192" },
+      { url: "/icons/favicon-16.png?v=5", type: "image/png", sizes: "16x16" },
+      { url: "/icons/favicon-32.png?v=5", type: "image/png", sizes: "32x32" },
+      { url: "/icons/favicon-48.png?v=5", type: "image/png", sizes: "48x48" },
+      { url: "/icons/logo-192.png?v=5", type: "image/png", sizes: "192x192" },
+      { url: "/favicon.ico?v=5", sizes: "16x16 24x24 32x32 64x64" },
     ],
-    apple: "/icons/logo-180.png?v=4",
+    apple: "/icons/logo-180.png?v=5",
   },
 };
 
