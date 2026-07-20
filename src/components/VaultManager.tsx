@@ -226,38 +226,6 @@ export default function VaultManager() {
     }
   }
 
-  function UploadBar() {
-    if (!uploadProgress && !uploadError) return null;
-    return (
-      <div className="space-y-2 rounded-xl border border-line bg-card2 px-3 py-3 fade-up">
-        {uploadProgress && (
-          <>
-            <div className="flex items-center justify-between gap-3 text-xs">
-              <span className="font-semibold text-fg truncate min-w-0">
-                Uploading {uploadProgress.fileName}
-              </span>
-              <span className="tabular-nums text-muted shrink-0">
-                {uploadProgress.fileCount > 1
-                  ? `${uploadProgress.fileIndex}/${uploadProgress.fileCount} · `
-                  : ""}
-                {uploadProgress.percent}%
-              </span>
-            </div>
-            <div className="h-2 rounded-full bg-bg overflow-hidden">
-              <div
-                className="h-full rounded-full bg-accent transition-[width] duration-150 ease-out"
-                style={{ width: `${uploadProgress.percent}%` }}
-              />
-            </div>
-          </>
-        )}
-        {uploadError && (
-          <p className="text-xs text-red-400">{uploadError}</p>
-        )}
-      </div>
-    );
-  }
-
   function toggleSelected(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -355,7 +323,9 @@ export default function VaultManager() {
           </button>
           {uploadInput}
         </div>
-        <UploadBar />
+        {uploadError && (
+          <p className="text-xs text-red-400 text-center">{uploadError}</p>
+        )}
 
         {newAlbumOpen && (
           <Portal>
@@ -582,7 +552,9 @@ export default function VaultManager() {
           : `+ Upload to ${albumName}`}
       </button>
       {uploadInput}
-      <UploadBar />
+      {uploadError && (
+        <p className="text-xs text-red-400 text-center">{uploadError}</p>
+      )}
 
       {items.length > 0 && (
         <div className="flex gap-1.5">
