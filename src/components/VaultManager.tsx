@@ -7,6 +7,7 @@ import {
   IconBack,
   IconCheck,
   IconChevronRight,
+  IconEdit,
   IconFolder,
   IconGrid,
   IconLock,
@@ -68,6 +69,8 @@ export default function VaultManager() {
   const [durations, setDurations] = useState<Record<string, number>>({});
   const [newAlbumOpen, setNewAlbumOpen] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState("");
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
   const [confirmAction, setConfirmAction] = useState<{
     title: string;
     message: string;
@@ -122,6 +125,25 @@ export default function VaultManager() {
       body: JSON.stringify({ name }),
     });
     loadAlbums();
+  }
+
+  async function renameAlbum() {
+    if (!openAlbum || openAlbum === "all") return;
+    const name = renameValue.trim();
+    if (!name || name === openAlbum.name) {
+      setRenameOpen(false);
+      return;
+    }
+    setRenameOpen(false);
+    const res = await fetch("/api/vault/albums", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: openAlbum.id, name }),
+    });
+    if (res.ok) {
+      setOpenAlbum({ ...openAlbum, name });
+      loadAlbums();
+    }
   }
 
   function deleteAlbum(album: Album) {
@@ -470,13 +492,25 @@ export default function VaultManager() {
           </button>
         )}
         {openAlbum !== "all" && (
-          <button
-            onClick={() => deleteAlbum(openAlbum)}
-            aria-label="Delete album"
-            className="w-9 h-9 rounded-xl bg-card2 border border-line flex items-center justify-center text-red-400 hover:bg-line transition-colors shrink-0"
-          >
-            <IconTrash className="w-4.5 h-4.5" />
-          </button>
+          <>
+            <button
+              onClick={() => {
+                setRenameValue(openAlbum.name);
+                setRenameOpen(true);
+              }}
+              aria-label="Rename album"
+              className="w-9 h-9 rounded-xl bg-card2 border border-line flex items-center justify-center text-fg hover:bg-line transition-colors shrink-0"
+            >
+              <IconEdit className="w-4.5 h-4.5" />
+            </button>
+            <button
+              onClick={() => deleteAlbum(openAlbum)}
+              aria-label="Delete album"
+              className="w-9 h-9 rounded-xl bg-card2 border border-line flex items-center justify-center text-red-400 hover:bg-line transition-colors shrink-0"
+            >
+              <IconTrash className="w-4.5 h-4.5" />
+            </button>
+          </>
         )}
       </div>
 
@@ -714,6 +748,50 @@ export default function VaultManager() {
             </button>
           </div>
         </div>
+        </Portal>
+      )}
+
+      {renameOpen && openAlbum !== "all" && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => setRenameOpen(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-xs bg-card border border-line rounded-2xl p-4 space-y-3 fade-up"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl ig-gradient glow-accent flex items-center justify-center shrink-0">
+                  <IconEdit className="w-4.5 h-4.5 text-white" />
+                </div>
+                <p className="font-bold">Rename album</p>
+              </div>
+              <input
+                autoFocus
+                value={renameValue}
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && renameAlbum()}
+                placeholder="Album name"
+                className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setRenameOpen(false)}
+                  className="flex-1 bg-card2 border border-line rounded-xl py-2.5 text-sm font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={renameAlbum}
+                  disabled={!renameValue.trim()}
+                  className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                >
+                  Save
+                </button>
+              </div>
+            </div>
+          </div>
         </Portal>
       )}
 

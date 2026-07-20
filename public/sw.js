@@ -1,4 +1,4 @@
-const CACHE = "lolyfans-v4";
+const CACHE = "lolyfans-v5";
 const STATIC_ASSETS = [
   "/manifest.webmanifest",
   "/icons/icon.svg",

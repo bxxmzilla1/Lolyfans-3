@@ -18,8 +18,9 @@ export const metadata: Metadata = {
     title: "Lolyfans",
   },
   icons: {
-    icon: "/icons/icon.svg",
-    apple: "/icons/icon.svg",
+    // ?v= busts stale favicon caches (browsers + old service workers)
+    icon: "/icons/icon.svg?v=2",
+    apple: "/icons/icon.svg?v=2",
   },
 };
 
