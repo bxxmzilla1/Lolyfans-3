@@ -1,5 +1,6 @@
 import ChatList from "@/components/ChatList";
 import LogoutButton from "@/components/LogoutButton";
+import Logo from "@/components/Logo";
 import { IconChat } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
@@ -10,7 +11,10 @@ export default function InboxPage() {
       {/* Mobile: full chat list */}
       <div className="lg:hidden flex flex-col h-full">
         <header className="border-b border-line px-4 py-3 flex items-center justify-between">
-          <h1 className="text-2xl font-bold ig-gradient-text">Lolyfans</h1>
+          <div className="flex items-center gap-2.5">
+            <Logo className="w-8 h-8" />
+            <h1 className="text-2xl font-bold ig-gradient-text">Lolyfans</h1>
+          </div>
           <LogoutButton />
         </header>
         <div className="flex-1 overflow-y-auto pb-20">

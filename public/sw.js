@@ -1,8 +1,10 @@
-const CACHE = "lolyfans-v5";
+const CACHE = "lolyfans-v6";
 const STATIC_ASSETS = [
   "/manifest.webmanifest",
-  "/icons/icon.svg",
-  "/icons/icon-maskable.svg",
+  "/favicon.ico",
+  "/icons/logo-180.png",
+  "/icons/logo-192.png",
+  "/icons/logo-512.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -28,7 +30,7 @@ const OFFLINE_HTML = `<!doctype html><html><head><meta charset="utf-8">
 <title>Offline — Lolyfans</title>
 <style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;
 background:#0c0a11;color:#f5f3f9;font-family:system-ui,sans-serif;text-align:center}
-p{color:#8f8a9d}b{background:linear-gradient(135deg,#c084fc,#7c3aed);
+p{color:#8f8a9d}b{background:linear-gradient(135deg,#4fc9ff,#00aff0);
 -webkit-background-clip:text;background-clip:text;color:transparent;font-size:24px}</style>
 </head><body><div><b>Lolyfans</b><p>You're offline. Check your connection and try again.</p></div></body></html>`;
 

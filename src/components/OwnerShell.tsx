@@ -8,7 +8,8 @@ import VaultPanel from "./VaultPanel";
 import BottomNav from "./BottomNav";
 import SettingsModal from "./SettingsModal";
 import OwnerPresence from "./OwnerPresence";
-import { IconChat, IconGear } from "./Icons";
+import Logo from "./Logo";
+import { IconGear } from "./Icons";
 
 function SettingsMenu() {
   const [open, setOpen] = useState(false);
@@ -40,9 +41,7 @@ export default function OwnerShell({ children }: { children: React.ReactNode }) 
       {/* Left sidebar: chats + settings (desktop) */}
       <aside className="hidden lg:flex w-[320px] shrink-0 flex-col border-r border-line bg-card/60 backdrop-blur">
         <Link href="/inbox" className="px-5 py-5 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl ig-gradient glow-accent flex items-center justify-center">
-            <IconChat className="w-5 h-5 text-white" />
-          </div>
+          <Logo className="w-9 h-9 glow-accent" />
           <span className="text-xl font-bold ig-gradient-text tracking-tight">
             Lolyfans
           </span>

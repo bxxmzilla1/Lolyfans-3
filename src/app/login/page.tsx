@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import GuestLoginForm from "@/components/GuestLoginForm";
-import { IconChat } from "@/components/Icons";
+import Logo from "@/components/Logo";
 
 export const dynamic = "force-dynamic";
 
@@ -23,9 +23,7 @@ export default async function GuestLoginPage() {
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
       <div className="w-full max-w-sm flex flex-col items-center gap-8">
         <div className="flex flex-col items-center gap-4">
-          <div className="w-20 h-20 rounded-3xl ig-gradient glow-accent flex items-center justify-center">
-            <IconChat className="w-10 h-10 text-white" />
-          </div>
+          <Logo className="w-20 h-20 glow-accent" />
           <h1 className="text-4xl font-bold ig-gradient-text tracking-tight">
             Lolyfans
           </h1>

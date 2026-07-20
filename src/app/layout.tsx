@@ -19,8 +19,11 @@ export const metadata: Metadata = {
   },
   icons: {
     // ?v= busts stale favicon caches (browsers + old service workers)
-    icon: "/icons/icon.svg?v=2",
-    apple: "/icons/icon.svg?v=2",
+    icon: [
+      { url: "/favicon.ico?v=3", sizes: "32x32" },
+      { url: "/icons/logo-192.png?v=3", type: "image/png", sizes: "192x192" },
+    ],
+    apple: "/icons/logo-180.png?v=3",
   },
 };
 

@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useGuestShell } from "./GuestShellContext";
 import { useInboxSignals, type ChatOwnerPair } from "@/lib/useInboxSignals";
 import GuestAppPresence from "./GuestAppPresence";
+import Logo from "./Logo";
 import { IconChat, IconHome, IconUser } from "./Icons";
 
 /**
@@ -94,7 +95,8 @@ export default function GuestNav() {
       <GuestAppPresence />
 
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-40 w-60 flex-col border-r border-line bg-card/70 backdrop-blur-lg">
-        <div className="px-6 py-6">
+        <div className="px-6 py-6 flex items-center gap-2.5">
+          <Logo className="w-8 h-8" />
           <p className="text-2xl font-bold ig-gradient-text tracking-tight">
             Lolyfans
           </p>
