@@ -192,6 +192,23 @@ textarea {
   transform-origin: bottom;
 }
 
+/* Flash when jumping to a replied-to message */
+@keyframes msg-flash {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  15%,
+  55% {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+}
+
+.msg-highlight {
+  animation: msg-flash 1.4s ease;
+  border-radius: 1.5rem;
+}
+
 /* Themed video progress slider */
 .video-range {
   -webkit-appearance: none;

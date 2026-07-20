@@ -57,12 +57,14 @@ export default function ChatView({
   const [peerTyping, setPeerTyping] = useState(false);
   const [msgSelectMode, setMsgSelectMode] = useState(false);
   const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
+  const [highlightId, setHighlightId] = useState<string | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
   const typingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingSentAtRef = useRef(0);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Saved link-label presets live in the creator's profile metadata so they
   // follow them across devices.
@@ -420,6 +422,22 @@ export default function ChatView({
     });
   }
 
+  /** Scroll to the original message and flash-highlight it. */
+  function jumpToReply(messageId: string) {
+    const el = listRef.current?.querySelector(
+      `[data-message-id="${CSS.escape(messageId)}"]`
+    ) as HTMLElement | null;
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    // Retrigger the CSS animation even if tapping the same reply twice.
+    setHighlightId(null);
+    requestAnimationFrame(() => {
+      setHighlightId(messageId);
+      highlightTimerRef.current = setTimeout(() => setHighlightId(null), 1500);
+    });
+  }
+
   /** Hide or unhide the selected messages for the guest. */
   async function hideSelected(hidden: boolean) {
     const ids = [...selectedMsgs];
@@ -518,10 +536,12 @@ export default function ChatView({
             mine={m.sender === role}
             repliedTo={m.reply_to_id ? byId.get(m.reply_to_id) ?? null : null}
             onReply={setReplyTo}
+            onJumpToReply={jumpToReply}
             onMediaClick={setLightbox}
             onToggleLock={toggleLock}
             onUnlock={unlockMessage}
             unlocking={unlockingId === m.id}
+            highlighted={highlightId === m.id}
             selectMode={msgSelectMode}
             selected={selectedMsgs.has(m.id)}
             onSelectToggle={toggleMsgSelected}

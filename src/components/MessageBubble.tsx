@@ -113,10 +113,12 @@ export default function MessageBubble({
   mine,
   repliedTo,
   onReply,
+  onJumpToReply,
   onMediaClick,
   onToggleLock,
   onUnlock,
   unlocking = false,
+  highlighted = false,
   selectMode = false,
   selected = false,
   onSelectToggle,
@@ -125,10 +127,13 @@ export default function MessageBubble({
   mine: boolean;
   repliedTo: Message | null;
   onReply: (m: Message) => void;
+  /** Scroll + flash the original message this bubble is replying to. */
+  onJumpToReply?: (messageId: string) => void;
   onMediaClick: (m: Message) => void;
   onToggleLock: (m: Message) => void;
   onUnlock?: (m: Message) => void;
   unlocking?: boolean;
+  highlighted?: boolean;
   selectMode?: boolean;
   selected?: boolean;
   onSelectToggle?: (m: Message) => void;
@@ -239,7 +244,10 @@ export default function MessageBubble({
   );
 
   return (
-    <div className={`group msg-in flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}>
+    <div
+      data-message-id={message.id}
+      className={`group msg-in flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}
+    >
       <div
         className={`relative max-w-[78%] rounded-3xl overflow-hidden ${
           mine
@@ -247,7 +255,7 @@ export default function MessageBubble({
             : "bg-card2 rounded-bl-lg"
         } ${message.hidden ? "opacity-60" : ""} ${
           selectMode && selected ? "ring-2 ring-accent" : ""
-        }`}
+        } ${highlighted ? "msg-highlight" : ""}`}
       >
         {message.hidden && (
           <div className="px-3 pt-2">
@@ -276,9 +284,19 @@ export default function MessageBubble({
           </button>
         )}
         {repliedTo && (
-          <div className={`mx-3 mt-2 px-3 py-1.5 rounded-xl text-xs border-l-2 ${
-            mine ? "bg-white/15 border-white/60 text-white/85" : "bg-line/60 border-accent text-muted"
-          }`}>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onJumpToReply?.(repliedTo.id);
+            }}
+            aria-label="Jump to replied message"
+            className={`mx-3 mt-2 px-3 py-1.5 rounded-xl text-xs border-l-2 text-left w-[calc(100%-1.5rem)] transition-opacity hover:opacity-90 active:opacity-75 cursor-pointer ${
+              mine
+                ? "bg-white/15 border-white/60 text-white/85"
+                : "bg-line/60 border-accent text-muted"
+            }`}
+          >
             <p className="font-semibold mb-0.5">
               {repliedTo.sender === message.sender ? "Replying to self" : "Reply"}
             </p>
@@ -286,7 +304,7 @@ export default function MessageBubble({
               {(repliedTo.content && messagePreviewText(repliedTo.content)) ||
                 (repliedTo.media_type === "image" ? "Photo" : "Video")}
             </p>
-          </div>
+          </button>
         )}
 
         {message.media_path && message.media_type === "image" && (
