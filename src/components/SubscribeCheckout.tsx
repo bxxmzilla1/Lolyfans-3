@@ -94,7 +94,10 @@ function PayForm({
 
   return (
     <div className="space-y-4">
-      <PaymentElement onReady={() => setReady(true)} />
+      <PaymentElement
+        onReady={() => setReady(true)}
+        options={{ wallets: { link: "never" } }}
+      />
       {error && <p className="text-red-400 text-sm">{error}</p>}
       <button
         onClick={pay}
