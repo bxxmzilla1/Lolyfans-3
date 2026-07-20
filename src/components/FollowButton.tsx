@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { useGuestShell } from "./GuestShellContext";
+import Portal from "./Portal";
+import SubscribeCheckout from "./SubscribeCheckout";
+import { elementsEnabled } from "@/lib/stripeClient";
 import {
   subCaption,
   subCtaLabel,
@@ -15,6 +18,7 @@ import {
  */
 export default function FollowButton({
   ownerId,
+  ownerName,
   initialFollowing,
   small,
   full,
@@ -22,6 +26,7 @@ export default function FollowButton({
   initialSubscribed,
 }: {
   ownerId: string;
+  ownerName?: string;
   initialFollowing: boolean;
   small?: boolean;
   /** Full-width bar like the OnlyFans subscription button. */
@@ -35,22 +40,37 @@ export default function FollowButton({
   const [following, setFollowing] = useState(initialFollowing);
   const [subscribed, setSubscribed] = useState(!!initialSubscribed);
   const [busy, setBusy] = useState(false);
+  const [paySheet, setPaySheet] = useState(false);
   const { refresh } = useGuestShell();
 
-  // Back from subscription Checkout: confirm the session (covers webhook
-  // failures), flip to Subscribed, and clean the URL.
+  // Back from a payment: either a hosted Checkout session (?session_id=) or a
+  // rare 3-D Secure redirect from the in-page form (?sub= / ?pi=). Confirm,
+  // flip to Subscribed, and clean the URL.
   useEffect(() => {
     if (!paid) return;
     const params = new URLSearchParams(window.location.search);
+    if (!params.get("subscribed")) return;
     const sessionId = params.get("session_id");
-    if (!params.get("subscribed") || !sessionId) return;
+    const subId = params.get("sub");
+    const piId = params.get("pi");
+    if (!sessionId && !subId && !piId) return;
     window.history.replaceState({}, "", window.location.pathname);
     (async () => {
-      const res = await fetch("/api/payments/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sessionId }),
-      }).catch(() => null);
+      const res = sessionId
+        ? await fetch("/api/payments/confirm", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ sessionId }),
+          }).catch(() => null)
+        : await fetch("/api/payments/subscribe/activate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              ownerId,
+              subscriptionId: subId || undefined,
+              paymentIntentId: piId || undefined,
+            }),
+          }).catch(() => null);
       if (res?.ok) {
         setSubscribed(true);
         refresh();
@@ -80,6 +100,12 @@ export default function FollowButton({
 
   async function subscribePaid() {
     if (busy) return;
+    // In-page payment form when the publishable key is configured; falls
+    // back to Stripe-hosted Checkout otherwise.
+    if (elementsEnabled()) {
+      setPaySheet(true);
+      return;
+    }
     setBusy(true);
     try {
       const res = await fetch("/api/payments/subscribe", {
@@ -172,11 +198,53 @@ export default function FollowButton({
     </button>
   );
 
-  if (!caption || small) return button;
+  const sheet = paySheet && plan && (
+    <Portal>
+      <div
+        className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
+        onClick={() => setPaySheet(false)}
+      >
+        <div
+          className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm fade-up max-h-[90dvh] overflow-y-auto"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <p className="font-bold">Subscribe</p>
+            <button
+              onClick={() => setPaySheet(false)}
+              className="text-muted text-sm px-1"
+              aria-label="Close"
+            >
+              ✕
+            </button>
+          </div>
+          <SubscribeCheckout
+            ownerId={ownerId}
+            ownerName={ownerName}
+            plan={plan}
+            onSuccess={() => {
+              setPaySheet(false);
+              setSubscribed(true);
+              refresh();
+            }}
+          />
+        </div>
+      </div>
+    </Portal>
+  );
+
+  if (!caption || small)
+    return (
+      <>
+        {button}
+        {sheet}
+      </>
+    );
   return (
     <div className="space-y-1.5">
       {button}
       <p className="text-xs text-muted text-center">{caption}</p>
+      {sheet}
     </div>
   );
 }

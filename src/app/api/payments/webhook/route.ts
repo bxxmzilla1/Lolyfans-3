@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   fulfillCheckout,
+  recordLifetimeSubscription,
   recordUnlock,
   saveStripePaymentMethod,
   syncSubscription,
@@ -44,27 +45,38 @@ export async function POST(req: NextRequest) {
     await syncSubscription(event.data.object as Stripe.Subscription);
   }
 
-  // Off-session unlocks: tip messages are posted by /api/payments/tip directly;
-  // tip Checkout is fulfilled via checkout.session.completed above.
+  // Off-session unlocks and Elements lifetime purchases. Tip messages are
+  // posted by /api/payments/tip directly; tip Checkout via session.completed.
   if (event.type === "payment_intent.succeeded") {
     const pi = event.data.object as Stripe.PaymentIntent;
-    if (pi.metadata?.kind !== "unlock") return NextResponse.json({ received: true });
-    const chatId = pi.metadata.chatId;
-    const messageId = pi.metadata.messageId;
-    if (!chatId || !messageId) return NextResponse.json({ received: true });
+    const chatId = pi.metadata?.chatId;
+    if (!chatId) return NextResponse.json({ received: true });
 
     const paymentMethodId =
       typeof pi.payment_method === "string"
         ? pi.payment_method
         : pi.payment_method?.id ?? null;
     const customerId = typeof pi.customer === "string" ? pi.customer : null;
-    await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
 
-    await recordUnlock({
-      messageId,
-      chatId,
-      priceCents: pi.amount ?? 0,
-    });
+    if (pi.metadata?.kind === "unlock" && pi.metadata.messageId) {
+      await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+      await recordUnlock({
+        messageId: pi.metadata.messageId,
+        chatId,
+        priceCents: pi.amount ?? 0,
+      });
+    } else if (
+      pi.metadata?.kind === "subscription" &&
+      pi.metadata?.interval === "lifetime" &&
+      pi.metadata.ownerId
+    ) {
+      await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+      await recordLifetimeSubscription({
+        chatId,
+        ownerId: pi.metadata.ownerId,
+        priceCents: pi.amount ?? 0,
+      });
+    }
   }
 
   return NextResponse.json({ received: true });

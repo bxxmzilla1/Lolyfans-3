@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
 import { mediaUrl } from "@/lib/utils";
+import { subPlanFromMetadata } from "@/lib/subscriptionPlan";
 import JoinForm from "@/components/JoinForm";
 import InviteProfile from "@/components/InviteProfile";
 
@@ -60,6 +61,8 @@ export default async function InviteSignupPage({
     invite_button_text?: string;
   };
   const ownerName = meta.display_name || "Lolyfans";
+  // Paid profiles collect the card as step 2 of this same sign-up page.
+  const plan = subPlanFromMetadata(meta as Record<string, unknown>);
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
@@ -76,7 +79,13 @@ export default async function InviteSignupPage({
           </p>
         </div>
 
-        <JoinForm code={code} buttonText={meta.invite_button_text} />
+        <JoinForm
+          code={code}
+          buttonText={meta.invite_button_text}
+          ownerId={invite!.owner_id}
+          ownerName={ownerName}
+          plan={plan}
+        />
       </div>
     </main>
   );

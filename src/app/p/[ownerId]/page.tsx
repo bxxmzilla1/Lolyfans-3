@@ -143,6 +143,7 @@ export default async function CreatorProfilePage({
               <div className="pt-1">
                 <FollowButton
                   ownerId={ownerId}
+                  ownerName={profile.name}
                   initialFollowing={following}
                   plan={profile.plan}
                   initialSubscribed={subscribed}

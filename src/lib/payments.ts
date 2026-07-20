@@ -109,6 +109,31 @@ export async function saveStripePaymentMethod(
   await supabaseAdmin().from("chats").update(patch).eq("id", chatId);
 }
 
+/** Record a paid lifetime subscription (idempotent) and keep the fan following. */
+export async function recordLifetimeSubscription(opts: {
+  chatId: string;
+  ownerId: string;
+  priceCents: number;
+}) {
+  const db = supabaseAdmin();
+  await db.from("subscriptions").upsert(
+    {
+      chat_id: opts.chatId,
+      owner_id: opts.ownerId,
+      stripe_subscription_id: null,
+      status: "active",
+      price_cents: opts.priceCents,
+      billing_interval: "lifetime",
+      current_period_end: null,
+    },
+    { onConflict: "chat_id,owner_id" }
+  );
+  await db.from("follows").upsert(
+    { chat_id: opts.chatId, owner_id: opts.ownerId },
+    { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
+  );
+}
+
 /**
  * Mirror a Stripe subscription into the subscriptions table (created,
  * renewed, canceled…) and keep the fan following the creator while active.
@@ -195,23 +220,11 @@ export async function fulfillCheckout(session: Stripe.Checkout.Session) {
       if (!ownerId) return { ok: false as const, kind: "subscription" as const };
       const { customerId, paymentMethodId } = await paymentMethodFromSession(session);
       await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
-      const db = supabaseAdmin();
-      await db.from("subscriptions").upsert(
-        {
-          chat_id: chatId,
-          owner_id: ownerId,
-          stripe_subscription_id: null,
-          status: "active",
-          price_cents: session.amount_total ?? 0,
-          billing_interval: "lifetime",
-          current_period_end: null,
-        },
-        { onConflict: "chat_id,owner_id" }
-      );
-      await db.from("follows").upsert(
-        { chat_id: chatId, owner_id: ownerId },
-        { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
-      );
+      await recordLifetimeSubscription({
+        chatId,
+        ownerId,
+        priceCents: session.amount_total ?? 0,
+      });
       return { ok: true as const, kind: "subscription" as const, messageId: null };
     }
 
