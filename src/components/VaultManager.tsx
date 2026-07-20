@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl } from "@/lib/utils";
+import { uploadWithProgress } from "@/lib/uploadWithProgress";
 import {
   IconBack,
   IconCheck,
@@ -16,6 +16,13 @@ import {
 import VideoPlayer from "./VideoPlayer";
 import ConfirmDialog from "./ConfirmDialog";
 import Portal from "./Portal";
+
+type UploadProgress = {
+  fileName: string;
+  fileIndex: number;
+  fileCount: number;
+  percent: number;
+};
 
 type Album = {
   id: string;
@@ -51,6 +58,8 @@ export default function VaultManager() {
   const [openAlbum, setOpenAlbum] = useState<"all" | Album | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
+  const [uploadError, setUploadError] = useState("");
   const [viewer, setViewer] = useState<Item | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -132,36 +141,121 @@ export default function VaultManager() {
   }
 
   async function handleFiles(files: FileList) {
+    const list = Array.from(files).filter((f) => !!fileKind(f));
+    if (list.length === 0) {
+      setUploadError("Choose a photo or video file");
+      return;
+    }
+
+    // From the album list, files go into All; open that view after upload
+    // so the new media is visible (loadItems no-ops while openAlbum is null).
+    const fromAlbumList = !openAlbum;
     const albumId = openAlbum && openAlbum !== "all" ? openAlbum.id : null;
+
     setUploading(true);
+    setUploadError("");
+    const added: Item[] = [];
     try {
-      for (const file of Array.from(files)) {
-        const kind = fileKind(file);
-        if (!kind) continue;
+      for (let i = 0; i < list.length; i++) {
+        const file = list[i];
+        const kind = fileKind(file)!;
+        setUploadProgress({
+          fileName: file.name,
+          fileIndex: i + 1,
+          fileCount: list.length,
+          percent: 0,
+        });
+
         const res = await fetch("/api/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ fileName: file.name, scope: "vault" }),
         });
-        if (!res.ok) continue;
-        const { path, token } = await res.json();
-        const { error } = await supabaseBrowser()
-          .storage.from("media")
-          .uploadToSignedUrl(path, token, file, { cacheControl: "31536000" });
-        if (!error) {
-          await fetch("/api/vault/items", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ mediaPath: path, mediaType: kind, albumId }),
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || `Could not start upload for ${file.name}`);
+        }
+        const { path, signedUrl } = await res.json();
+        if (!signedUrl || !path) {
+          throw new Error("Upload URL missing — try again");
+        }
+
+        await uploadWithProgress(signedUrl, file, (percent) => {
+          setUploadProgress({
+            fileName: file.name,
+            fileIndex: i + 1,
+            fileCount: list.length,
+            percent,
+          });
+        });
+
+        const saveRes = await fetch("/api/vault/items", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mediaPath: path, mediaType: kind, albumId }),
+        });
+        if (!saveRes.ok) {
+          const data = await saveRes.json().catch(() => ({}));
+          throw new Error(data.error || `Could not save ${file.name}`);
+        }
+        const { item } = (await saveRes.json()) as { item: Item };
+        if (item) added.push(item);
+      }
+
+      if (fromAlbumList) {
+        // Opens All; its useEffect loads the fresh grid (including new files).
+        setOpenAlbum("all");
+        await loadAlbums();
+      } else {
+        if (added.length) {
+          setItems((prev) => {
+            const ids = new Set(prev.map((p) => p.id));
+            return [...added.filter((a) => !ids.has(a.id)), ...prev];
           });
         }
+        await Promise.all([loadItems(), loadAlbums()]);
       }
-      loadItems();
-      loadAlbums();
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Upload failed");
+      await loadAlbums();
+      if (!fromAlbumList) await loadItems();
     } finally {
       setUploading(false);
+      setUploadProgress(null);
       if (fileRef.current) fileRef.current.value = "";
     }
+  }
+
+  function UploadBar() {
+    if (!uploadProgress && !uploadError) return null;
+    return (
+      <div className="space-y-2 rounded-xl border border-line bg-card2 px-3 py-3 fade-up">
+        {uploadProgress && (
+          <>
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="font-semibold text-fg truncate min-w-0">
+                Uploading {uploadProgress.fileName}
+              </span>
+              <span className="tabular-nums text-muted shrink-0">
+                {uploadProgress.fileCount > 1
+                  ? `${uploadProgress.fileIndex}/${uploadProgress.fileCount} · `
+                  : ""}
+                {uploadProgress.percent}%
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-bg overflow-hidden">
+              <div
+                className="h-full rounded-full bg-accent transition-[width] duration-150 ease-out"
+                style={{ width: `${uploadProgress.percent}%` }}
+              />
+            </div>
+          </>
+        )}
+        {uploadError && (
+          <p className="text-xs text-red-400">{uploadError}</p>
+        )}
+      </div>
+    );
   }
 
   function toggleSelected(id: string) {
@@ -247,7 +341,11 @@ export default function VaultManager() {
             disabled={uploading}
             className="flex-1 bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
           >
-            {uploading ? "Uploading…" : "+ Upload media"}
+            {uploading
+              ? uploadProgress
+                ? `Uploading… ${uploadProgress.percent}%`
+                : "Uploading…"
+              : "+ Upload media"}
           </button>
           <button
             onClick={() => setNewAlbumOpen(true)}
@@ -257,6 +355,7 @@ export default function VaultManager() {
           </button>
           {uploadInput}
         </div>
+        <UploadBar />
 
         {newAlbumOpen && (
           <Portal>
@@ -476,9 +575,14 @@ export default function VaultManager() {
         disabled={uploading}
         className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
       >
-        {uploading ? "Uploading…" : `+ Upload to ${albumName}`}
+        {uploading
+          ? uploadProgress
+            ? `Uploading… ${uploadProgress.percent}%`
+            : "Uploading…"
+          : `+ Upload to ${albumName}`}
       </button>
       {uploadInput}
+      <UploadBar />
 
       {items.length > 0 && (
         <div className="flex gap-1.5">

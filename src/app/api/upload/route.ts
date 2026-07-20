@@ -35,5 +35,11 @@ export async function POST(req: NextRequest) {
   if (error || !data) {
     return NextResponse.json({ error: error?.message || "Upload failed" }, { status: 500 });
   }
-  return NextResponse.json({ path: data.path, token: data.token });
+  // signedUrl lets the browser PUT with XHR progress events; token keeps
+  // the older uploadToSignedUrl path working for other callers.
+  return NextResponse.json({
+    path: data.path,
+    token: data.token,
+    signedUrl: data.signedUrl,
+  });
 }

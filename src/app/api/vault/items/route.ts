@@ -62,7 +62,9 @@ export async function POST(req: NextRequest) {
   if (albumId) {
     await db.from("vault_item_albums").insert({ item_id: data.id, album_id: albumId });
   }
-  return NextResponse.json({ item: data });
+  return NextResponse.json({
+    item: { ...data, albums: albumId ? [albumId] : [] },
+  });
 }
 
 /** Add or remove the given items from an album (multi-select checklist). */

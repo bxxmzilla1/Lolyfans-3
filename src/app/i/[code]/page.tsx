@@ -50,22 +50,34 @@ export default async function InvitePage({
 
   const invite = inviteRes.data;
 
+  const country =
+    requestHeaders.get("x-vercel-ip-country")?.toUpperCase() || null;
+
   // Count this visit as a link click (unique per IP; revisits are no-ops).
-  // Runs after the response is sent so it never delays the page.
+  // The visitor's country is stored with it so analytics can separate clicks
+  // from allowed countries vs geo-blocked ones. Runs after the response is
+  // sent so it never delays the page. Falls back to a country-less upsert if
+  // the column hasn't been migrated yet.
   if (invite && visitorIp) {
     after(async () => {
-      await db
+      const { error } = await db
         .from("invite_visits")
         .upsert(
-          { invite_id: invite.id, ip: visitorIp },
+          { invite_id: invite.id, ip: visitorIp, country },
           { onConflict: "invite_id,ip", ignoreDuplicates: true }
         );
+      if (error && /country/i.test(error.message)) {
+        await db
+          .from("invite_visits")
+          .upsert(
+            { invite_id: invite.id, ip: visitorIp },
+            { onConflict: "invite_id,ip", ignoreDuplicates: true }
+          );
+      }
     });
   }
 
   const usable = inviteUsable(invite);
-  const country =
-    requestHeaders.get("x-vercel-ip-country")?.toUpperCase() || null;
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;
 
   const blockedReason = !usable.ok

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ownerFromApiKey } from "@/lib/apiKey";
 
 const CORS = {
@@ -23,11 +24,22 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Invalid API key" }, { status: 401, headers: CORS });
   }
 
+  // The creator's display name, so the connected chatbot can identify itself
+  // as this creator when fans ask who they're talking to.
+  let creatorName = "";
+  try {
+    const { data } = await supabaseAdmin().auth.admin.getUserById(ownerId);
+    creatorName = (data?.user?.user_metadata?.display_name as string) || "";
+  } catch {
+    // name is optional — realtime info still works without it
+  }
+
   return NextResponse.json(
     {
       supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
       anonKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
       ownerId,
+      creatorName,
       channel: `inbox:${ownerId}`,
     },
     { headers: CORS }

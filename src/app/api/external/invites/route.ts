@@ -45,10 +45,22 @@ export async function GET(req: NextRequest) {
   const endMs = Number.isFinite(end.getTime()) ? end.getTime() : now.getTime();
 
   const db = supabaseAdmin();
+  // invite_visits.country may not be migrated yet; fall back gracefully.
+  const visitsQuery = async () => {
+    const withCountry = await db
+      .from("invite_visits")
+      .select("invite_id, created_at, country, invites!inner(owner_id)")
+      .eq("invites.owner_id", ownerId);
+    if (!withCountry.error) return withCountry;
+    return db
+      .from("invite_visits")
+      .select("invite_id, created_at, invites!inner(owner_id)")
+      .eq("invites.owner_id", ownerId);
+  };
   const [invitesRes, chatsRes, visitsRes] = await Promise.all([
     db
       .from("invites")
-      .select("id, code, label, active, created_at")
+      .select("id, code, label, active, allowed_countries, created_at")
       .eq("owner_id", ownerId)
       .order("created_at", { ascending: false }),
     db
@@ -56,10 +68,7 @@ export async function GET(req: NextRequest) {
       .select("id, invite_id, guest_country, guest_ip, created_at")
       .eq("owner_id", ownerId)
       .not("invite_id", "is", null),
-    db
-      .from("invite_visits")
-      .select("invite_id, created_at, invites!inner(owner_id)")
-      .eq("invites.owner_id", ownerId),
+    visitsQuery(),
   ]);
 
   if (invitesRes.error) {
@@ -78,7 +87,9 @@ export async function GET(req: NextRequest) {
   const dayBucket = (a: Agg, key: string): Daily => (a.daily[key] ??= { subscribers: 0, clicks: 0 });
 
   // Subscribers = chats that joined via the link, deduplicated by IP (the same
-  // device rejoining doesn't count twice), keyed to the first join's day.
+  // device rejoining doesn't count twice). Lifetime totals stay on
+  // `subscribers`; the daily series + per-country breakdown only count joins
+  // inside the requested date window (so Day / Week / Month analytics match).
   const seenIps: Record<string, Set<string>> = {};
   for (const chat of chatsRes.data ?? []) {
     const inviteId = chat.invite_id as string;
@@ -88,17 +99,35 @@ export async function GET(req: NextRequest) {
     if (seenIps[inviteId].has(key)) continue;
     seenIps[inviteId].add(key);
     stats[inviteId].subscribers += 1;
-    const country = (chat.guest_country || "??").toUpperCase();
-    stats[inviteId].countries[country] = (stats[inviteId].countries[country] ?? 0) + 1;
     const ts = new Date(chat.created_at as string).getTime();
     if (ts >= startMs && ts <= endMs) {
       dayBucket(stats[inviteId], ymd(new Date(ts))).subscribers += 1;
+      const country = (chat.guest_country || "??").toUpperCase();
+      stats[inviteId].countries[country] = (stats[inviteId].countries[country] ?? 0) + 1;
     }
   }
 
-  // Clicks = unique-IP page visits (rows are already unique per invite+ip).
+  // Per-invite allowed-countries whitelist (null/empty = worldwide). Clicks
+  // from geo-blocked countries are excluded so the stats only reflect visitors
+  // who could actually access the platform.
+  const allowedByInvite: Record<string, string[] | null> = {};
+  for (const invite of invitesRes.data ?? []) {
+    const raw = (invite as { allowed_countries?: string[] | null }).allowed_countries;
+    allowedByInvite[invite.id] =
+      Array.isArray(raw) && raw.length > 0 ? raw.map((c) => String(c).toUpperCase()) : null;
+  }
+
+  // Clicks = unique-IP page visits (rows are already unique per invite+ip),
+  // counting only visits from countries the invite allows. Visits without a
+  // recorded country (pre-migration rows) count as allowed.
   for (const visit of visitsRes.data ?? []) {
     const inviteId = visit.invite_id as string;
+    const allowed = allowedByInvite[inviteId] ?? null;
+    const visitCountry =
+      typeof (visit as { country?: string | null }).country === "string"
+        ? ((visit as { country?: string | null }).country as string).toUpperCase()
+        : null;
+    if (allowed && visitCountry && !allowed.includes(visitCountry)) continue;
     stats[inviteId] ??= blank();
     stats[inviteId].clicks += 1;
     const ts = new Date(visit.created_at as string).getTime();

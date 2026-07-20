@@ -28,6 +28,11 @@ create table if not exists invite_visits (
 );
 alter table invite_visits enable row level security;
 
+-- Visitor country (ISO alpha-2) recorded per click so external analytics can
+-- show only clicks from countries the invite allows. Null on rows recorded
+-- before this column existed (those count as allowed).
+alter table invite_visits add column if not exists country text;
+
 -- One chat per guest that joined through an invite
 create table if not exists chats (
   id uuid primary key default gen_random_uuid(),
