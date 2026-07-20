@@ -166,7 +166,8 @@ export default function MessageBubble({
     !isTip &&
     !(message.media_path && locked && messagePreviewText(displayContent) === "");
 
-  const lockToggle = mine && message.media_path && (
+  // Once the fan paid, locking is irrelevant — hide the switch.
+  const lockToggle = mine && message.media_path && !soldByMe && (
     <button
       onClick={(e) => {
         e.stopPropagation();
