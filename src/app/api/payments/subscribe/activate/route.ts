@@ -6,9 +6,14 @@ import {
   syncSubscription,
 } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
+import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
 import type Stripe from "stripe";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function finishSubscribe(chatId: string, ownerId: string) {
+  await sendWelcomeMessageIfNeeded(chatId, ownerId);
+}
 
 /**
  * Called after the Payment Element confirms on the client (or on return from
@@ -58,6 +63,7 @@ export async function POST(req: NextRequest) {
       ownerId,
       priceCents: pi.amount,
     });
+    await finishSubscribe(chat.id, ownerId);
     return NextResponse.json({ ok: true, subscribed: true });
   }
 
@@ -102,5 +108,6 @@ export async function POST(req: NextRequest) {
     pmId
   );
   await syncSubscription(sub);
+  await finishSubscribe(chat.id, ownerId);
   return NextResponse.json({ ok: true, subscribed: true });
 }

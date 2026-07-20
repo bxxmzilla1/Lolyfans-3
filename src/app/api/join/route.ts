@@ -4,59 +4,10 @@ import { createToken, GUEST_COOKIE, cookieOptions } from "@/lib/session";
 import { getRequestCountry, ipFromHeaders, inviteUsable, countryAllowed } from "@/lib/invites";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { broadcast } from "@/lib/realtime";
+import { ownerRequiresPaidSub } from "@/lib/subscriptionAccess";
+import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
-
-/**
- * If the creator configured a welcome message (Settings → Welcome), drop it
- * into a freshly created chat as their first message — with its media
- * attachment if one was set — and signal every realtime listener.
- */
-async function sendWelcomeMessage(chatId: string, ownerId: string) {
-  const db = supabaseAdmin();
-  const { data: ownerUser } = await db.auth.admin.getUserById(ownerId);
-  const meta = (ownerUser?.user?.user_metadata ?? {}) as {
-    welcome_enabled?: boolean;
-    welcome_text?: string;
-    welcome_media_path?: string;
-    welcome_media_type?: string;
-  };
-  const text = (meta.welcome_text || "").trim();
-  const mediaPath = meta.welcome_media_path || null;
-  if (!meta.welcome_enabled || (!text && !mediaPath)) return;
-
-  const { data: message } = await db
-    .from("messages")
-    .insert({
-      chat_id: chatId,
-      sender: "owner",
-      content: text || null,
-      media_path: mediaPath,
-      media_type: mediaPath
-        ? meta.welcome_media_type === "video"
-          ? "video"
-          : "image"
-        : null,
-    })
-    .select()
-    .single();
-  if (!message) return;
-
-  await Promise.all([
-    // Mark as already "answered" so Orion won't fire its own opener on top
-    // of this welcome — it waits for the fan's first reply instead.
-    db
-      .from("chats")
-      .update({
-        last_message_at: message.created_at,
-        last_read_at: message.created_at,
-        bot_replied_at: message.created_at,
-      })
-      .eq("id", chatId),
-    broadcast(`chat:${chatId}`, "new-message", message),
-    broadcast(`inbox:${ownerId}`, "new-message", { chatId }),
-  ]);
-}
 
 /**
  * Creates (or resumes) a guest chat after sign-up: the guest registers with
@@ -106,6 +57,8 @@ export async function POST(req: NextRequest) {
     .eq("guest_email", emailStr)
     .maybeSingle();
 
+  const paidProfile = await ownerRequiresPaidSub(invite!.owner_id);
+
   if (existing) {
     if (!verifyPassword(passwordStr, existing.guest_password || "")) {
       return NextResponse.json(
@@ -113,22 +66,26 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-    // Keep the device binding fresh so IP-based resume keeps working, and
-    // make sure they follow the inviter (their posts show in the home feed).
+    // Keep the device binding fresh so IP-based resume keeps working.
+    // Free profiles follow immediately; paid ones follow only after payment.
     after(async () => {
-      await Promise.all([
-        ip
-          ? db.from("chats").update({ guest_ip: ip }).eq("id", existing.id)
-          : Promise.resolve(),
-        db
+      if (ip) {
+        await db.from("chats").update({ guest_ip: ip }).eq("id", existing.id);
+      }
+      if (!paidProfile) {
+        await db
           .from("follows")
           .upsert(
             { chat_id: existing.id, owner_id: invite!.owner_id },
             { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
-          ),
-      ]);
+          );
+      }
     });
-    const res = NextResponse.json({ ok: true, chatId: existing.id });
+    const res = NextResponse.json({
+      ok: true,
+      chatId: existing.id,
+      needsPayment: paidProfile,
+    });
     res.cookies.set(
       GUEST_COOKIE,
       createToken({ chatId: existing.id, name: existing.guest_name }),
@@ -158,27 +115,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not create chat" }, { status: 500 });
   }
 
-  // Bookkeeping after the response is sent. Welcome goes out BEFORE the
-  // new-chat broadcast so Orion never sees an empty chat and double-texts
-  // with its own opener on top of the welcome.
+  // Bookkeeping after the response is sent. Paid profiles defer follow +
+  // welcome until the subscription is confirmed (see subscribe/activate).
   after(async () => {
-    await Promise.all([
-      db
-        .from("invites")
-        .update({ uses: (invite!.uses ?? 0) + 1 })
-        .eq("id", invite!.id),
-      db
-        .from("follows")
-        .upsert(
-          { chat_id: chat.id, owner_id: invite!.owner_id },
-          { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
-        ),
-    ]);
-    await sendWelcomeMessage(chat.id, invite!.owner_id);
+    await db
+      .from("invites")
+      .update({ uses: (invite!.uses ?? 0) + 1 })
+      .eq("id", invite!.id);
+
+    if (paidProfile) {
+      await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id });
+      return;
+    }
+
+    await db
+      .from("follows")
+      .upsert(
+        { chat_id: chat.id, owner_id: invite!.owner_id },
+        { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
+      );
+    // Welcome goes out BEFORE the new-chat broadcast so Orion never sees an
+    // empty chat and double-texts with its own opener on top of the welcome.
+    await sendWelcomeMessageIfNeeded(chat.id, invite!.owner_id);
     await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id });
   });
 
-  const res = NextResponse.json({ ok: true, chatId: chat.id });
+  const res = NextResponse.json({
+    ok: true,
+    chatId: chat.id,
+    needsPayment: paidProfile,
+  });
   res.cookies.set(GUEST_COOKIE, createToken({ chatId: chat.id, name: guestName }), cookieOptions);
   return res;
 }

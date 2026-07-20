@@ -20,12 +20,15 @@ export default function JoinForm({
   ownerId,
   ownerName,
   plan,
+  initialPayStep = false,
 }: {
   code: string;
   buttonText?: string;
   ownerId?: string;
   ownerName?: string;
   plan?: SubPlan | null;
+  /** Returning unpaid guest — jump straight to the card step. */
+  initialPayStep?: boolean;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -33,7 +36,9 @@ export default function JoinForm({
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [payStep, setPayStep] = useState(false);
+  const [payStep, setPayStep] = useState(
+    () => initialPayStep && !!ownerId && (plan?.priceCents ?? 0) > 0
+  );
   const [opening, setOpening] = useState(false);
   const router = useRouter();
 
@@ -71,16 +76,23 @@ export default function JoinForm({
         password,
       }),
     });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setBusy(false);
-      const data = await res.json().catch(() => null);
       setError(data?.error || "Could not join this chat");
       return;
     }
 
-    // Paid profile → collect the card right here (account already created,
-    // so their name/email carry over to Stripe automatically).
-    if (ownerId && (plan?.priceCents ?? 0) > 0 && elementsEnabled()) {
+    // Paid profile → card step only (no chat until payment is confirmed).
+    if (
+      data.needsPayment ||
+      (ownerId && (plan?.priceCents ?? 0) > 0)
+    ) {
+      if (!elementsEnabled()) {
+        setBusy(false);
+        setError("Payments are not configured. Please try again later.");
+        return;
+      }
       setBusy(false);
       setPayStep(true);
       return;
@@ -98,13 +110,6 @@ export default function JoinForm({
             plan={plan}
             onSuccess={openChat}
           />
-          <button
-            type="button"
-            onClick={openChat}
-            className="text-xs text-muted hover:text-fg transition-colors mx-auto"
-          >
-            Maybe later — take me to the chat
-          </button>
         </div>
         {opening && <OpeningSkeleton />}
       </>

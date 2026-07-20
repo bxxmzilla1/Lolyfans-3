@@ -8,6 +8,7 @@ import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invit
 import { visitorGeoParts } from "@/lib/geo";
 import { mediaUrl } from "@/lib/utils";
 import InviteProfile from "@/components/InviteProfile";
+import { resumeHrefForChatId } from "@/lib/guestResume";
 
 export const dynamic = "force-dynamic";
 
@@ -44,7 +45,7 @@ export default async function InvitePage({
     db.from("invites").select("*").eq("code", code).single<Invite>(),
     visitorGeoParts(requestHeaders),
   ]);
-  if (cookieChat?.data) redirect("/chat");
+  if (cookieChat?.data) redirect(await resumeHrefForChatId(cookieChat.data.id));
   if (ipChat?.data) redirect("/api/resume");
 
   const invite = inviteRes.data;

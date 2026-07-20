@@ -5,6 +5,10 @@ import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
 import { mediaUrl } from "@/lib/utils";
 import { subPlanFromMetadata } from "@/lib/subscriptionPlan";
+import {
+  chatHasPaidAccess,
+  ownerRequiresPaidSub,
+} from "@/lib/subscriptionAccess";
 import JoinForm from "@/components/JoinForm";
 import InviteProfile from "@/components/InviteProfile";
 
@@ -12,14 +16,18 @@ export const dynamic = "force-dynamic";
 
 /**
  * Step 2 of an invite link: the sign-up page (name, email, password).
- * Reached from the invite page's "Start chatting" button.
+ * Paid profiles keep unpaid guests here on the card step — they never
+ * skip into /chat until the subscription is confirmed.
  */
 export default async function InviteSignupPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ code: string }>;
+  searchParams: Promise<{ pay?: string }>;
 }) {
   const { code } = await params;
+  const { pay } = await searchParams;
   const db = supabaseAdmin();
   const requestHeaders = await headers();
 
@@ -27,14 +35,17 @@ export default async function InviteSignupPage({
   const visitorIp = ipFromHeaders(requestHeaders);
 
   const [cookieChat, ipChat, inviteRes] = await Promise.all([
-    // Already in a chat? Straight back in (same rules as the invite page).
     guestChatId
-      ? db.from("chats").select("id").eq("id", guestChatId).maybeSingle()
+      ? db
+          .from("chats")
+          .select("id, owner_id")
+          .eq("id", guestChatId)
+          .maybeSingle()
       : Promise.resolve(null),
     visitorIp
       ? db
           .from("chats")
-          .select("id")
+          .select("id, owner_id")
           .eq("guest_ip", visitorIp)
           .order("last_message_at", { ascending: false })
           .limit(1)
@@ -42,16 +53,25 @@ export default async function InviteSignupPage({
       : Promise.resolve(null),
     db.from("invites").select("*").eq("code", code).single<Invite>(),
   ]);
-  if (cookieChat?.data) redirect("/chat");
-  if (ipChat?.data) redirect("/api/resume");
 
   const invite = inviteRes.data;
   const usable = inviteUsable(invite);
   const country =
     requestHeaders.get("x-vercel-ip-country")?.toUpperCase() || null;
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;
-  // Blocked links show their reason on the invite page itself.
   if (!usable.ok || !allowed) redirect(`/i/${code}`);
+
+  const existingChat = cookieChat?.data ?? ipChat?.data ?? null;
+  let forcePayStep = pay === "1";
+
+  if (existingChat) {
+    const paidOk =
+      !(await ownerRequiresPaidSub(existingChat.owner_id)) ||
+      (await chatHasPaidAccess(existingChat.id, existingChat.owner_id));
+    if (paidOk) redirect("/chat");
+    // Signed up but hasn't paid yet → stay here and show the card form.
+    forcePayStep = true;
+  }
 
   const { data: ownerUser } = await db.auth.admin.getUserById(invite!.owner_id);
   const meta = (ownerUser?.user?.user_metadata ?? {}) as {
@@ -61,7 +81,6 @@ export default async function InviteSignupPage({
     invite_button_text?: string;
   };
   const ownerName = meta.display_name || "Lolyfans";
-  // Paid profiles collect the card as step 2 of this same sign-up page.
   const plan = subPlanFromMetadata(meta as Record<string, unknown>);
 
   return (
@@ -75,7 +94,9 @@ export default async function InviteSignupPage({
 
         <div className="text-center -mt-2">
           <p className="text-muted text-sm">
-            Sign up with your email to subscribe to {ownerName} and start chatting.
+            {forcePayStep && plan.priceCents > 0
+              ? `Complete your subscription to chat with ${ownerName}.`
+              : `Sign up with your email to subscribe to ${ownerName} and start chatting.`}
           </p>
         </div>
 
@@ -85,6 +106,7 @@ export default async function InviteSignupPage({
           ownerId={invite!.owner_id}
           ownerName={ownerName}
           plan={plan}
+          initialPayStep={forcePayStep && plan.priceCents > 0}
         />
       </div>
     </main>

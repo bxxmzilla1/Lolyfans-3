@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createToken, GUEST_COOKIE, cookieOptions } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { verifyPassword } from "@/lib/password";
+import { guestAccessDestination } from "@/lib/subscriptionAccess";
 
 /**
  * Fan login: guests who signed up through an invite link can sign in on any
@@ -19,7 +20,7 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
   const { data: chats } = await db
     .from("chats")
-    .select("id, guest_name, guest_password, last_message_at")
+    .select("id, guest_name, guest_password, last_message_at, owner_id")
     .eq("guest_email", emailStr)
     .order("last_message_at", { ascending: false });
 
@@ -45,7 +46,11 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  const res = NextResponse.json({ ok: true });
+  const dest = await guestAccessDestination(chat.id, chat.owner_id);
+  const res = NextResponse.json({
+    ok: true,
+    redirect: dest.allowed ? "/chats" : dest.href,
+  });
   res.cookies.set(
     GUEST_COOKIE,
     createToken({ chatId: chat.id, name: chat.guest_name }),

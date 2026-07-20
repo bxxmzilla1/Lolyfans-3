@@ -23,13 +23,14 @@ export default function GuestLoginForm() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email: email.trim(), password }),
     });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setBusy(false);
-      const data = await res.json().catch(() => null);
       setError(data?.error || "Could not log in");
       return;
     }
-    router.push("/chats");
+    // Unpaid paid-profile accounts go back to the card step, not the app.
+    router.push(typeof data.redirect === "string" ? data.redirect : "/chats");
     router.refresh();
   }
 

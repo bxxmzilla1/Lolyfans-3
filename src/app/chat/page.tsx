@@ -5,6 +5,7 @@ import { getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { visitorLocation } from "@/lib/geo";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { guestChatAccessDestination } from "@/lib/subscriptionAccess";
 import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
 import GuestNav from "@/components/GuestNav";
@@ -16,6 +17,10 @@ export const dynamic = "force-dynamic";
 export default async function GuestChatPage() {
   const chatId = await getGuestChatId();
   if (!chatId) redirect("/");
+
+  // Paid profiles: no chat until the subscription is confirmed.
+  const access = await guestChatAccessDestination(chatId);
+  if (!access.allowed) redirect(access.href);
 
   const db = supabaseAdmin();
   const requestHeaders = await headers();

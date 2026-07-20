@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
 import { stripe } from "@/lib/stripe";
+import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
 import type Stripe from "stripe";
 
 /** Record that a fan unlocked a message (idempotent) and notify the chat. */
@@ -132,6 +133,7 @@ export async function recordLifetimeSubscription(opts: {
     { chat_id: opts.chatId, owner_id: opts.ownerId },
     { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
   );
+  await sendWelcomeMessageIfNeeded(opts.chatId, opts.ownerId);
 }
 
 /**
@@ -177,6 +179,7 @@ export async function syncSubscription(sub: Stripe.Subscription) {
       { chat_id: chatId, owner_id: ownerId },
       { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
     );
+    await sendWelcomeMessageIfNeeded(chatId, ownerId);
   }
 }
 

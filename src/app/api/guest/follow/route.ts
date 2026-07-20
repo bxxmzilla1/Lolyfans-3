@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats } from "@/lib/guest";
+import { guestAccessDestination } from "@/lib/subscriptionAccess";
 
 /** Follow or unfollow a creator; their posts then appear in the home feed. */
 export async function POST(req: NextRequest) {
@@ -13,6 +14,18 @@ export async function POST(req: NextRequest) {
   // Anchor the follow to the guest's chat with this creator when they have
   // one, otherwise to their most recent chat.
   const anchor = chats.find((c) => c.owner_id === ownerId) ?? chats[0];
+
+  // Paid profiles: free follows aren't a way around the paywall.
+  if (follow && anchor.owner_id === ownerId) {
+    const access = await guestAccessDestination(anchor.id, ownerId);
+    if (!access.allowed) {
+      return NextResponse.json(
+        { error: "Subscribe to this profile first", paywall: access.href },
+        { status: 402 }
+      );
+    }
+  }
+
   const db = supabaseAdmin();
 
   if (follow) {

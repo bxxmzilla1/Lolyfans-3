@@ -4,6 +4,7 @@ import { getGuestChatId } from "@/lib/session";
 import { guestChats, ownerProfiles, guestUnreadCounts } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
 import { mediaUrl, messagePreviewText } from "@/lib/utils";
+import { guestAccessDestination } from "@/lib/subscriptionAccess";
 
 /**
  * One round-trip for the fan shell: profile, chat list, and home feed.
@@ -19,6 +20,15 @@ export async function GET(req: NextRequest) {
   const chatIds = chats.map((c) => c.id);
   const cookieChatId = await getGuestChatId();
   const profileChat = chats.find((c) => c.id === cookieChatId) ?? chats[0];
+
+  // Paid profiles: don't hand out the fan shell until they've subscribed.
+  const access = await guestAccessDestination(profileChat.id, profileChat.owner_id);
+  if (!access.allowed) {
+    return NextResponse.json(
+      { error: "Subscribe required", paywall: access.href },
+      { status: 402 }
+    );
+  }
 
   const { data: followRows } = await db
     .from("follows")

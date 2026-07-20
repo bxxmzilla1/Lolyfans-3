@@ -1,11 +1,12 @@
 import { headers } from "next/headers";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
 import { visitorLocation } from "@/lib/geo";
 import { formatCount, mediaUrl } from "@/lib/utils";
+import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
@@ -76,7 +77,13 @@ export default async function CreatorProfilePage({
     following = !!follow;
     subscribed = !!sub;
   }
-  const hasChatWithOwner = chats.some((c) => c.owner_id === ownerId);
+  const chatWithOwner = chats.find((c) => c.owner_id === ownerId);
+  // Signed up but unpaid → back to the card step, not the open profile.
+  if (chatWithOwner) {
+    const access = await guestAccessDestination(chatWithOwner.id, ownerId);
+    if (!access.allowed) redirect(access.href);
+  }
+  const hasChatWithOwner = !!chatWithOwner;
   const followers = profile.followerBase + (realFollowers ?? 0);
 
   const feedPosts: FeedPost[] = (posts ?? []).map((post) => ({

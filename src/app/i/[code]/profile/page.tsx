@@ -10,6 +10,7 @@ import { postStats } from "@/lib/posts";
 import { visitorLocation } from "@/lib/geo";
 import { formatCount, mediaUrl } from "@/lib/utils";
 import CreatorBanner from "@/components/CreatorBanner";
+import { resumeHrefForChatId } from "@/lib/guestResume";
 import { subCaption, subCtaLabel } from "@/lib/subscriptionPlan";
 import {
   IconChat,
@@ -54,7 +55,7 @@ export default async function InviteProfilePreviewPage({
       : Promise.resolve(null),
     db.from("invites").select("*").eq("code", code).single<Invite>(),
   ]);
-  if (cookieChat?.data) redirect("/chat");
+  if (cookieChat?.data) redirect(await resumeHrefForChatId(cookieChat.data.id));
   if (ipChat?.data) redirect("/api/resume");
 
   const invite = inviteRes.data;

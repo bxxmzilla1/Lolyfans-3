@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId, getGuestChatId } from "@/lib/session";
 import { broadcast } from "@/lib/realtime";
 import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
+import { guestAccessDestination } from "@/lib/subscriptionAccess";
 
 type ChatAuth = { role: "owner" | "guest"; chatOwnerId: string };
 
@@ -43,6 +44,16 @@ export async function GET(req: NextRequest) {
   ]);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  if (auth.role === "guest") {
+    const access = await guestAccessDestination(chatId, auth.chatOwnerId);
+    if (!access.allowed) {
+      return NextResponse.json(
+        { error: "Subscribe to this profile to view messages", paywall: access.href },
+        { status: 402 }
+      );
+    }
+  }
+
   if (auth.role === "owner") {
     await supabaseAdmin()
       .from("chats")
@@ -78,6 +89,17 @@ export async function POST(req: NextRequest) {
 
   const auth = await authorizeChat(chatId);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Paid profiles: guests can't message until they've subscribed.
+  if (auth.role === "guest") {
+    const access = await guestAccessDestination(chatId, auth.chatOwnerId);
+    if (!access.allowed) {
+      return NextResponse.json(
+        { error: "Subscribe to this profile to send messages", paywall: access.href },
+        { status: 402 }
+      );
+    }
+  }
 
   const db = supabaseAdmin();
   const { data: message, error } = await db
