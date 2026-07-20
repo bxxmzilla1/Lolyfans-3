@@ -192,21 +192,39 @@ textarea {
   transform-origin: bottom;
 }
 
-/* Flash when jumping to a replied-to message */
-@keyframes msg-flash {
+/* Pulse + glow when jumping to a replied-to message */
+@keyframes msg-pulse-glow {
   0%,
   100% {
-    box-shadow: 0 0 0 0 transparent;
+    transform: scale(1);
+    box-shadow:
+      0 0 0 0 transparent,
+      0 0 0 0 transparent;
   }
-  15%,
+  30% {
+    transform: scale(1.035);
+    box-shadow:
+      0 0 0 3px color-mix(in oklab, var(--accent) 85%, white),
+      0 0 22px 4px color-mix(in oklab, var(--accent) 55%, transparent);
+  }
   55% {
-    box-shadow: 0 0 0 3px var(--accent);
+    transform: scale(0.985);
+    box-shadow:
+      0 0 0 2px color-mix(in oklab, var(--accent) 60%, transparent),
+      0 0 14px 2px color-mix(in oklab, var(--accent) 35%, transparent);
+  }
+  75% {
+    transform: scale(1.02);
+    box-shadow:
+      0 0 0 3px color-mix(in oklab, var(--accent) 70%, white),
+      0 0 18px 3px color-mix(in oklab, var(--accent) 45%, transparent);
   }
 }
 
 .msg-highlight {
-  animation: msg-flash 1.4s ease;
-  border-radius: 1.5rem;
+  animation: msg-pulse-glow 1.2s cubic-bezier(0.34, 1.4, 0.64, 1);
+  transform-origin: center;
+  z-index: 1;
 }
 
 /* Themed video progress slider */
