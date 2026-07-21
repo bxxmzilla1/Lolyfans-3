@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 
 export async function GET() {
   const ownerId = await getOwnerId();
@@ -14,16 +15,26 @@ export async function GET() {
       .select("*")
       .eq("owner_id", ownerId)
       .order("created_at", { ascending: false }),
-    db
-      .from("chats")
-      .select("id, invite_id, guest_country, guest_ip")
-      .eq("owner_id", ownerId)
-      .not("invite_id", "is", null),
+    // Paged reads (fetchAllRows): Supabase caps selects at 1000 rows, which
+    // froze click/subscriber counts at exactly 1000 once links got popular.
+    fetchAllRows((from, to) =>
+      db
+        .from("chats")
+        .select("id, invite_id, guest_country, guest_ip")
+        .eq("owner_id", ownerId)
+        .not("invite_id", "is", null)
+        .order("created_at", { ascending: true })
+        .range(from, to)
+    ),
     // Unique-IP page visits per link ("clicks"), scoped to this owner's links
-    db
-      .from("invite_visits")
-      .select("invite_id, invites!inner(owner_id)")
-      .eq("invites.owner_id", ownerId),
+    fetchAllRows((from, to) =>
+      db
+        .from("invite_visits")
+        .select("invite_id, invites!inner(owner_id)")
+        .eq("invites.owner_id", ownerId)
+        .order("created_at", { ascending: true })
+        .range(from, to)
+    ),
   ]);
   if (invitesRes.error) {
     return NextResponse.json({ error: invitesRes.error.message }, { status: 500 });

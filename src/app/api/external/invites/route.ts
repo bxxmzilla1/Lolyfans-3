@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ownerFromApiKey } from "@/lib/apiKey";
+import { fetchAllRows } from "@/lib/fetchAllRows";
 
 // Allow external clients (e.g. the Fanciaga desktop app) to call this.
 const CORS = {
@@ -47,15 +48,23 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   // invite_visits.country may not be migrated yet; fall back gracefully.
   const visitsQuery = async () => {
-    const withCountry = await db
-      .from("invite_visits")
-      .select("invite_id, created_at, country, invites!inner(owner_id)")
-      .eq("invites.owner_id", ownerId);
+    const withCountry = await fetchAllRows((from, to) =>
+      db
+        .from("invite_visits")
+        .select("invite_id, created_at, country, invites!inner(owner_id)")
+        .eq("invites.owner_id", ownerId)
+        .order("created_at", { ascending: true })
+        .range(from, to)
+    );
     if (!withCountry.error) return withCountry;
-    return db
-      .from("invite_visits")
-      .select("invite_id, created_at, invites!inner(owner_id)")
-      .eq("invites.owner_id", ownerId);
+    return fetchAllRows((from, to) =>
+      db
+        .from("invite_visits")
+        .select("invite_id, created_at, invites!inner(owner_id)")
+        .eq("invites.owner_id", ownerId)
+        .order("created_at", { ascending: true })
+        .range(from, to)
+    );
   };
   const [invitesRes, chatsRes, visitsRes] = await Promise.all([
     db
@@ -63,11 +72,15 @@ export async function GET(req: NextRequest) {
       .select("id, code, label, active, allowed_countries, created_at")
       .eq("owner_id", ownerId)
       .order("created_at", { ascending: false }),
-    db
-      .from("chats")
-      .select("id, invite_id, guest_country, guest_ip, created_at")
-      .eq("owner_id", ownerId)
-      .not("invite_id", "is", null),
+    fetchAllRows((from, to) =>
+      db
+        .from("chats")
+        .select("id, invite_id, guest_country, guest_ip, created_at")
+        .eq("owner_id", ownerId)
+        .not("invite_id", "is", null)
+        .order("created_at", { ascending: true })
+        .range(from, to)
+    ),
     visitsQuery(),
   ]);
 
