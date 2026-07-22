@@ -884,7 +884,7 @@ export default function ChatView({
                 Token balance
               </span>
               <span className="block text-sm font-extrabold tabular-nums text-fg leading-tight">
-                {balance.toLocaleString("en-US")} Tokens
+                {balance.toLocaleString("en-US")}
               </span>
             </span>
             <span className="shrink-0 rounded-full bg-accent text-white text-xs font-bold px-3 py-1.5">

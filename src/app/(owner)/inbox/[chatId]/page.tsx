@@ -5,7 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { locationFromIp, fullCountryName } from "@/lib/geo";
 import ChatView from "@/components/ChatView";
 import GuestPresenceStatus from "@/components/GuestPresenceStatus";
-import { IconBack, IconMapPin } from "@/components/Icons";
+import { IconBack, IconMapPin, IconTip } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -65,13 +65,23 @@ export default async function OwnerChatPage({
         </div>
       </div>
       <div className="min-w-0">
-        <p className="font-semibold text-[15px] truncate">
-          {chat.custom_name || chat.guest_name}
-          {chat.custom_name && (
-            <span className="text-muted text-xs font-normal ml-1.5">
-              {chat.guest_name}
-            </span>
-          )}
+        <p className="font-semibold text-[15px] truncate flex items-center gap-1.5">
+          <span className="truncate">
+            {chat.custom_name || chat.guest_name}
+            {chat.custom_name && (
+              <span className="text-muted text-xs font-normal ml-1.5">
+                {chat.guest_name}
+              </span>
+            )}
+          </span>
+          {/* Fan's token balance — how much they can spend right now */}
+          <span
+            className="inline-flex items-center gap-1 rounded-full bg-accent/10 text-accent text-[11px] font-bold px-2 py-0.5 shrink-0"
+            title="Fan's token balance"
+          >
+            <IconTip className="w-3 h-3" />
+            {((chat.token_balance as number | null) ?? 0).toLocaleString("en-US")}
+          </span>
         </p>
         <p className="text-muted text-xs truncate flex items-center gap-1.5">
           {guestLocation && (
