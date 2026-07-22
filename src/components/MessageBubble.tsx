@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   mediaUrl,
   formatTime,
@@ -7,8 +8,20 @@ import {
   firstLinkIn,
   linkPriceIn,
   stripPaymentReceipt,
+  mediaItemsFromMessage,
+  type MediaItem,
 } from "@/lib/utils";
-import { IconCheck, IconEyeOff, IconLink, IconLock, IconReply, IconTip, IconUnlock } from "./Icons";
+import {
+  IconBack,
+  IconCheck,
+  IconChevronRight,
+  IconEyeOff,
+  IconLink,
+  IconLock,
+  IconReply,
+  IconTip,
+  IconUnlock,
+} from "./Icons";
 import VideoPlayer from "./VideoPlayer";
 
 const TIP_LINE_RE = /^💸 Tip · \$([\d.]+)(?:\n([\s\S]*))?$/;
@@ -20,6 +33,8 @@ export type Message = {
   content: string | null;
   media_path: string | null;
   media_type: "image" | "video" | null;
+  /** Multi-media payload; empty/missing falls back to media_path. */
+  media_items?: MediaItem[] | null;
   reply_to_id: string | null;
   locked?: boolean;
   hidden?: boolean;
@@ -129,7 +144,7 @@ export default function MessageBubble({
   onReply: (m: Message) => void;
   /** Scroll + flash the original message this bubble is replying to. */
   onJumpToReply?: (messageId: string) => void;
-  onMediaClick: (m: Message) => void;
+  onMediaClick: (m: Message, index?: number) => void;
   onToggleLock: (m: Message) => void;
   onUnlock?: (m: Message) => void;
   unlocking?: boolean;
@@ -138,6 +153,15 @@ export default function MessageBubble({
   selected?: boolean;
   onSelectToggle?: (m: Message) => void;
 }) {
+  const mediaItems = mediaItemsFromMessage(message);
+  const hasMedia = mediaItems.length > 0;
+  const [slide, setSlide] = useState(0);
+  const active = mediaItems[Math.min(slide, Math.max(mediaItems.length - 1, 0))];
+
+  useEffect(() => {
+    setSlide(0);
+  }, [message.id]);
+
   const locked = !!message.locked;
   const price = message.price_cents ?? 0;
   // A fan who paid for this priced media sees it revealed.
@@ -169,10 +193,20 @@ export default function MessageBubble({
   const showText =
     !!displayContent &&
     !isTip &&
-    !(message.media_path && locked && messagePreviewText(displayContent) === "");
+    !(hasMedia && locked && messagePreviewText(displayContent) === "");
+
+  const replyPreview = (() => {
+    if (!repliedTo) return null;
+    if (repliedTo.content && messagePreviewText(repliedTo.content)) {
+      return messagePreviewText(repliedTo.content);
+    }
+    const count = mediaItemsFromMessage(repliedTo).length;
+    if (count > 1) return `${count} files`;
+    return repliedTo.media_type === "image" ? "Photo" : "Video";
+  })();
 
   // Once the fan paid, locking is irrelevant — hide the switch.
-  const lockToggle = mine && message.media_path && !soldByMe && (
+  const lockToggle = mine && hasMedia && !soldByMe && (
     <button
       onClick={(e) => {
         e.stopPropagation();
@@ -243,6 +277,43 @@ export default function MessageBubble({
     </>
   );
 
+  function renderSlide(item: MediaItem) {
+    if (item.type === "image") {
+      return (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={mediaUrl(item.path)}
+          alt={blurred ? "Locked photo" : "Photo"}
+          className={`w-full max-h-80 object-cover ${
+            blurred
+              ? "blur-2xl scale-110 pointer-events-none select-none"
+              : "cursor-pointer"
+          }`}
+          onClick={blurred ? undefined : () => onMediaClick(message, slide)}
+          draggable={false}
+        />
+      );
+    }
+    if (blurred) {
+      return (
+        <video
+          src={`${mediaUrl(item.path)}#t=0.001`}
+          muted
+          playsInline
+          preload="metadata"
+          className="w-full max-h-80 object-cover blur-2xl scale-110 pointer-events-none select-none"
+        />
+      );
+    }
+    return (
+      <VideoPlayer
+        src={mediaUrl(item.path)}
+        videoClassName="max-h-80"
+        fullscreenOnPlay
+      />
+    );
+  }
+
   return (
     <div
       data-message-id={message.id}
@@ -300,50 +371,44 @@ export default function MessageBubble({
             <p className="font-semibold mb-0.5">
               {repliedTo.sender === message.sender ? "Replying to self" : "Reply"}
             </p>
-            <p className="truncate">
-              {(repliedTo.content && messagePreviewText(repliedTo.content)) ||
-                (repliedTo.media_type === "image" ? "Photo" : "Video")}
-            </p>
+            <p className="truncate">{replyPreview}</p>
           </button>
         )}
 
-        {message.media_path && message.media_type === "image" && (
+        {active && (
           <div className="relative overflow-hidden">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={mediaUrl(message.media_path)}
-              alt={blurred ? "Locked photo" : "Photo"}
-              className={`w-full max-h-80 object-cover ${
-                blurred
-                  ? "blur-2xl scale-110 pointer-events-none select-none"
-                  : "cursor-pointer"
-              }`}
-              onClick={blurred ? undefined : () => onMediaClick(message)}
-              draggable={false}
-            />
+            {renderSlide(active)}
             {lockedOverlay}
             {lockToggle}
-          </div>
-        )}
-        {message.media_path && message.media_type === "video" && (
-          <div className="relative overflow-hidden">
-            {blurred ? (
-              <video
-                src={`${mediaUrl(message.media_path)}#t=0.001`}
-                muted
-                playsInline
-                preload="metadata"
-                className="w-full max-h-80 object-cover blur-2xl scale-110 pointer-events-none select-none"
-              />
-            ) : (
-              <VideoPlayer
-                src={mediaUrl(message.media_path)}
-                videoClassName="max-h-80"
-                fullscreenOnPlay
-              />
+            {mediaItems.length > 1 && (
+              <>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSlide((s) => (s - 1 + mediaItems.length) % mediaItems.length);
+                  }}
+                  aria-label="Previous media"
+                  className="absolute left-1.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/70"
+                >
+                  <IconBack className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSlide((s) => (s + 1) % mediaItems.length);
+                  }}
+                  aria-label="Next media"
+                  className="absolute right-1.5 top-1/2 -translate-y-1/2 z-20 w-8 h-8 rounded-full bg-black/55 text-white flex items-center justify-center hover:bg-black/70"
+                >
+                  <IconChevronRight className="w-4 h-4" />
+                </button>
+                <span className="absolute bottom-2 left-1/2 -translate-x-1/2 z-20 rounded-full bg-black/55 text-white text-[10px] font-semibold px-2 py-0.5 tabular-nums">
+                  {slide + 1}/{mediaItems.length}
+                </span>
+              </>
             )}
-            {lockedOverlay}
-            {lockToggle}
           </div>
         )}
 
@@ -373,14 +438,14 @@ export default function MessageBubble({
 
         {showText && displayContent && (
           <p className="px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words">
-            {renderContent(displayContent, mine, !!message.media_path, locked)}
+            {renderContent(displayContent, mine, hasMedia, locked)}
           </p>
         )}
 
         <p
           className={`px-4 pb-1.5 text-[10px] flex items-center gap-2 ${
             mine ? "text-white/60 justify-end" : "text-muted"
-          } ${!showText && !isTip && message.media_path ? "pt-1.5" : "-mt-1"}`}
+          } ${!showText && !isTip && hasMedia ? "pt-1.5" : "-mt-1"}`}
         >
           {myPriceLabel && (
             <span className="mr-auto font-semibold">{myPriceLabel}</span>

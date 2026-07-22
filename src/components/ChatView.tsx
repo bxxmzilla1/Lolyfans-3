@@ -3,12 +3,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { fileKind, mediaUrl, MediaKind, messagePreviewText } from "@/lib/utils";
+import {
+  fileKind,
+  mediaUrl,
+  MediaKind,
+  mediaItemsFromMessage,
+  messagePreviewText,
+} from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
 import Portal from "./Portal";
 import {
+  IconBack,
   IconChat,
   IconCheck,
+  IconChevronRight,
   IconEye,
   IconEyeOff,
   IconLink,
@@ -18,6 +26,8 @@ import {
   IconTip,
   IconUnlock,
 } from "./Icons";
+
+const MAX_ATTACHMENTS = 12;
 
 const TIP_PRESETS_CENTS = [500, 1000, 2500, 5000, 10000];
 
@@ -40,12 +50,12 @@ export default function ChatView({
   const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [text, setText] = useState("");
   const [replyTo, setReplyTo] = useState<Message | null>(null);
-  const [lightbox, setLightbox] = useState<Message | null>(null);
+  const [lightbox, setLightbox] = useState<{ message: Message; index: number } | null>(null);
   const [labelDialog, setLabelDialog] = useState<{ url: string; label: string; price: string } | null>(null);
   const [linkAttachment, setLinkAttachment] = useState<{ url: string; label: string; price: string } | null>(null);
   const [labelPresets, setLabelPresets] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [attachment, setAttachment] = useState<{ path: string; type: MediaKind } | null>(null);
+  const [attachments, setAttachments] = useState<{ path: string; type: MediaKind }[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [sendLocked, setSendLocked] = useState(false);
   const [lockPrice, setLockPrice] = useState("");
@@ -121,7 +131,7 @@ export default function ChatView({
     setMessages(initialMessages ?? []);
     setPeerTyping(false);
     setReplyTo(null);
-    setAttachment(null);
+    setAttachments([]);
     setLinkAttachment(null);
     setLockPrice("");
     setMsgSelectMode(false);
@@ -153,7 +163,8 @@ export default function ChatView({
               (m) =>
                 m.id.startsWith("temp-") &&
                 m.content === msg.content &&
-                m.media_path === msg.media_path
+                m.media_path === msg.media_path &&
+                (m.media_items?.length ?? 0) === (msg.media_items?.length ?? 0)
             );
             if (tempIdx !== -1) {
               const copy = [...prev];
@@ -251,7 +262,7 @@ export default function ChatView({
     setTipCents(cents);
     setTipPickerOpen(false);
     setTipCustom("");
-    setAttachment(null);
+    setAttachments([]);
     setLinkAttachment(null);
     setReplyTo(null);
   }
@@ -288,15 +299,14 @@ export default function ChatView({
     setTipping(false);
   }
 
-  async function send(mediaPathArg?: string, mediaTypeArg?: string) {
-    if (tipCents && !mediaPathArg) {
+  async function send() {
+    if (tipCents) {
       await sendTip();
       return;
     }
-    const mediaPath = mediaPathArg ?? attachment?.path;
-    const mediaType = mediaTypeArg ?? attachment?.type;
-    const usedAttachment = !mediaPathArg ? attachment : null;
-    const usedLink = !mediaPathArg ? linkAttachment : null;
+    const mediaItems = attachments.map((a) => ({ path: a.path, type: a.type }));
+    const usedAttachments = attachments;
+    const usedLink = linkAttachment;
     const caption = text.trim();
     // The attached link travels inside the message text as [Label]{price}(url)
     // — empty label = hidden link (media becomes the tap target); the caption
@@ -305,14 +315,14 @@ export default function ChatView({
       ? `[${usedLink.label}]${usedLink.price ? `{${usedLink.price}}` : ""}(${usedLink.url})`
       : "";
     const content = [caption, linkPart].filter(Boolean).join("\n");
-    if (!content && !mediaPath) return;
+    if (!content && mediaItems.length === 0) return;
     // Owner-set unlock price (only on media). A price implies the media is
     // locked so the fan pays to reveal it.
     const priceCents =
-      role === "owner" && mediaPath
+      role === "owner" && mediaItems.length > 0
         ? Math.round(parseFloat(lockPrice.replace(/[^\d.]/g, "")) * 100) || 0
         : 0;
-    const locked = (sendLocked || priceCents > 0) && !!mediaPath;
+    const locked = (sendLocked || priceCents > 0) && mediaItems.length > 0;
 
     // Optimistic: show the message immediately, reconcile with the server response.
     const tempId = `temp-${Date.now()}`;
@@ -322,8 +332,9 @@ export default function ChatView({
       chat_id: chatId,
       sender: role,
       content: content || null,
-      media_path: mediaPath || null,
-      media_type: (mediaType as Message["media_type"]) || null,
+      media_path: mediaItems[0]?.path || null,
+      media_type: mediaItems[0]?.type || null,
+      media_items: mediaItems,
       reply_to_id: replyToId,
       locked,
       price_cents: priceCents,
@@ -332,7 +343,7 @@ export default function ChatView({
     setMessages((prev) => [...prev, temp]);
     setText("");
     setReplyTo(null);
-    setAttachment(null);
+    setAttachments([]);
     if (usedLink) setLinkAttachment(null);
     if (locked) setSendLocked(false);
     if (priceCents > 0) setLockPrice("");
@@ -341,7 +352,16 @@ export default function ChatView({
       const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, content, mediaPath, mediaType, replyToId, locked, priceCents }),
+        body: JSON.stringify({
+          chatId,
+          content,
+          mediaItems,
+          mediaPath: mediaItems[0]?.path,
+          mediaType: mediaItems[0]?.type,
+          replyToId,
+          locked,
+          priceCents,
+        }),
       });
       if (res.ok) {
         const { message } = await res.json();
@@ -354,13 +374,13 @@ export default function ChatView({
       } else {
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
         setText(caption);
-        if (usedAttachment) setAttachment(usedAttachment);
+        setAttachments(usedAttachments);
         if (usedLink) setLinkAttachment(usedLink);
       }
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
       setText(caption);
-      if (usedAttachment) setAttachment(usedAttachment);
+      setAttachments(usedAttachments);
       if (usedLink) setLinkAttachment(usedLink);
     }
   }
@@ -472,33 +492,71 @@ export default function ChatView({
     try {
       const { path, type } = JSON.parse(data);
       if (path && (type === "image" || type === "video")) {
-        setAttachment({ path, type });
+        setTipCents(null);
+        setAttachments((prev) => {
+          if (prev.some((a) => a.path === path)) return prev;
+          if (prev.length >= MAX_ATTACHMENTS) return prev;
+          return [...prev, { path, type }];
+        });
       }
     } catch {
       // Not a vault item, ignore
     }
   }
 
-  async function handleFile(file: File) {
-    const kind = fileKind(file);
-    if (!kind) return;
+  async function handleFiles(files: FileList | File[]) {
+    const list = Array.from(files)
+      .filter((f) => !!fileKind(f))
+      .slice(0, MAX_ATTACHMENTS);
+    if (list.length === 0) return;
+    setTipCents(null);
     setUploading(true);
+    const uploaded: { path: string; type: MediaKind }[] = [];
     try {
-      const res = await fetch("/api/upload", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileName: file.name, scope: "chat" }),
-      });
-      if (!res.ok) return;
-      const { path, token } = await res.json();
-      const { error } = await supabaseBrowser()
-        .storage.from("media")
-        .uploadToSignedUrl(path, token, file, { cacheControl: "31536000" });
-      if (!error) await send(path, kind);
+      for (const file of list) {
+        const kind = fileKind(file)!;
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fileName: file.name, scope: "chat" }),
+        });
+        if (!res.ok) continue;
+        const { path, token } = await res.json();
+        const { error } = await supabaseBrowser()
+          .storage.from("media")
+          .uploadToSignedUrl(path, token, file, { cacheControl: "31536000" });
+        if (error) continue;
+        uploaded.push({ path, type: kind });
+      }
+      if (uploaded.length) {
+        setAttachments((prev) => {
+          const next = [...prev];
+          for (const item of uploaded) {
+            if (next.length >= MAX_ATTACHMENTS) break;
+            if (!next.some((a) => a.path === item.path)) next.push(item);
+          }
+          return next;
+        });
+      }
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
+  }
+
+  function openLightbox(message: Message, index = 0) {
+    const items = mediaItemsFromMessage(message);
+    if (!items.length) return;
+    // Locked + unpaid for the fan: media stays unclickable.
+    if (
+      role === "guest" &&
+      message.locked &&
+      (message.price_cents ?? 0) > 0 &&
+      !message.unlocked
+    ) {
+      return;
+    }
+    setLightbox({ message, index: Math.min(Math.max(index, 0), items.length - 1) });
   }
 
   const byId = new Map(messages.map((m) => [m.id, m]));
@@ -537,7 +595,7 @@ export default function ChatView({
             repliedTo={m.reply_to_id ? byId.get(m.reply_to_id) ?? null : null}
             onReply={setReplyTo}
             onJumpToReply={jumpToReply}
-            onMediaClick={setLightbox}
+            onMediaClick={openLightbox}
             onToggleLock={toggleLock}
             onUnlock={unlockMessage}
             unlocking={unlockingId === m.id}
@@ -568,7 +626,11 @@ export default function ChatView({
             </p>
             <p className="text-xs text-muted truncate">
               {(replyTo.content && messagePreviewText(replyTo.content)) ||
-                (replyTo.media_type === "image" ? "Photo" : "Video")}
+                (() => {
+                  const n = mediaItemsFromMessage(replyTo).length;
+                  if (n > 1) return `${n} files`;
+                  return replyTo.media_type === "image" ? "Photo" : "Video";
+                })()}
             </p>
           </div>
           <button
@@ -670,55 +732,71 @@ export default function ChatView({
         </div>
       )}
 
-      {attachment && (
-        <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line flex items-center gap-3 fade-up">
-          {attachment.type === "image" ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={mediaUrl(attachment.path)}
-              alt=""
-              className="w-12 h-12 rounded-lg object-cover shrink-0"
-            />
-          ) : (
-            <video
-              src={`${mediaUrl(attachment.path)}#t=0.001`}
-              muted
-              playsInline
-              preload="metadata"
-              className="w-12 h-12 rounded-lg object-cover shrink-0"
-            />
-          )}
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-accent">
-              {attachment.type === "image" ? "Photo" : "Video"} from vault
+      {attachments.length > 0 && (
+        <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line space-y-2 fade-up">
+          <div className="flex items-center gap-2">
+            <p className="flex-1 text-xs font-semibold text-accent">
+              {attachments.length} file{attachments.length === 1 ? "" : "s"} attached
               {(sendLocked || parseFloat(lockPrice) > 0) && " · will send locked"}
             </p>
-            {role === "owner" ? (
-              <div className="mt-1 flex items-center gap-1.5">
-                <span className="text-xs text-muted">Unlock price</span>
-                <span className="text-xs text-muted">$</span>
-                <input
-                  value={lockPrice}
-                  onChange={(e) => setLockPrice(e.target.value.replace(/[^\d.]/g, ""))}
-                  inputMode="decimal"
-                  placeholder="0"
-                  className="w-16 bg-bg border border-line rounded-lg px-2 py-1 text-xs focus:border-accent"
-                />
-                <span className="text-[11px] text-muted">
-                  {parseFloat(lockPrice) > 0 ? "fan pays to unlock" : "free / manual lock"}
-                </span>
-              </div>
-            ) : (
-              <p className="text-xs text-muted">Add a message below, then send</p>
-            )}
+            <button
+              onClick={() => setAttachments([])}
+              className="text-muted text-xs font-semibold px-1"
+            >
+              Clear
+            </button>
           </div>
-          <button
-            onClick={() => setAttachment(null)}
-            className="text-muted text-sm px-1"
-            aria-label="Remove attachment"
-          >
-            ✕
-          </button>
+          <div className="flex gap-2 overflow-x-auto pb-0.5">
+            {attachments.map((item, i) => (
+              <div key={`${item.path}-${i}`} className="relative shrink-0">
+                {item.type === "image" ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={mediaUrl(item.path)}
+                    alt=""
+                    className="w-14 h-14 rounded-lg object-cover"
+                  />
+                ) : (
+                  <video
+                    src={`${mediaUrl(item.path)}#t=0.001`}
+                    muted
+                    playsInline
+                    preload="metadata"
+                    className="w-14 h-14 rounded-lg object-cover"
+                  />
+                )}
+                <button
+                  onClick={() =>
+                    setAttachments((prev) => prev.filter((_, idx) => idx !== i))
+                  }
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-black/70 text-white text-[10px] font-bold"
+                  aria-label="Remove attachment"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+          {role === "owner" ? (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-xs text-muted">Unlock price</span>
+              <span className="text-xs text-muted">$</span>
+              <input
+                value={lockPrice}
+                onChange={(e) => setLockPrice(e.target.value.replace(/[^\d.]/g, ""))}
+                inputMode="decimal"
+                placeholder="0"
+                className="w-16 bg-bg border border-line rounded-lg px-2 py-1 text-xs focus:border-accent"
+              />
+              <span className="text-[11px] text-muted">
+                {parseFloat(lockPrice) > 0
+                  ? "fan pays once to unlock all"
+                  : "free / manual lock"}
+              </span>
+            </div>
+          ) : (
+            <p className="text-xs text-muted">Add a message below, then send</p>
+          )}
         </div>
       )}
 
@@ -743,8 +821,9 @@ export default function ChatView({
             ref={fileRef}
             type="file"
             accept="image/*,video/*"
+            multiple
             hidden
-            onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])}
+            onChange={(e) => e.target.files?.length && handleFiles(e.target.files)}
           />
           {role === "guest" && (
             <button
@@ -838,7 +917,11 @@ export default function ChatView({
             onClick={() => (tipCents != null ? sendTip() : send())}
             disabled={
               tipping ||
-              (tipCents == null && !text.trim() && !attachment && !linkAttachment)
+              uploading ||
+              (tipCents == null &&
+                !text.trim() &&
+                attachments.length === 0 &&
+                !linkAttachment)
             }
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-40 flex items-center justify-center active:opacity-80 transition-opacity"
             aria-label={tipCents != null ? "Send tip" : "Send"}
@@ -1047,19 +1130,72 @@ export default function ChatView({
         </Portal>
       )}
 
-      {lightbox && lightbox.media_path && (
-        <div
-          className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
-          onClick={() => setLightbox(null)}
-        >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={mediaUrl(lightbox.media_path)}
-            alt="Photo"
-            className="max-w-full max-h-full rounded-xl object-contain"
-          />
-        </div>
-      )}
+      {lightbox && (() => {
+        const items = mediaItemsFromMessage(lightbox.message);
+        const item = items[lightbox.index];
+        if (!item) return null;
+        return (
+          <div
+            className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
+            onClick={() => setLightbox(null)}
+          >
+            <div
+              className="relative max-w-full max-h-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {item.type === "image" ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={mediaUrl(item.path)}
+                  alt="Photo"
+                  className="max-w-full max-h-[85vh] rounded-xl object-contain"
+                />
+              ) : (
+                <video
+                  src={mediaUrl(item.path)}
+                  controls
+                  autoPlay
+                  playsInline
+                  className="max-w-full max-h-[85vh] rounded-xl"
+                />
+              )}
+              {items.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLightbox({
+                        message: lightbox.message,
+                        index: (lightbox.index - 1 + items.length) % items.length,
+                      })
+                    }
+                    aria-label="Previous media"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 text-white flex items-center justify-center"
+                  >
+                    <IconBack className="w-5 h-5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setLightbox({
+                        message: lightbox.message,
+                        index: (lightbox.index + 1) % items.length,
+                      })
+                    }
+                    aria-label="Next media"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-black/60 text-white flex items-center justify-center"
+                  >
+                    <IconChevronRight className="w-5 h-5" />
+                  </button>
+                  <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/60 text-white text-xs font-semibold px-3 py-1 tabular-nums">
+                    {lightbox.index + 1}/{items.length}
+                  </span>
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

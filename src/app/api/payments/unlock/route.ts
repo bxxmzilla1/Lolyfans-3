@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
   const { data: message } = await db
     .from("messages")
-    .select("id, chat_id, media_path, media_type, price_cents, locked")
+    .select("id, chat_id, media_path, media_type, media_items, price_cents, locked")
     .eq("id", messageId)
     .maybeSingle();
   if (!message) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -33,8 +33,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const hasMedia =
+    !!message.media_path ||
+    (Array.isArray(message.media_items) && message.media_items.length > 0);
   const price = message.price_cents ?? 0;
-  if (!message.locked || price <= 0) {
+  if (!message.locked || price <= 0 || !hasMedia) {
     return NextResponse.json({ error: "This message is not for sale" }, { status: 400 });
   }
 

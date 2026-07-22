@@ -2,6 +2,31 @@ export function mediaUrl(path: string): string {
   return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/media/${path}`;
 }
 
+export type MediaItem = { path: string; type: "image" | "video" };
+
+/** Normalize legacy single media_path + optional media_items into one list. */
+export function mediaItemsFromMessage(message: {
+  media_path?: string | null;
+  media_type?: string | null;
+  media_items?: unknown;
+}): MediaItem[] {
+  const items: MediaItem[] = [];
+  const raw = Array.isArray(message.media_items) ? message.media_items : [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== "object") continue;
+    const path = (entry as { path?: unknown }).path;
+    const type = (entry as { type?: unknown }).type;
+    if (typeof path !== "string" || !path) continue;
+    if (type !== "image" && type !== "video") continue;
+    items.push({ path, type });
+  }
+  if (items.length === 0 && message.media_path) {
+    const type = message.media_type === "video" ? "video" : "image";
+    items.push({ path: message.media_path, type });
+  }
+  return items;
+}
+
 export const URL_REGEX = /(https?:\/\/[^\s<>"')\]]+)/g;
 
 /**

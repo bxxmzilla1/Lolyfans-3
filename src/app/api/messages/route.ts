@@ -79,11 +79,38 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({ messages, role: auth.role });
 }
 
+function normalizeMediaItems(body: {
+  mediaItems?: unknown;
+  mediaPath?: unknown;
+  mediaType?: unknown;
+}): { path: string; type: "image" | "video" }[] {
+  const items: { path: string; type: "image" | "video" }[] = [];
+  if (Array.isArray(body.mediaItems)) {
+    for (const entry of body.mediaItems) {
+      if (!entry || typeof entry !== "object") continue;
+      const path = (entry as { path?: unknown }).path;
+      const type = (entry as { type?: unknown }).type;
+      if (typeof path !== "string" || !path) continue;
+      if (type !== "image" && type !== "video") continue;
+      items.push({ path, type });
+      if (items.length >= 12) break;
+    }
+  }
+  if (items.length === 0 && typeof body.mediaPath === "string" && body.mediaPath) {
+    const type = body.mediaType === "video" ? "video" : "image";
+    items.push({ path: body.mediaPath, type });
+  }
+  return items;
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { chatId, content, mediaPath, mediaType, replyToId, locked, priceCents } = body;
+  const { chatId, content, replyToId, locked, priceCents } = body;
+  const mediaItems = normalizeMediaItems(body);
+  const mediaPath = mediaItems[0]?.path ?? null;
+  const mediaType = mediaItems[0]?.type ?? null;
   if (!chatId) return NextResponse.json({ error: "chatId required" }, { status: 400 });
-  if (!content?.trim() && !mediaPath) {
+  if (!content?.trim() && mediaItems.length === 0) {
     return NextResponse.json({ error: "Empty message" }, { status: 400 });
   }
 
@@ -108,13 +135,14 @@ export async function POST(req: NextRequest) {
       chat_id: chatId,
       sender: auth.role,
       content: content?.trim() || null,
-      media_path: mediaPath || null,
-      media_type: mediaType || null,
+      media_path: mediaPath,
+      media_type: mediaType,
+      media_items: mediaItems,
       reply_to_id: replyToId || null,
-      locked: !!locked && !!mediaPath,
+      locked: !!locked && mediaItems.length > 0,
       // Only the owner can price media; a positive price makes it pay-to-unlock.
       price_cents:
-        auth.role === "owner" && !!mediaPath && Number.isFinite(priceCents)
+        auth.role === "owner" && mediaItems.length > 0 && Number.isFinite(priceCents)
           ? Math.max(0, Math.round(Number(priceCents)))
           : 0,
     })
@@ -150,7 +178,7 @@ export async function PATCH(req: NextRequest) {
   const db = supabaseAdmin();
   const { data: existing } = await db
     .from("messages")
-    .select("id, chat_id, sender, media_path")
+    .select("id, chat_id, sender, media_path, media_items")
     .eq("id", messageId)
     .single();
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -159,7 +187,10 @@ export async function PATCH(req: NextRequest) {
   if (!auth || auth.role !== existing.sender) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!existing.media_path) {
+  const hasMedia =
+    !!existing.media_path ||
+    (Array.isArray(existing.media_items) && existing.media_items.length > 0);
+  if (!hasMedia) {
     return NextResponse.json({ error: "Only media messages can be locked" }, { status: 400 });
   }
 

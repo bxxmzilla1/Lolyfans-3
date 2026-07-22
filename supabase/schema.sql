@@ -326,6 +326,10 @@ alter table invites add column if not exists skip_landing boolean not null defau
 -- (owner blur toggle). A positive price makes it pay-to-unlock via Stripe.
 alter table messages add column if not exists price_cents int not null default 0;
 
+-- Multi-media messages: [{ "path": "...", "type": "image"|"video" }, ...].
+-- media_path / media_type stay as the first item for older clients & previews.
+alter table messages add column if not exists media_items jsonb not null default '[]'::jsonb;
+
 -- Which fan has unlocked which locked message (one row = revealed for them).
 create table if not exists message_unlocks (
   message_id uuid not null references messages(id) on delete cascade,
