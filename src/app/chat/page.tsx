@@ -90,6 +90,7 @@ export default async function GuestChatPage() {
         role="guest"
         header={header}
         initialMessages={initialMessages}
+        ownerId={chat.owner_id}
       />
       <GuestNav />
     </div>

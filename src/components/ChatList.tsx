@@ -52,27 +52,49 @@ function readStoredInbox(): { chats: ChatRow[]; ownerId: string; categories: Cat
 let inboxChannel: RealtimeChannel | null = null;
 let inboxChannelOwner: string | null = null;
 const inboxListeners = new Set<() => void>();
+const typingListeners = new Set<(chatId: string) => void>();
+
+function ensureInboxChannel(ownerId: string) {
+  if (inboxChannel && inboxChannelOwner === ownerId) return;
+  const supabase = supabaseBrowser();
+  if (inboxChannel) supabase.removeChannel(inboxChannel);
+  inboxChannelOwner = ownerId;
+  inboxChannel = supabase
+    .channel(`inbox:${ownerId}`)
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "messages" },
+      () => inboxListeners.forEach((listener) => listener())
+    )
+    .on("broadcast", { event: "new-message" }, () =>
+      inboxListeners.forEach((listener) => listener())
+    )
+    // Fans typing in their chat → animated dots on the chat list row.
+    .on("broadcast", { event: "typing" }, ({ payload }) => {
+      const p = payload as { chatId?: string; sender?: string };
+      if (p.chatId && p.sender === "guest") {
+        typingListeners.forEach((listener) => listener(p.chatId!));
+      }
+    })
+    .subscribe();
+}
 
 function subscribeInbox(ownerId: string, onEvent: () => void): () => void {
+  ensureInboxChannel(ownerId);
   inboxListeners.add(onEvent);
-  if (!inboxChannel || inboxChannelOwner !== ownerId) {
-    const supabase = supabaseBrowser();
-    if (inboxChannel) supabase.removeChannel(inboxChannel);
-    inboxChannelOwner = ownerId;
-    inboxChannel = supabase
-      .channel(`inbox:${ownerId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "messages" },
-        () => inboxListeners.forEach((listener) => listener())
-      )
-      .on("broadcast", { event: "new-message" }, () =>
-        inboxListeners.forEach((listener) => listener())
-      )
-      .subscribe();
-  }
   return () => {
     inboxListeners.delete(onEvent);
+  };
+}
+
+function subscribeInboxTyping(
+  ownerId: string,
+  onTyping: (chatId: string) => void
+): () => void {
+  ensureInboxChannel(ownerId);
+  typingListeners.add(onTyping);
+  return () => {
+    typingListeners.delete(onTyping);
   };
 }
 
@@ -95,6 +117,9 @@ export default function ChatList() {
   const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
   const [onlineOnly, setOnlineOnly] = useState(false);
   const [massOpen, setMassOpen] = useState(false);
+  // Chats whose fan is typing right now (each entry auto-clears after 3s).
+  const [typingIds, setTypingIds] = useState<Set<string>>(new Set());
+  const typingTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pathname = usePathname();
   const router = useRouter();
   const cancelledRef = useRef(false);
@@ -160,6 +185,39 @@ export default function ChatList() {
   useEffect(() => {
     if (!ownerId) return;
     return subscribeGuestPresence(ownerId, setOnlineIds);
+  }, [ownerId]);
+
+  // Typing animation on the rows: fans send throttled typing pings (~1.5s),
+  // so each ping keeps the animation alive for 3s.
+  useEffect(() => {
+    if (!ownerId) return;
+    const timers = typingTimersRef.current;
+    const unsubscribe = subscribeInboxTyping(ownerId, (chatId) => {
+      setTypingIds((prev) => {
+        if (prev.has(chatId)) return prev;
+        const next = new Set(prev);
+        next.add(chatId);
+        return next;
+      });
+      const old = timers.get(chatId);
+      if (old) clearTimeout(old);
+      timers.set(
+        chatId,
+        setTimeout(() => {
+          timers.delete(chatId);
+          setTypingIds((prev) => {
+            const next = new Set(prev);
+            next.delete(chatId);
+            return next;
+          });
+        }, 3000)
+      );
+    });
+    return () => {
+      unsubscribe();
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
   }, [ownerId]);
 
   async function createCategory() {
@@ -513,16 +571,27 @@ export default function ChatList() {
                         </span>
                       )}
                     </p>
-                    <p className={`text-[13px] truncate ${
-                      chat.unread > 0 && !active ? "text-fg font-medium" : "text-muted"
-                    }`}>
-                      {(chat.preview?.content && messagePreviewText(chat.preview.content)) ||
-                        (chat.preview?.media_type === "image"
-                          ? "Photo"
-                          : chat.preview?.media_type === "video"
-                          ? "Video"
-                          : "New chat")}
-                    </p>
+                    {typingIds.has(chat.id) ? (
+                      <p className="text-[13px] text-accent font-medium flex items-center gap-1.5">
+                        typing
+                        <span className="flex items-center gap-0.5">
+                          <span className="typing-dot w-1 h-1 rounded-full bg-accent" />
+                          <span className="typing-dot w-1 h-1 rounded-full bg-accent" />
+                          <span className="typing-dot w-1 h-1 rounded-full bg-accent" />
+                        </span>
+                      </p>
+                    ) : (
+                      <p className={`text-[13px] truncate ${
+                        chat.unread > 0 && !active ? "text-fg font-medium" : "text-muted"
+                      }`}>
+                        {(chat.preview?.content && messagePreviewText(chat.preview.content)) ||
+                          (chat.preview?.media_type === "image"
+                            ? "Photo"
+                            : chat.preview?.media_type === "video"
+                            ? "Video"
+                            : "New chat")}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col items-end gap-1 shrink-0">
                     {selectMode ? (

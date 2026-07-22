@@ -43,11 +43,14 @@ export default function ChatView({
   role,
   header,
   initialMessages,
+  ownerId,
 }: {
   chatId: string;
   role: "owner" | "guest";
   header: React.ReactNode;
   initialMessages?: Message[];
+  /** Guest side: creator's id, so typing can reach their inbox chat list. */
+  ownerId?: string;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [text, setText] = useState("");
@@ -79,6 +82,7 @@ export default function ChatView({
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
+  const inboxTypingRef = useRef<RealtimeChannel | null>(null);
   const typingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingSentAtRef = useRef(0);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -270,6 +274,20 @@ export default function ChatView({
     scrollToBottom(true);
   }, [messages.length, peerTyping, scrollToBottom]);
 
+  // Guest side: a second channel to the creator's inbox topic, so their chat
+  // list can show the typing animation without joining every chat channel.
+  useEffect(() => {
+    if (role !== "guest" || !ownerId) return;
+    const supabase = supabaseBrowser();
+    const channel = supabase.channel(`inbox:${ownerId}`);
+    channel.subscribe();
+    inboxTypingRef.current = channel;
+    return () => {
+      inboxTypingRef.current = null;
+      supabase.removeChannel(channel);
+    };
+  }, [role, ownerId]);
+
   /** Let the other side know we're typing (throttled). */
   function notifyTyping() {
     const now = Date.now();
@@ -279,6 +297,11 @@ export default function ChatView({
       type: "broadcast",
       event: "typing",
       payload: { sender: role },
+    });
+    inboxTypingRef.current?.send({
+      type: "broadcast",
+      event: "typing",
+      payload: { chatId, sender: role },
     });
   }
 
