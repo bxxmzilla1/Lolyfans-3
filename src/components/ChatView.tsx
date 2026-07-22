@@ -43,14 +43,11 @@ export default function ChatView({
   role,
   header,
   initialMessages,
-  initialBalance,
 }: {
   chatId: string;
   role: "owner" | "guest";
   header: React.ReactNode;
   initialMessages?: Message[];
-  /** Server-rendered token balance so the wallet bar shows instantly. */
-  initialBalance?: number;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [text, setText] = useState("");
@@ -70,8 +67,7 @@ export default function ChatView({
   const [tipCustom, setTipCustom] = useState("");
   const [tipping, setTipping] = useState(false);
   // Token wallet (guest side): balance, the top-up sheet, and why it opened.
-  // Seeded from the server so the bar renders with the rest of the page.
-  const [balance, setBalance] = useState<number | null>(initialBalance ?? null);
+  const [balance, setBalance] = useState<number | null>(null);
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNote, setWalletNote] = useState<string | null>(null);
   const [toppingUp, setToppingUp] = useState<string | null>(null);
