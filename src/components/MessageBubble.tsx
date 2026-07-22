@@ -155,6 +155,14 @@ export default function MessageBubble({
   const [slide, setSlide] = useState(0);
   const active = mediaItems[Math.min(slide, Math.max(mediaItems.length - 1, 0))];
 
+  // Timestamps are timezone-dependent: the server renders them in UTC, the
+  // browser in local time, which trips React hydration (#418). Render them
+  // only after mount so both passes match.
+  const [clockReady, setClockReady] = useState(false);
+  useEffect(() => {
+    setClockReady(true);
+  }, []);
+
   useEffect(() => {
     setSlide(0);
   }, [message.id]);
@@ -448,7 +456,9 @@ export default function MessageBubble({
           {myPriceLabel && (
             <span className="mr-auto font-semibold">{myPriceLabel}</span>
           )}
-          {formatTime(message.created_at)}
+          <span suppressHydrationWarning>
+            {clockReady ? formatTime(message.created_at) : "\u00A0"}
+          </span>
         </p>
       </div>
 
