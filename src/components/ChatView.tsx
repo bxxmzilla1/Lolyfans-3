@@ -13,13 +13,13 @@ import {
 import MessageBubble, { Message } from "./MessageBubble";
 import Portal from "./Portal";
 import {
+  CENTS_PER_TOKEN,
   TIP_TOKEN_PRESETS,
   MIN_TIP_TOKENS,
   TOKEN_PACKS,
   formatTokens,
   packPriceLabel,
   packTotalTokens,
-  tokensForCents,
 } from "@/lib/tokens";
 import {
   IconBack,
@@ -379,12 +379,14 @@ export default function ChatView({
       : "";
     const content = [caption, linkPart].filter(Boolean).join("\n");
     if (!content && mediaItems.length === 0) return;
-    // Owner-set unlock price (only on media). A price implies the media is
-    // locked so the fan pays to reveal it.
-    const priceCents =
+    // Owner-set unlock price in Tokens (only on media). A price implies the
+    // media is locked so the fan pays to reveal it. Stored as cents (1 Token
+    // = 10¢) so revenue records stay in real money.
+    const lockTokens =
       role === "owner" && mediaItems.length > 0
-        ? Math.round(parseFloat(lockPrice.replace(/[^\d.]/g, "")) * 100) || 0
+        ? Math.round(parseFloat(lockPrice.replace(/[^\d]/g, ""))) || 0
         : 0;
+    const priceCents = lockTokens * CENTS_PER_TOKEN;
     const locked = (sendLocked || priceCents > 0) && mediaItems.length > 0;
 
     // Optimistic: show the message immediately, reconcile with the server response.
@@ -847,17 +849,20 @@ export default function ChatView({
           {role === "owner" ? (
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs text-muted">Unlock price</span>
-              <span className="text-xs text-muted">$</span>
+              <IconTip className="w-3.5 h-3.5 text-accent" />
               <input
                 value={lockPrice}
-                onChange={(e) => setLockPrice(e.target.value.replace(/[^\d.]/g, ""))}
-                inputMode="decimal"
+                onChange={(e) => setLockPrice(e.target.value.replace(/[^\d]/g, ""))}
+                inputMode="numeric"
                 placeholder="0"
                 className="w-16 bg-bg border border-line rounded-lg px-2 py-1 text-xs focus:border-accent"
               />
+              <span className="text-xs text-muted">Tokens</span>
               <span className="text-[11px] text-muted">
-                {parseFloat(lockPrice) > 0
-                  ? `fan pays ${formatTokens(tokensForCents(Math.round(parseFloat(lockPrice) * 100)))} to unlock all`
+                {parseInt(lockPrice, 10) > 0
+                  ? `≈ $${((parseInt(lockPrice, 10) * CENTS_PER_TOKEN) / 100)
+                      .toFixed(2)
+                      .replace(/\.00$/, "")} · fan pays once to unlock all`
                   : "free / manual lock"}
               </span>
             </div>
