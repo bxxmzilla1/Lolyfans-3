@@ -868,25 +868,29 @@ export default function ChatView({
       )}
 
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {/* Token balance floats above the input so the composer keeps its space */}
+        {/* Token balance sits above the input so the composer keeps its space */}
         {role === "guest" && balance !== null && (
-          <div className="flex justify-end mb-1.5">
-            <button
-              onClick={() => openWallet()}
-              className="inline-flex items-center gap-1.5 rounded-full bg-card2/90 border border-line px-3 py-1.5 text-muted hover:text-fg transition-colors backdrop-blur"
-              aria-label="Your token wallet"
-              title="Your token wallet"
-            >
-              <IconTip className="w-4 h-4 text-accent" />
-              <span className="text-xs font-bold tabular-nums text-fg">
-                {balance.toLocaleString("en-US")}
+          <button
+            onClick={() => openWallet()}
+            className="w-full mb-2 flex items-center gap-2.5 rounded-2xl bg-card2/90 border border-accent/30 px-3.5 py-2 backdrop-blur hover:border-accent transition-colors"
+            aria-label="Your token wallet"
+            title="Your token wallet"
+          >
+            <span className="w-7 h-7 rounded-full bg-accent/15 text-accent flex items-center justify-center shrink-0">
+              <IconTip className="w-4 h-4" />
+            </span>
+            <span className="flex-1 min-w-0 text-left">
+              <span className="block text-[11px] font-semibold text-muted leading-tight">
+                Token balance
               </span>
-              <span className="text-xs font-semibold">Tokens</span>
-              <span className="w-4 h-4 rounded-full bg-accent text-white text-[11px] font-bold leading-none flex items-center justify-center">
-                +
+              <span className="block text-sm font-extrabold tabular-nums text-fg leading-tight">
+                {balance.toLocaleString("en-US")} Tokens
               </span>
-            </button>
-          </div>
+            </span>
+            <span className="shrink-0 rounded-full bg-accent text-white text-xs font-bold px-3 py-1.5">
+              Top up
+            </span>
+          </button>
         )}
         <div className="flex items-end gap-2 bg-card2/80 border border-line2 rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
