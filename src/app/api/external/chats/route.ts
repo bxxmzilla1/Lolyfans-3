@@ -25,10 +25,20 @@ type MsgRow = {
   content: string | null;
   media_path: string | null;
   media_type: string | null;
+  media_items: { path: string; type: string }[] | null;
+  locked: boolean | null;
+  price_cents: number | null;
   created_at: string;
 };
 
-function shapeMessage(m: MsgRow) {
+function shapeMessage(m: MsgRow, unlockedIds?: Set<string>) {
+  const items =
+    Array.isArray(m.media_items) && m.media_items.length
+      ? m.media_items
+      : m.media_path
+        ? [{ path: m.media_path, type: m.media_type || "image" }]
+        : [];
+  const priceCents = m.price_cents || 0;
   return {
     id: m.id,
     role: m.sender === "owner" ? "me" : "fan",
@@ -41,19 +51,47 @@ function shapeMessage(m: MsgRow) {
           path: m.media_path,
         }
       : null,
+    mediaItems: items.map((it) => ({
+      kind: it.type === "video" ? "video" : "image",
+      url: mediaUrl(it.path),
+      path: it.path,
+    })),
+    locked: !!m.locked,
+    priceTokens: priceCents > 0 ? Math.max(1, Math.ceil(priceCents / 10)) : 0,
+    unlocked: unlockedIds ? unlockedIds.has(m.id) : false,
   };
+}
+
+const MSG_COLUMNS =
+  "id, chat_id, sender, content, media_path, media_type, media_items, locked, price_cents, created_at";
+
+/** Which locked messages each fan has already paid for. */
+async function loadUnlockedIds(db: ReturnType<typeof supabaseAdmin>, chatIds: string[]) {
+  const unlocked = new Set<string>();
+  const CHUNK = 40;
+  for (let i = 0; i < chatIds.length; i += CHUNK) {
+    const { data } = await db
+      .from("message_unlocks")
+      .select("message_id")
+      .in("chat_id", chatIds.slice(i, i + CHUNK));
+    for (const u of data ?? []) unlocked.add(u.message_id);
+  }
+  return unlocked;
 }
 
 /** Recent messages for one chat (newest first, then flipped). */
 async function loadMessagesForChat(db: ReturnType<typeof supabaseAdmin>, chatId: string, limit = 200) {
-  const { data, error } = await db
-    .from("messages")
-    .select("id, chat_id, sender, content, media_path, media_type, created_at")
-    .eq("chat_id", chatId)
-    .order("created_at", { ascending: false })
-    .limit(limit);
+  const [{ data, error }, unlockedIds] = await Promise.all([
+    db
+      .from("messages")
+      .select(MSG_COLUMNS)
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: false })
+      .limit(limit),
+    loadUnlockedIds(db, [chatId]),
+  ]);
   if (error) throw new Error(error.message);
-  return ((data as MsgRow[]) ?? []).reverse().map(shapeMessage);
+  return ((data as MsgRow[]) ?? []).reverse().map((m) => shapeMessage(m, unlockedIds));
 }
 
 /**
@@ -70,13 +108,14 @@ async function loadMessagesForChats(
   const counts = new Map<string, number>();
   const CHUNK = 40;
   const PAGE = 1000;
+  const unlockedIds = await loadUnlockedIds(db, chatIds);
 
   for (let i = 0; i < chatIds.length; i += CHUNK) {
     const chunk = chatIds.slice(i, i + CHUNK);
     for (let from = 0; from < 5000; from += PAGE) {
       const { data: page, error } = await db
         .from("messages")
-        .select("id, chat_id, sender, content, media_path, media_type, created_at")
+        .select(MSG_COLUMNS)
         .in("chat_id", chunk)
         .order("created_at", { ascending: false })
         .range(from, from + PAGE - 1);
@@ -87,7 +126,7 @@ async function loadMessagesForChats(
         if (n >= perChat) continue;
         counts.set(m.chat_id, n + 1);
         const list = messagesByChat.get(m.chat_id) ?? [];
-        list.push(shapeMessage(m));
+        list.push(shapeMessage(m, unlockedIds));
         messagesByChat.set(m.chat_id, list);
       }
       if (page.length < PAGE) break;

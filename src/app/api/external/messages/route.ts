@@ -18,6 +18,10 @@ export function OPTIONS() {
  * External send API for connected apps (Orion): post a reply into a chat as
  * the owner. Marks the chat as bot-replied so auto-respond won't answer the
  * same fan message twice. Auth is the owner's API key.
+ *
+ * Supports media packages: `mediaItems: [{ path, type }, ...]` plus an
+ * optional `priceCents` — a positive price sends it locked (pay-to-unlock
+ * with tokens), mirroring the owner inbox composer.
  */
 export async function POST(req: NextRequest) {
   const ownerId = await ownerFromApiKey(req);
@@ -25,11 +29,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid API key" }, { status: 401, headers: CORS });
   }
 
-  const { chatId, content, mediaPath, mediaType, locked, notify } = await req.json();
+  const body = await req.json();
+  const { chatId, content, mediaPath, mediaType, locked, notify, priceCents } = body;
+
+  // Normalize single mediaPath (legacy) or mediaItems (packages).
+  const mediaItems: { path: string; type: "image" | "video" }[] = [];
+  if (Array.isArray(body.mediaItems)) {
+    for (const it of body.mediaItems) {
+      if (it && typeof it.path === "string" && it.path) {
+        mediaItems.push({ path: it.path, type: it.type === "video" ? "video" : "image" });
+      }
+    }
+  }
+  if (mediaItems.length === 0 && typeof mediaPath === "string" && mediaPath) {
+    mediaItems.push({ path: mediaPath, type: mediaType === "video" ? "video" : "image" });
+  }
+
   if (!chatId) {
     return NextResponse.json({ error: "chatId required" }, { status: 400, headers: CORS });
   }
-  if (!content?.trim() && !mediaPath) {
+  if (!content?.trim() && mediaItems.length === 0) {
     return NextResponse.json({ error: "Empty message" }, { status: 400, headers: CORS });
   }
 
@@ -45,15 +64,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Chat not found" }, { status: 404, headers: CORS });
   }
 
+  const price =
+    mediaItems.length > 0 && Number.isFinite(Number(priceCents))
+      ? Math.max(0, Math.round(Number(priceCents)))
+      : 0;
+
   const { data: message, error } = await db
     .from("messages")
     .insert({
       chat_id: chatId,
       sender: "owner",
       content: content?.trim() || null,
-      media_path: mediaPath || null,
-      media_type: mediaType || null,
-      locked: !!locked && !!mediaPath,
+      media_path: mediaItems[0]?.path ?? null,
+      media_type: mediaItems[0]?.type ?? null,
+      media_items: mediaItems,
+      // A positive price implies locked; `locked` alone still works (manual blur).
+      locked: (!!locked || price > 0) && mediaItems.length > 0,
+      price_cents: price,
     })
     .select()
     .single();

@@ -173,6 +173,42 @@ create index if not exists vault_script_layers_owner_idx on vault_script_layers 
 
 alter table vault_script_layers enable row level security;
 
+-- Token price ranges per Script Layer (set in Orion): the chatbot picks the
+-- best price inside the range when offering locked content from that layer.
+-- Scoped per album like the layers themselves.
+create table if not exists vault_layer_prices (
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  album_key text not null default 'all',
+  layer text not null check (layer in ('casual', 'flirt', 'tease', 'horny', 'sexting')),
+  min_tokens integer not null default 0,
+  max_tokens integer not null default 0,
+  -- Free layer: content is sent unlocked (gifts/teasers), no price at all
+  is_free boolean not null default false,
+  updated_at timestamptz not null default now(),
+  primary key (owner_id, album_key, layer)
+);
+
+alter table vault_layer_prices add column if not exists is_free boolean not null default false;
+
+create index if not exists vault_layer_prices_owner_idx on vault_layer_prices (owner_id);
+
+alter table vault_layer_prices enable row level security;
+
+-- Which albums the chatbot may pull content from (set in Orion's Vault tab).
+-- No row for an album = allowed (default). enabled=false blocks the bot from
+-- using that album's items, layers and prices in chats.
+create table if not exists vault_bot_albums (
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  album_key text not null,
+  enabled boolean not null default true,
+  updated_at timestamptz not null default now(),
+  primary key (owner_id, album_key)
+);
+
+create index if not exists vault_bot_albums_owner_idx on vault_bot_albums (owner_id);
+
+alter table vault_bot_albums enable row level security;
+
 -- Custom inbox categories (tabs); a chat can belong to any number of them
 create table if not exists chat_categories (
   id uuid primary key default gen_random_uuid(),
