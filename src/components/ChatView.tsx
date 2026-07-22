@@ -920,7 +920,7 @@ export default function ChatView({
             <button
               onClick={() => setTipPickerOpen(true)}
               disabled={tipping}
-              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center transition-colors disabled:opacity-50 ${
+              className={`h-9 px-3 rounded-xl shrink-0 flex items-center justify-center text-sm font-semibold transition-colors disabled:opacity-50 ${
                 tipTokens != null
                   ? "bg-accent text-white glow-accent"
                   : "bg-transparent border border-line text-muted hover:text-fg"
@@ -928,7 +928,7 @@ export default function ChatView({
               aria-label="Send a tip"
               title="Send a tip"
             >
-              <IconTip className="w-4.5 h-4.5" />
+              Tip
             </button>
           )}
           {role === "owner" && (
