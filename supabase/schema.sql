@@ -133,6 +133,46 @@ create index if not exists vault_analyses_owner_idx on vault_analyses (owner_id)
 
 alter table vault_analyses enable row level security;
 
+-- Script Layers (written by Orion): each vault item can be assigned to an
+-- escalation level, so the chatbot knows which content fits the current
+-- heat of a conversation and can climb casual -> flirt -> tease -> horny ->
+-- sexting one step at a time. Assignments are scoped PER ALBUM (album_key is
+-- the album uuid, or 'all' for the album-less view) so every album keeps its
+-- own independent ladder.
+create table if not exists vault_script_layers (
+  item_id uuid not null references vault_items(id) on delete cascade,
+  album_key text not null default 'all',
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  layer text not null check (layer in ('casual', 'flirt', 'tease', 'horny', 'sexting')),
+  updated_at timestamptz not null default now(),
+  primary key (item_id, album_key)
+);
+
+-- Upgrade path from the first per-item version of this table (no-op on fresh
+-- databases): keep old assignments as the 'all' scope.
+alter table vault_script_layers add column if not exists album_key text not null default 'all';
+do $$
+begin
+  if exists (
+    select 1 from information_schema.table_constraints
+    where table_name = 'vault_script_layers'
+      and constraint_type = 'PRIMARY KEY'
+      and constraint_name = 'vault_script_layers_pkey'
+  ) and not exists (
+    select 1 from information_schema.key_column_usage
+    where table_name = 'vault_script_layers'
+      and constraint_name = 'vault_script_layers_pkey'
+      and column_name = 'album_key'
+  ) then
+    alter table vault_script_layers drop constraint vault_script_layers_pkey;
+    alter table vault_script_layers add primary key (item_id, album_key);
+  end if;
+end $$;
+
+create index if not exists vault_script_layers_owner_idx on vault_script_layers (owner_id);
+
+alter table vault_script_layers enable row level security;
+
 -- Custom inbox categories (tabs); a chat can belong to any number of them
 create table if not exists chat_categories (
   id uuid primary key default gen_random_uuid(),

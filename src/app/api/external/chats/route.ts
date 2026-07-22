@@ -3,6 +3,10 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ownerFromApiKey } from "@/lib/apiKey";
 import { mediaUrl } from "@/lib/utils";
 
+// Loading hundreds of chats with messages can exceed the default serverless
+// budget — allow up to 60s so the list never dies mid-page.
+export const maxDuration = 60;
+
 // Allow the Orion desktop app (or any external client) to call this.
 const CORS = {
   "Access-Control-Allow-Origin": "*",
