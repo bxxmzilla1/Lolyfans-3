@@ -860,9 +860,7 @@ export default function ChatView({
               <span className="text-xs text-muted">Tokens</span>
               <span className="text-[11px] text-muted">
                 {parseInt(lockPrice, 10) > 0
-                  ? `≈ $${((parseInt(lockPrice, 10) * CENTS_PER_TOKEN) / 100)
-                      .toFixed(2)
-                      .replace(/\.00$/, "")} · fan pays once to unlock all`
+                  ? "fan pays once to unlock all"
                   : "free / manual lock"}
               </span>
             </div>
