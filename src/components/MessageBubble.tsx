@@ -48,11 +48,6 @@ export type Message = {
   created_at: string;
 };
 
-export function formatPrice(cents: number): string {
-  const dollars = cents / 100;
-  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
-}
-
 /**
  * Attached links ("[Payment Link]{25}(https://…)") show their label — or the
  * URL itself when no label was given. Only on LOCKED media does an unlabeled
@@ -183,7 +178,7 @@ export default function MessageBubble({
   const linkPrice = message.content ? linkPriceIn(message.content) : null;
   const myPriceLabel = mine
     ? price > 0
-      ? formatPrice(price)
+      ? formatTokens(tokensForCents(price))
       : linkPrice
         ? `$${linkPrice}`
         : null
