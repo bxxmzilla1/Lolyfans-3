@@ -1192,6 +1192,9 @@ export default function ChatView({
               <p className="text-[11px] text-muted text-center">
                 One-tap with your saved card · secured by Stripe
               </p>
+              <p className="text-[11px] text-muted/80 text-center -mt-2">
+                All Token purchases are final and non-refundable.
+              </p>
             </div>
           </div>
         </Portal>
