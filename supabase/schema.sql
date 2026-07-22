@@ -81,6 +81,43 @@ alter table messages add column if not exists hidden boolean not null default fa
 
 create index if not exists messages_chat_created_idx on messages (chat_id, created_at);
 
+-- One-shot inbox stats: latest message preview + unread count for every chat
+-- of an owner in a single query. Replaces thousands of per-chat lookups that
+-- made the inbox time out once an account had many fans.
+create or replace function owner_chat_stats(p_owner_id uuid)
+returns table (
+  chat_id uuid,
+  preview_content text,
+  preview_media_type text,
+  preview_sender text,
+  preview_created_at timestamptz,
+  unread_count bigint
+) language sql stable as $$
+  select
+    c.id,
+    m.content,
+    m.media_type,
+    m.sender,
+    m.created_at,
+    coalesce(u.cnt, 0)
+  from chats c
+  left join lateral (
+    select content, media_type, sender, created_at
+    from messages
+    where chat_id = c.id
+    order by created_at desc
+    limit 1
+  ) m on true
+  left join lateral (
+    select count(*) as cnt
+    from messages
+    where chat_id = c.id
+      and sender = 'guest'
+      and created_at > coalesce(c.last_read_at, 'epoch'::timestamptz)
+  ) u on true
+  where c.owner_id = p_owner_id
+$$;
+
 -- Vault: private media library with optional albums
 create table if not exists vault_albums (
   id uuid primary key default gen_random_uuid(),

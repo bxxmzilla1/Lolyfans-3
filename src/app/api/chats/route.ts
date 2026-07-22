@@ -32,34 +32,77 @@ export async function GET() {
     created_at: string;
     sender: string;
   };
+  type Stat = { id: string; preview: Preview | null; unread: number };
 
-  // One latest message + unread count per chat (the old global 1000-row fetch
-  // missed previews once an owner had more than that many messages total).
-  const stats = await Promise.all(
-    (chats ?? []).map(async (chat) => {
-      const [{ data: latest }, { count }] = await Promise.all([
-        db
-          .from("messages")
-          .select("chat_id, content, media_type, created_at, sender")
-          .eq("chat_id", chat.id)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        db
-          .from("messages")
-          .select("id", { count: "exact", head: true })
-          .eq("chat_id", chat.id)
-          .eq("sender", "guest")
-          .gt("created_at", chat.last_read_at || "1970-01-01T00:00:00Z"),
-      ]);
-      return {
-        id: chat.id,
-        preview: (latest as Preview | null) ?? null,
-        unread: count ?? 0,
-      };
-    })
-  );
-  const byId = new Map(stats.map((s) => [s.id, s]));
+  // Latest message preview + unread count per chat via one SQL round trip
+  // (owner_chat_stats in schema.sql). Firing 2 queries per chat froze the
+  // inbox once an account grew past a few hundred fans.
+  let byId = new Map<string, Stat>();
+  const { data: statRows, error: statsError } = await db.rpc("owner_chat_stats", {
+    p_owner_id: ownerId,
+  });
+
+  if (!statsError && Array.isArray(statRows)) {
+    byId = new Map(
+      (statRows as {
+        chat_id: string;
+        preview_content: string | null;
+        preview_media_type: string | null;
+        preview_sender: string | null;
+        preview_created_at: string | null;
+        unread_count: number;
+      }[]).map((row) => [
+        row.chat_id,
+        {
+          id: row.chat_id,
+          preview: row.preview_created_at
+            ? {
+                chat_id: row.chat_id,
+                content: row.preview_content,
+                media_type: row.preview_media_type,
+                created_at: row.preview_created_at,
+                sender: row.preview_sender ?? "guest",
+              }
+            : null,
+          unread: Number(row.unread_count) || 0,
+        },
+      ])
+    );
+  } else {
+    // Function not installed yet: per-chat lookups for the most recent chats
+    // only, in small batches, so the endpoint always answers.
+    const recent = (chats ?? []).slice(0, 100);
+    const BATCH = 20;
+    const stats: Stat[] = [];
+    for (let i = 0; i < recent.length; i += BATCH) {
+      const batch = await Promise.all(
+        recent.slice(i, i + BATCH).map(async (chat) => {
+          const [{ data: latest }, { count }] = await Promise.all([
+            db
+              .from("messages")
+              .select("chat_id, content, media_type, created_at, sender")
+              .eq("chat_id", chat.id)
+              .order("created_at", { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            db
+              .from("messages")
+              .select("id", { count: "exact", head: true })
+              .eq("chat_id", chat.id)
+              .eq("sender", "guest")
+              .gt("created_at", chat.last_read_at || "1970-01-01T00:00:00Z"),
+          ]);
+          return {
+            id: chat.id as string,
+            preview: (latest as Preview | null) ?? null,
+            unread: count ?? 0,
+          };
+        })
+      );
+      stats.push(...batch);
+    }
+    byId = new Map(stats.map((s) => [s.id, s]));
+  }
 
   return NextResponse.json({
     ownerId,
