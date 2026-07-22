@@ -47,7 +47,7 @@ export function messagePreviewText(content: string): string {
   const cleaned = stripPaymentReceipt(content)
     .replace(LABELED_LINK_REGEX, (_m, label: string) => label?.trim() || "Link")
     .trim();
-  const tip = cleaned.match(/^💸 Tip · (\$[\d.]+)/);
+  const tip = cleaned.match(/^💸 Tip · (\$[\d.]+|[\d,]+ Tokens?)/i);
   if (tip) return `Tip · ${tip[1]}`;
   return cleaned;
 }

@@ -24,7 +24,7 @@ export async function recordUnlock(opts: {
   });
 }
 
-/** Format a tip bubble's text content. */
+/** Format a tip bubble's text content (legacy dollar tips). */
 export function tipMessageContent(amountCents: number, caption: string): string {
   const dollars = (amountCents / 100).toFixed(2).replace(/\.00$/, "");
   const head = `💸 Tip · $${dollars}`;
@@ -32,15 +32,86 @@ export function tipMessageContent(amountCents: number, caption: string): string 
   return body ? `${head}\n${body}` : head;
 }
 
+/** Format a token tip bubble's text content. */
+export function tokenTipMessageContent(tokens: number, caption: string): string {
+  const head = `💸 Tip · ${tokens} Tokens`;
+  const body = caption.trim();
+  return body ? `${head}\n${body}` : head;
+}
+
+/**
+ * Credit purchased tokens exactly once per Stripe payment (the webhook and
+ * the return-URL confirm can both call this). Returns the new balance, or
+ * null when this payment was already credited.
+ */
+export async function creditTokens(opts: {
+  chatId: string;
+  tokens: number;
+  paymentIntentId: string | null;
+}): Promise<number | null> {
+  const db = supabaseAdmin();
+  const { error: ledgerError } = await db.from("token_transactions").insert({
+    chat_id: opts.chatId,
+    amount: opts.tokens,
+    kind: "topup",
+    stripe_payment_intent_id: opts.paymentIntentId,
+  });
+  // Unique payment-intent index: a duplicate means it was already credited.
+  if (ledgerError) return null;
+
+  const { data: balance, error } = await db.rpc("credit_tokens", {
+    p_chat_id: opts.chatId,
+    p_amount: opts.tokens,
+  });
+  if (error) throw new Error(error.message);
+  return typeof balance === "number" && balance >= 0 ? balance : null;
+}
+
+/**
+ * Spend tokens atomically. Returns the new balance, or null when the wallet
+ * doesn't cover the amount.
+ */
+export async function spendTokens(opts: {
+  chatId: string;
+  tokens: number;
+  kind: "unlock" | "tip";
+  messageId?: string | null;
+}): Promise<number | null> {
+  const db = supabaseAdmin();
+  const { data: balance, error } = await db.rpc("spend_tokens", {
+    p_chat_id: opts.chatId,
+    p_amount: opts.tokens,
+  });
+  if (error) throw new Error(error.message);
+  if (typeof balance !== "number" || balance < 0) return null;
+
+  await db.from("token_transactions").insert({
+    chat_id: opts.chatId,
+    amount: -opts.tokens,
+    kind: opts.kind,
+    message_id: opts.messageId ?? null,
+  });
+  return balance;
+}
+
+/** Current token balance of a fan chat. */
+export async function tokenBalance(chatId: string): Promise<number> {
+  const { data } = await supabaseAdmin()
+    .from("chats")
+    .select("token_balance")
+    .eq("id", chatId)
+    .maybeSingle();
+  return (data?.token_balance as number | undefined) ?? 0;
+}
+
 /** Persist a tip as a guest chat message and notify both sides. */
 export async function postTipMessage(opts: {
   chatId: string;
-  amountCents: number;
-  caption: string;
+  content: string;
   ownerId: string;
 }) {
   const db = supabaseAdmin();
-  const content = tipMessageContent(opts.amountCents, opts.caption);
+  const content = opts.content;
   const { data: message, error } = await db
     .from("messages")
     .insert({
@@ -212,8 +283,26 @@ export async function fulfillCheckout(session: Stripe.Checkout.Session) {
   }
   const kind = session.metadata?.kind;
   const chatId = session.metadata?.chatId;
-  if (!chatId || (kind !== "unlock" && kind !== "tip" && kind !== "subscription")) {
+  if (
+    !chatId ||
+    (kind !== "unlock" && kind !== "tip" && kind !== "subscription" && kind !== "topup")
+  ) {
     return { ok: false as const, kind: null };
+  }
+
+  // Token top-up: save the card for one-tap next time, then credit the pack
+  // (idempotent per payment intent).
+  if (kind === "topup") {
+    const tokens = Math.max(0, Math.round(Number(session.metadata?.tokens || 0)));
+    if (!tokens) return { ok: false as const, kind: "topup" as const };
+    const { customerId, paymentMethodId } = await paymentMethodFromSession(session);
+    await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+    const paymentIntentId =
+      typeof session.payment_intent === "string"
+        ? session.payment_intent
+        : session.payment_intent?.id ?? null;
+    await creditTokens({ chatId, tokens, paymentIntentId });
+    return { ok: true as const, kind: "topup" as const, messageId: null };
   }
 
   if (kind === "subscription") {

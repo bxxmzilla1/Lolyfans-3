@@ -13,6 +13,15 @@ import {
 import MessageBubble, { Message } from "./MessageBubble";
 import Portal from "./Portal";
 import {
+  TIP_TOKEN_PRESETS,
+  MIN_TIP_TOKENS,
+  TOKEN_PACKS,
+  formatTokens,
+  packPriceLabel,
+  packTotalTokens,
+  tokensForCents,
+} from "@/lib/tokens";
+import {
   IconBack,
   IconChat,
   IconCheck,
@@ -28,13 +37,6 @@ import {
 } from "./Icons";
 
 const MAX_ATTACHMENTS = 12;
-
-const TIP_PRESETS_CENTS = [500, 1000, 2500, 5000, 10000];
-
-function formatTipDollars(cents: number) {
-  const dollars = (cents / 100).toFixed(2).replace(/\.00$/, "");
-  return `$${dollars}`;
-}
 
 export default function ChatView({
   chatId,
@@ -60,10 +62,15 @@ export default function ChatView({
   const [sendLocked, setSendLocked] = useState(false);
   const [lockPrice, setLockPrice] = useState("");
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
-  const [tipCents, setTipCents] = useState<number | null>(null);
+  const [tipTokens, setTipTokens] = useState<number | null>(null);
   const [tipPickerOpen, setTipPickerOpen] = useState(false);
   const [tipCustom, setTipCustom] = useState("");
   const [tipping, setTipping] = useState(false);
+  // Token wallet (guest side): balance, the top-up sheet, and why it opened.
+  const [balance, setBalance] = useState<number | null>(null);
+  const [walletOpen, setWalletOpen] = useState(false);
+  const [walletNote, setWalletNote] = useState<string | null>(null);
+  const [toppingUp, setToppingUp] = useState<string | null>(null);
   const [peerTyping, setPeerTyping] = useState(false);
   const [msgSelectMode, setMsgSelectMode] = useState(false);
   const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
@@ -221,13 +228,30 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, load]);
 
-  // After Stripe Checkout: confirm the session (covers webhook 308 failures),
-  // then refresh so unlocks/tips appear immediately.
+  const refreshWallet = useCallback(async () => {
+    if (role !== "guest") return;
+    try {
+      const res = await fetch(`/api/payments/wallet?chatId=${chatId}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.balance === "number") setBalance(data.balance);
+      }
+    } catch {
+      // Balance pill just stays hidden until the next refresh.
+    }
+  }, [role, chatId]);
+
+  useEffect(() => {
+    refreshWallet();
+  }, [refreshWallet]);
+
+  // After Stripe Checkout (token top-up): confirm the session (covers webhook
+  // 308 failures), then refresh the wallet and the thread.
   useEffect(() => {
     if (role !== "guest") return;
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
-    const paid = params.get("paid") || params.get("tipped");
+    const paid = params.get("paid") || params.get("tipped") || params.get("topup");
     if (!sessionId && !paid) return;
     window.history.replaceState({}, "", "/chat");
     (async () => {
@@ -238,9 +262,9 @@ export default function ChatView({
           body: JSON.stringify({ sessionId }),
         }).catch(() => {});
       }
-      await load();
+      await Promise.all([load(), refreshWallet()]);
     })();
-  }, [role, load]);
+  }, [role, load, refreshWallet]);
 
   useEffect(() => {
     scrollToBottom(true);
@@ -258,8 +282,8 @@ export default function ChatView({
     });
   }
 
-  function pickTipAmount(cents: number) {
-    setTipCents(cents);
+  function pickTipAmount(tokens: number) {
+    setTipTokens(tokens);
     setTipPickerOpen(false);
     setTipCustom("");
     setAttachments([]);
@@ -267,29 +291,68 @@ export default function ChatView({
     setReplyTo(null);
   }
 
+  /** Open the top-up sheet, optionally explaining why (e.g. short on tokens). */
+  function openWallet(note?: string) {
+    setWalletNote(note ?? null);
+    setWalletOpen(true);
+  }
+
+  /** Buy a token pack: one tap with a saved card, Stripe Checkout otherwise. */
+  async function topUp(packId: string) {
+    if (toppingUp) return;
+    setToppingUp(packId);
+    try {
+      const res = await fetch("/api/payments/topup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, packId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.topped) {
+        if (typeof data.balance === "number") setBalance(data.balance);
+        setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
+        setToppingUp(null);
+        return;
+      }
+      if (res.ok && data.checkoutUrl) {
+        // First purchase: Stripe saves the card so next top-ups are one tap.
+        window.location.href = data.checkoutUrl;
+        return;
+      }
+      alert(data.error || "Could not top up");
+    } catch {
+      alert("Could not top up");
+    }
+    setToppingUp(null);
+  }
+
   async function sendTip() {
-    if (role !== "guest" || !tipCents || tipping) return;
+    if (role !== "guest" || !tipTokens || tipping) return;
     const caption = text.trim();
     setTipping(true);
     try {
       const res = await fetch("/api/payments/tip", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, amountCents: tipCents, caption }),
+        body: JSON.stringify({ chatId, tokens: tipTokens, caption }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.tipped && data.message) {
         setMessages((prev) =>
           prev.some((m) => m.id === data.message.id) ? prev : [...prev, data.message]
         );
+        if (typeof data.balance === "number") setBalance(data.balance);
         setText("");
-        setTipCents(null);
+        setTipTokens(null);
         setTipping(false);
         return;
       }
-      if (res.ok && data.checkoutUrl) {
-        // Keep tipping spinner until Stripe navigates away.
-        window.location.href = data.checkoutUrl;
+      if (res.status === 402) {
+        if (typeof data.balance === "number") setBalance(data.balance);
+        openWallet(
+          `You need ${formatTokens(data.needTokens ?? tipTokens)} for this tip — top up to send it.`
+        );
+        setTipping(false);
         return;
       }
       alert(data.error || "Could not send tip");
@@ -300,7 +363,7 @@ export default function ChatView({
   }
 
   async function send() {
-    if (tipCents) {
+    if (tipTokens) {
       await sendTip();
       return;
     }
@@ -385,8 +448,8 @@ export default function ChatView({
     }
   }
 
-  // One-tap Stripe unlock: charges the saved card, or opens Checkout the
-  // first time (which saves the card for next unlocks).
+  // Instant token unlock: spends from the wallet; when the balance is short
+  // the top-up sheet opens instead (one-tap purchase with a saved card).
   async function unlockMessage(message: Message) {
     if (unlockingId) return;
     setUnlockingId(message.id);
@@ -401,10 +464,14 @@ export default function ChatView({
         setMessages((prev) =>
           prev.map((m) => (m.id === message.id ? { ...m, unlocked: true } : m))
         );
-      } else if (res.ok && data.checkoutUrl) {
-        // Keep the unlocking spinner until Stripe navigates away.
-        window.location.href = data.checkoutUrl;
-        return;
+        if (typeof data.balance === "number") setBalance(data.balance);
+      } else if (res.status === 402) {
+        if (typeof data.balance === "number") setBalance(data.balance);
+        openWallet(
+          data.needTokens
+            ? `This unlock costs ${formatTokens(data.needTokens)} — top up to see it.`
+            : "Top up your wallet to unlock this."
+        );
       } else if (!res.ok) {
         alert(data.error || "Could not unlock");
       }
@@ -492,7 +559,7 @@ export default function ChatView({
     try {
       const { path, type } = JSON.parse(data);
       if (path && (type === "image" || type === "video")) {
-        setTipCents(null);
+        setTipTokens(null);
         setAttachments((prev) => {
           if (prev.some((a) => a.path === path)) return prev;
           if (prev.length >= MAX_ATTACHMENTS) return prev;
@@ -509,7 +576,7 @@ export default function ChatView({
       .filter((f) => !!fileKind(f))
       .slice(0, MAX_ATTACHMENTS);
     if (list.length === 0) return;
-    setTipCents(null);
+    setTipTokens(null);
     setUploading(true);
     const uploaded: { path: string; type: MediaKind }[] = [];
     try {
@@ -703,17 +770,17 @@ export default function ChatView({
         </div>
       )}
 
-      {tipCents != null && (
+      {tipTokens != null && (
         <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line flex items-center gap-3 fade-up">
           <span className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center shrink-0">
             <IconTip className="w-4 h-4" />
           </span>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-semibold text-accent">
-              Tip {formatTipDollars(tipCents)}
+              Tip {formatTokens(tipTokens)}
             </p>
             <p className="text-xs text-muted">
-              Add an optional note below, then send to pay
+              Add an optional note below, then send
             </p>
           </div>
           <button
@@ -723,7 +790,7 @@ export default function ChatView({
             Edit
           </button>
           <button
-            onClick={() => setTipCents(null)}
+            onClick={() => setTipTokens(null)}
             className="text-muted text-sm px-1"
             aria-label="Cancel tip"
           >
@@ -790,7 +857,7 @@ export default function ChatView({
               />
               <span className="text-[11px] text-muted">
                 {parseFloat(lockPrice) > 0
-                  ? "fan pays once to unlock all"
+                  ? `fan pays ${formatTokens(tokensForCents(Math.round(parseFloat(lockPrice) * 100)))} to unlock all`
                   : "free / manual lock"}
               </span>
             </div>
@@ -804,7 +871,7 @@ export default function ChatView({
         <div className="flex items-end gap-2 bg-card2/80 border border-line2 rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
             onClick={() => {
-              setTipCents(null);
+              setTipTokens(null);
               fileRef.current?.click();
             }}
             disabled={uploading || tipping}
@@ -830,7 +897,7 @@ export default function ChatView({
               onClick={() => setTipPickerOpen(true)}
               disabled={tipping}
               className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center transition-colors disabled:opacity-50 ${
-                tipCents != null
+                tipTokens != null
                   ? "bg-accent text-white glow-accent"
                   : "bg-transparent border border-line text-muted hover:text-fg"
               }`}
@@ -838,6 +905,19 @@ export default function ChatView({
               title="Send a tip"
             >
               <IconTip className="w-4.5 h-4.5" />
+            </button>
+          )}
+          {role === "guest" && balance !== null && (
+            <button
+              onClick={() => openWallet()}
+              className="h-9 px-2.5 rounded-xl shrink-0 flex items-center gap-1 border border-line text-muted hover:text-fg transition-colors"
+              aria-label="Your token wallet"
+              title="Your token wallet"
+            >
+              <IconTip className="w-4 h-4 text-accent" />
+              <span className="text-xs font-bold tabular-nums">
+                {balance.toLocaleString("en-US")}
+              </span>
             </button>
           )}
           {role === "owner" && (
@@ -899,32 +979,32 @@ export default function ChatView({
             value={text}
             onChange={(e) => {
               setText(e.target.value);
-              if (e.target.value && tipCents == null) notifyTyping();
+              if (e.target.value && tipTokens == null) notifyTyping();
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (tipCents != null) sendTip();
+                if (tipTokens != null) sendTip();
                 else send();
               }
             }}
-            placeholder={tipCents != null ? "Add a note (optional)…" : "Message…"}
+            placeholder={tipTokens != null ? "Add a note (optional)…" : "Message…"}
             rows={1}
             disabled={tipping}
             className="flex-1 bg-transparent resize-none max-h-32 py-2 text-[15px] placeholder:text-muted disabled:opacity-60"
           />
           <button
-            onClick={() => (tipCents != null ? sendTip() : send())}
+            onClick={() => (tipTokens != null ? sendTip() : send())}
             disabled={
               tipping ||
               uploading ||
-              (tipCents == null &&
+              (tipTokens == null &&
                 !text.trim() &&
                 attachments.length === 0 &&
                 !linkAttachment)
             }
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-40 flex items-center justify-center active:opacity-80 transition-opacity"
-            aria-label={tipCents != null ? "Send tip" : "Send"}
+            aria-label={tipTokens != null ? "Send tip" : "Send"}
           >
             {tipping ? (
               <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
@@ -956,52 +1036,148 @@ export default function ChatView({
                 </button>
               </div>
               <p className="text-sm text-muted -mt-2">
-                Pick an amount. You can add a note in the chat box before sending.
+                Pick an amount in Tokens. You can add a note in the chat box before sending.
               </p>
               <div className="grid grid-cols-3 gap-2">
-                {TIP_PRESETS_CENTS.map((cents) => (
+                {TIP_TOKEN_PRESETS.map((tokens) => (
                   <button
-                    key={cents}
-                    onClick={() => pickTipAmount(cents)}
+                    key={tokens}
+                    onClick={() => pickTipAmount(tokens)}
                     className={`rounded-xl border px-3 py-3 text-sm font-semibold transition-colors ${
-                      tipCents === cents
+                      tipTokens === tokens
                         ? "bg-accent text-white border-accent"
                         : "bg-card2 border-line hover:border-accent"
                     }`}
                   >
-                    {formatTipDollars(cents)}
+                    {tokens.toLocaleString("en-US")}
                   </button>
                 ))}
               </div>
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-muted">Custom amount</label>
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted">$</span>
+                  <IconTip className="w-4 h-4 text-accent shrink-0" />
                   <input
                     value={tipCustom}
-                    onChange={(e) => setTipCustom(e.target.value.replace(/[^\d.]/g, ""))}
+                    onChange={(e) => setTipCustom(e.target.value.replace(/[^\d]/g, ""))}
                     onKeyDown={(e) => {
                       if (e.key !== "Enter") return;
-                      const cents = Math.round(parseFloat(tipCustom) * 100);
-                      if (cents >= 100) pickTipAmount(cents);
+                      const tokens = Math.round(parseFloat(tipCustom));
+                      if (tokens >= MIN_TIP_TOKENS) pickTipAmount(tokens);
                     }}
-                    inputMode="decimal"
-                    placeholder="25"
+                    inputMode="numeric"
+                    placeholder="250"
                     className="flex-1 bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
                   />
                   <button
                     onClick={() => {
-                      const cents = Math.round(parseFloat(tipCustom) * 100);
-                      if (cents >= 100) pickTipAmount(cents);
+                      const tokens = Math.round(parseFloat(tipCustom));
+                      if (tokens >= MIN_TIP_TOKENS) pickTipAmount(tokens);
                     }}
-                    disabled={!(Math.round(parseFloat(tipCustom) * 100) >= 100)}
+                    disabled={!(Math.round(parseFloat(tipCustom)) >= MIN_TIP_TOKENS)}
                     className="rounded-xl bg-accent text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
                   >
                     Use
                   </button>
                 </div>
-                <p className="text-[11px] text-muted">Minimum $1</p>
+                <p className="text-[11px] text-muted">Minimum {MIN_TIP_TOKENS} Tokens</p>
               </div>
+              {balance !== null && (
+                <div className="flex items-center justify-between rounded-xl bg-card2 border border-line px-3 py-2.5">
+                  <p className="text-xs text-muted">
+                    Wallet:{" "}
+                    <span className="font-bold text-fg">{formatTokens(balance)}</span>
+                  </p>
+                  <button
+                    onClick={() => {
+                      setTipPickerOpen(false);
+                      openWallet();
+                    }}
+                    className="text-xs font-semibold text-accent"
+                  >
+                    Top up
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {walletOpen && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
+            onClick={() => setWalletOpen(false)}
+          >
+            <div
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-4 fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-bold">Your wallet</p>
+                <button
+                  onClick={() => setWalletOpen(false)}
+                  className="text-muted text-sm px-1"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex items-center gap-2.5 rounded-xl bg-card2 border border-line px-4 py-3">
+                <span className="w-9 h-9 rounded-full bg-accent/15 text-accent flex items-center justify-center shrink-0">
+                  <IconTip className="w-5 h-5" />
+                </span>
+                <div>
+                  <p className="text-lg font-extrabold leading-tight tabular-nums">
+                    {(balance ?? 0).toLocaleString("en-US")}{" "}
+                    <span className="text-sm font-semibold text-muted">Tokens</span>
+                  </p>
+                  <p className="text-[11px] text-muted">Spend on unlocks & tips</p>
+                </div>
+              </div>
+              {walletNote && (
+                <p className="text-sm text-accent font-semibold -mt-1">{walletNote}</p>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                {TOKEN_PACKS.map((pack) => {
+                  const total = packTotalTokens(pack);
+                  const busy = toppingUp === pack.id;
+                  return (
+                    <button
+                      key={pack.id}
+                      onClick={() => topUp(pack.id)}
+                      disabled={!!toppingUp}
+                      className={`relative rounded-xl border px-3 py-3 text-left transition-colors disabled:opacity-60 ${
+                        pack.tag === "Most popular"
+                          ? "border-accent bg-accent/10"
+                          : "bg-card2 border-line hover:border-accent"
+                      }`}
+                    >
+                      {pack.tag && (
+                        <span className="absolute -top-2 right-2 rounded-full bg-accent text-white text-[10px] font-bold px-2 py-0.5">
+                          {pack.tag}
+                        </span>
+                      )}
+                      <p className="text-base font-extrabold tabular-nums">
+                        {total.toLocaleString("en-US")}
+                        <span className="text-xs font-semibold text-muted"> Tokens</span>
+                      </p>
+                      {pack.bonusTokens > 0 && (
+                        <p className="text-[11px] font-semibold text-emerald-500">
+                          incl. +{pack.bonusTokens.toLocaleString("en-US")} free
+                        </p>
+                      )}
+                      <p className="mt-1 text-sm font-bold text-accent">
+                        {busy ? "Processing…" : packPriceLabel(pack)}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-muted text-center">
+                One-tap with your saved card · secured by Stripe
+              </p>
             </div>
           </div>
         </Portal>

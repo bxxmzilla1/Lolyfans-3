@@ -11,6 +11,7 @@ import {
   mediaItemsFromMessage,
   type MediaItem,
 } from "@/lib/utils";
+import { formatTokens, tokensForCents } from "@/lib/tokens";
 import {
   IconBack,
   IconCheck,
@@ -24,7 +25,8 @@ import {
 } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
 
-const TIP_LINE_RE = /^💸 Tip · \$([\d.]+)(?:\n([\s\S]*))?$/;
+// Token tips ("💸 Tip · 100 Tokens") and legacy dollar tips ("💸 Tip · $10").
+const TIP_LINE_RE = /^💸 Tip · (\$[\d.]+|[\d,]+ Tokens?)(?:\n([\s\S]*))?$/i;
 
 export type Message = {
   id: string;
@@ -240,7 +242,8 @@ export default function MessageBubble({
             <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
             {payToUnlock ? (
               <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent text-white text-sm font-bold px-4 py-1.5 shadow-lg">
-                Unlock {formatPrice(price)}
+                <IconTip className="w-4 h-4" />
+                Unlock {formatTokens(tokensForCents(price))}
               </span>
             ) : (
               blurredPrice && (
@@ -257,7 +260,7 @@ export default function MessageBubble({
             e.stopPropagation();
             onUnlock?.(message);
           }}
-          aria-label={`Unlock for ${formatPrice(price)}`}
+          aria-label={`Unlock for ${formatTokens(tokensForCents(price))}`}
           className="absolute inset-0 z-[15] cursor-pointer"
         />
       ) : unlocking ? (
@@ -423,7 +426,7 @@ export default function MessageBubble({
             </span>
             <div className="min-w-0">
               <p className={`text-[15px] font-semibold leading-snug ${mine ? "text-white" : "text-fg"}`}>
-                Tip · ${tipMatch[1]}
+                Tip · {tipMatch[1]}
               </p>
               {tipMatch[2]?.trim() && (
                 <p className={`mt-0.5 text-[14px] leading-snug whitespace-pre-wrap break-words ${

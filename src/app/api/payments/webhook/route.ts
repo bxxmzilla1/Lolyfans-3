@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
+  creditTokens,
   fulfillCheckout,
   recordLifetimeSubscription,
   recordUnlock,
@@ -58,7 +59,15 @@ export async function POST(req: NextRequest) {
         : pi.payment_method?.id ?? null;
     const customerId = typeof pi.customer === "string" ? pi.customer : null;
 
-    if (pi.metadata?.kind === "unlock" && pi.metadata.messageId) {
+    if (pi.metadata?.kind === "topup") {
+      // Token top-up (one-tap or Checkout). creditTokens is idempotent per
+      // payment intent, so double delivery with /topup or /confirm is safe.
+      const tokens = Math.max(0, Math.round(Number(pi.metadata.tokens || 0)));
+      if (tokens > 0) {
+        await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+        await creditTokens({ chatId, tokens, paymentIntentId: pi.id });
+      }
+    } else if (pi.metadata?.kind === "unlock" && pi.metadata.messageId) {
       await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
       await recordUnlock({
         messageId: pi.metadata.messageId,

@@ -345,6 +345,53 @@ create index if not exists message_unlocks_chat_idx on message_unlocks (chat_id)
 alter table chats add column if not exists stripe_customer_id text;
 alter table chats add column if not exists stripe_payment_method_id text;
 
+-- Token wallet: fans top up tokens with Stripe (one-tap after the first
+-- purchase) and spend them on unlocks and tips inside the chat.
+alter table chats add column if not exists token_balance int not null default 0;
+
+-- Every token movement: positive = top-up credit, negative = spend.
+create table if not exists token_transactions (
+  id uuid primary key default gen_random_uuid(),
+  chat_id uuid not null references chats(id) on delete cascade,
+  amount int not null,
+  kind text not null check (kind in ('topup', 'unlock', 'tip')),
+  message_id uuid references messages(id) on delete set null,
+  stripe_payment_intent_id text,
+  created_at timestamptz not null default now()
+);
+alter table token_transactions enable row level security;
+create index if not exists token_tx_chat_idx on token_transactions (chat_id, created_at desc);
+-- The webhook and the return-URL confirm can both try to credit the same
+-- payment; the unique payment intent id makes the credit happen exactly once.
+create unique index if not exists token_tx_pi_idx
+  on token_transactions (stripe_payment_intent_id)
+  where stripe_payment_intent_id is not null;
+
+-- Atomic spend: only succeeds when the balance covers it. Returns the new
+-- balance, or -1 when there aren't enough tokens (or the chat is unknown).
+create or replace function spend_tokens(p_chat_id uuid, p_amount int)
+returns int language plpgsql security definer as $$
+declare new_balance int;
+begin
+  if p_amount <= 0 then return -1; end if;
+  update chats set token_balance = token_balance - p_amount
+    where id = p_chat_id and token_balance >= p_amount
+    returning token_balance into new_balance;
+  return coalesce(new_balance, -1);
+end $$;
+
+-- Atomic credit. Returns the new balance, or -1 when the chat is unknown.
+create or replace function credit_tokens(p_chat_id uuid, p_amount int)
+returns int language plpgsql security definer as $$
+declare new_balance int;
+begin
+  if p_amount <= 0 then return -1; end if;
+  update chats set token_balance = token_balance + p_amount
+    where id = p_chat_id
+    returning token_balance into new_balance;
+  return coalesce(new_balance, -1);
+end $$;
+
 -- Paid profile subscriptions (Stripe Billing). One row per fan chat + creator.
 -- status mirrors Stripe: trialing / active / canceling / past_due / canceled.
 create table if not exists subscriptions (
