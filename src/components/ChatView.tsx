@@ -868,6 +868,26 @@ export default function ChatView({
       )}
 
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {/* Token balance floats above the input so the composer keeps its space */}
+        {role === "guest" && balance !== null && (
+          <div className="flex justify-end mb-1.5">
+            <button
+              onClick={() => openWallet()}
+              className="inline-flex items-center gap-1.5 rounded-full bg-card2/90 border border-line px-3 py-1.5 text-muted hover:text-fg transition-colors backdrop-blur"
+              aria-label="Your token wallet"
+              title="Your token wallet"
+            >
+              <IconTip className="w-4 h-4 text-accent" />
+              <span className="text-xs font-bold tabular-nums text-fg">
+                {balance.toLocaleString("en-US")}
+              </span>
+              <span className="text-xs font-semibold">Tokens</span>
+              <span className="w-4 h-4 rounded-full bg-accent text-white text-[11px] font-bold leading-none flex items-center justify-center">
+                +
+              </span>
+            </button>
+          </div>
+        )}
         <div className="flex items-end gap-2 bg-card2/80 border border-line2 rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
             onClick={() => {
@@ -905,19 +925,6 @@ export default function ChatView({
               title="Send a tip"
             >
               <IconTip className="w-4.5 h-4.5" />
-            </button>
-          )}
-          {role === "guest" && balance !== null && (
-            <button
-              onClick={() => openWallet()}
-              className="h-9 px-2.5 rounded-xl shrink-0 flex items-center gap-1 border border-line text-muted hover:text-fg transition-colors"
-              aria-label="Your token wallet"
-              title="Your token wallet"
-            >
-              <IconTip className="w-4 h-4 text-accent" />
-              <span className="text-xs font-bold tabular-nums">
-                {balance.toLocaleString("en-US")}
-              </span>
             </button>
           )}
           {role === "owner" && (
