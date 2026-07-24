@@ -28,12 +28,14 @@ export default async function GuestChatPage() {
   // Messages, chat, unlocks, and the guest's location all load at the same time.
   const [{ data: messages }, { data: chat }, { data: unlocks }, location] =
     await Promise.all([
+      // Newest 500, flipped to chronological below — ascending+limit would
+      // freeze the view at the oldest 500 once a chat grows past that.
       db
         .from("messages")
         .select("*")
         .eq("chat_id", chatId)
         .eq("hidden", false)
-        .order("created_at", { ascending: true })
+        .order("created_at", { ascending: false })
         .limit(500),
       db
         .from("chats")
@@ -47,10 +49,13 @@ export default async function GuestChatPage() {
   if (!chat) redirect("/?resume=0");
 
   const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id));
-  const initialMessages = (messages ?? []).map((m) => ({
-    ...m,
-    unlocked: unlockedIds.has(m.id),
-  }));
+  const initialMessages = (messages ?? [])
+    .slice()
+    .reverse()
+    .map((m) => ({
+      ...m,
+      unlocked: unlockedIds.has(m.id),
+    }));
 
   // Keep the remembered IP fresh so this device finds its chat again even
   // after clearing history or switching browsers (IPs drift over time).

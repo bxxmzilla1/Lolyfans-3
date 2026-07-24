@@ -26,11 +26,13 @@ export default async function OwnerChatPage({
       .eq("id", chatId)
       .eq("owner_id", ownerId)
       .single(),
+    // Newest 500, flipped to chronological below — ascending+limit would
+    // freeze the view at the oldest 500 once a chat grows past that.
     db
       .from("messages")
       .select("*")
       .eq("chat_id", chatId)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
       .limit(500),
     // Paid unlocks tint the creator's own bubble green.
     db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
@@ -44,10 +46,13 @@ export default async function OwnerChatPage({
   if (!chat) notFound();
 
   const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id as string));
-  const initialMessages = (messages ?? []).map((m) => ({
-    ...m,
-    unlocked: unlockedIds.has(m.id),
-  }));
+  const initialMessages = (messages ?? [])
+    .slice()
+    .reverse()
+    .map((m) => ({
+      ...m,
+      unlocked: unlockedIds.has(m.id),
+    }));
 
   // Where the guest is chatting from: precise City, Country from their IP,
   // falling back to the country stored when they joined.

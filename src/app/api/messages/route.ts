@@ -33,16 +33,19 @@ export async function GET(req: NextRequest) {
   if (!chatId) return NextResponse.json({ error: "chatId required" }, { status: 400 });
 
   // Run the auth check and the query in parallel; data is only returned if authorized.
+  // Newest 500 first, flipped back to chronological — ascending+limit would
+  // freeze the view at the oldest 500 once a chat grows past that.
   const [auth, { data, error }] = await Promise.all([
     authorizeChat(chatId),
     supabaseAdmin()
       .from("messages")
       .select("*")
       .eq("chat_id", chatId)
-      .order("created_at", { ascending: true })
+      .order("created_at", { ascending: false })
       .limit(500),
   ]);
   if (!auth) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  data?.reverse();
 
   if (auth.role === "guest") {
     const access = await guestAccessDestination(chatId, auth.chatOwnerId);
