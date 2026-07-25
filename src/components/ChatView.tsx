@@ -266,7 +266,7 @@ export default function ChatView({
   }, [refreshWallet]);
 
   // First locked media in the chat + never topped up → the one-time offer
-  // pops up once, 2 seconds after the locked content lands.
+  // pops up once, 5 seconds after the locked content lands.
   useEffect(() => {
     if (role !== "guest" || !firstOffer) return;
     const hasLocked = messages.some(
@@ -283,7 +283,7 @@ export default function ChatView({
         localStorage.setItem(seenKey, "1");
       } catch {}
       setOfferPopup(true);
-    }, 2000);
+    }, 5000);
     return () => clearTimeout(t);
   }, [role, firstOffer, messages, chatId]);
 
