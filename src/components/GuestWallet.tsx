@@ -4,11 +4,15 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   TOKEN_PACKS,
   FIRST_TOPUP_OFFER_PACK_ID,
-  FIRST_TOPUP_OFFER_PRICE_CENTS,
   formatTokens,
   packPriceLabel,
   packTotalTokens,
 } from "@/lib/tokens";
+import {
+  DEFAULT_POPUP_OFFER,
+  offerPriceLabel,
+  type PopupOffer,
+} from "@/lib/popupOffer";
 import { mediaUrl } from "@/lib/utils";
 import GuestProfileEditor from "./GuestProfileEditor";
 import {
@@ -37,8 +41,6 @@ function priceLabel(cents: number): string {
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
-const OFFER_PRICE_LABEL = `$${(FIRST_TOPUP_OFFER_PRICE_CENTS / 100).toFixed(2)}`;
-
 function dateLabel(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
@@ -66,8 +68,10 @@ export default function GuestWallet({
   const [loading, setLoading] = useState(true);
   const [toppingUp, setToppingUp] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  // One-time offer: fans who never topped up get the VIP pack at $4.99.
+  // One-time offer: fans who never topped up get the VIP pack at the
+  // creator's configured offer price.
   const [firstOffer, setFirstOffer] = useState(false);
+  const [offer, setOffer] = useState<PopupOffer>(DEFAULT_POPUP_OFFER);
   const packsRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
@@ -79,6 +83,7 @@ export default function GuestWallet({
         if (typeof data.balance === "number") setBalance(data.balance);
         setHistory(data.history ?? []);
         setFirstOffer(!!data.firstTopupOffer);
+        if (data.offer) setOffer(data.offer);
       }
     } catch {
       // Offline — the card shows a placeholder until the next refresh.
@@ -206,12 +211,16 @@ export default function GuestWallet({
         </p>
         <div className="grid grid-cols-2 gap-2">
           {TOKEN_PACKS.map((pack) => {
-            const total = packTotalTokens(pack);
             const busy = toppingUp === pack.id;
             // First-purchase offer: the VIP pack takes the highlight
-            // (and a pulse) away from "Most popular".
-            const offer = firstOffer && pack.id === FIRST_TOPUP_OFFER_PACK_ID;
-            const highlight = offer || (pack.tag === "Most popular" && !firstOffer);
+            // (and a pulse) away from "Most popular", showing the
+            // creator's configured tokens and prices.
+            const isOffer = firstOffer && pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+            const total = isOffer ? offer.tokens : packTotalTokens(pack);
+            const bonus = isOffer
+              ? Math.max(0, offer.tokens - pack.tokens)
+              : pack.bonusTokens;
+            const highlight = isOffer || (pack.tag === "Most popular" && !firstOffer);
             return (
               <button
                 key={pack.id}
@@ -221,30 +230,30 @@ export default function GuestWallet({
                   highlight
                     ? "border-accent bg-accent/10"
                     : "bg-card2 border-line hover:border-accent"
-                } ${offer ? "offer-pulse" : ""}`}
+                } ${isOffer ? "offer-pulse" : ""}`}
               >
-                {(offer || pack.tag) && (
+                {(isOffer || pack.tag) && (
                   <span className="absolute -top-2 right-2 rounded-full bg-accent text-white text-[10px] font-bold px-2 py-0.5">
-                    {offer ? "One-time offer" : pack.tag}
+                    {isOffer ? "One-time offer" : pack.tag}
                   </span>
                 )}
                 <p className="text-base font-extrabold tabular-nums">
                   {total.toLocaleString("en-US")}
                   <span className="text-xs font-semibold text-muted"> Tokens</span>
                 </p>
-                {pack.bonusTokens > 0 && (
+                {bonus > 0 && (
                   <p className="text-[11px] font-semibold text-emerald-500">
-                    incl. +{pack.bonusTokens.toLocaleString("en-US")} free
+                    incl. +{bonus.toLocaleString("en-US")} free
                   </p>
                 )}
                 <p className="mt-1 text-sm font-bold text-accent">
                   {busy ? (
                     "Processing…"
-                  ) : offer ? (
+                  ) : isOffer ? (
                     <>
-                      {OFFER_PRICE_LABEL}{" "}
+                      {offerPriceLabel(offer.priceCents)}{" "}
                       <span className="text-[11px] font-semibold text-muted line-through">
-                        {packPriceLabel(pack)}
+                        {offerPriceLabel(offer.originalCents)}
                       </span>
                     </>
                   ) : (

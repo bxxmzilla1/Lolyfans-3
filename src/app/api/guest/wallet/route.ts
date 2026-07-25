@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { guestChats } from "@/lib/guest";
 import { TOKEN_PACKS, packTotalTokens } from "@/lib/tokens";
+import { popupOfferFromMetadata } from "@/lib/popupOffer";
 
 export type WalletHistoryEntry = {
   id: string;
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
   const chat = chats.find((c) => c.id === cookieChatId) ?? chats[0];
 
   const db = supabaseAdmin();
-  const [{ data: row }, { data: txs }] = await Promise.all([
+  const [{ data: row }, { data: txs }, { data: ownerUser }] = await Promise.all([
     db.from("chats").select("token_balance").eq("id", chat.id).maybeSingle(),
     db
       .from("token_transactions")
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
       .eq("chat_id", chat.id)
       .order("created_at", { ascending: false })
       .limit(100),
+    db.auth.admin.getUserById(chat.owner_id),
   ]);
 
   // Top-up rows carry the dollar price of the matching pack, so a fan can
@@ -61,5 +63,6 @@ export async function GET(req: NextRequest) {
     // Spends can't exist without a prior top-up, so an empty topup history
     // means the one-time first-purchase offer is still available.
     firstTopupOffer: !history.some((h) => h.kind === "topup"),
+    offer: popupOfferFromMetadata(ownerUser?.user?.user_metadata ?? {}),
   });
 }

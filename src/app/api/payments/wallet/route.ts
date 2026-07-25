@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { tokenBalance } from "@/lib/payments";
 import { TOKEN_PACKS } from "@/lib/tokens";
+import { popupOfferFromMetadata } from "@/lib/popupOffer";
 
 /** Fan wallet: current token balance + the top-up packs on offer. */
 export async function GET(req: NextRequest) {
@@ -13,18 +14,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Never topped up → the one-time first-purchase offer is still available.
-  const [balance, { count: topupCount }] = await Promise.all([
+  // Never topped up → the one-time first-purchase offer is still available,
+  // priced per the creator's Pop up Offers settings.
+  const db = supabaseAdmin();
+  const [balance, { count: topupCount }, { data: chat }] = await Promise.all([
     tokenBalance(chatId),
-    supabaseAdmin()
+    db
       .from("token_transactions")
       .select("id", { count: "exact", head: true })
       .eq("chat_id", chatId)
       .eq("kind", "topup"),
+    db.from("chats").select("owner_id").eq("id", chatId).maybeSingle(),
   ]);
+  const { data: ownerUser } = chat
+    ? await db.auth.admin.getUserById(chat.owner_id)
+    : { data: null };
   return NextResponse.json({
     balance,
     packs: TOKEN_PACKS,
     firstTopupOffer: (topupCount ?? 0) === 0,
+    offer: popupOfferFromMetadata(ownerUser?.user?.user_metadata ?? {}),
   });
 }

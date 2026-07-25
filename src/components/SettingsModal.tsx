@@ -10,6 +10,7 @@ import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
+import PopupOfferSettings from "./PopupOfferSettings";
 import WelcomeMessageEditor from "./WelcomeMessageEditor";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
@@ -22,6 +23,7 @@ import {
   IconLogout,
   IconSend,
   IconTip,
+  IconUnlock,
   IconUser,
 } from "./Icons";
 
@@ -30,6 +32,7 @@ type Section =
   | "posts"
   | "social"
   | "subscriptions"
+  | "offers"
   | "welcome"
   | "links"
   | "editor"
@@ -397,6 +400,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconTip className="w-3.5 h-3.5" /> Subscriptions
         </button>
         <button
+          onClick={() => setSection("offers")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "offers"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconUnlock className="w-3.5 h-3.5" /> Pop up Offers
+        </button>
+        <button
           onClick={() => setSection("welcome")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "welcome"
@@ -458,7 +471,10 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="flex-1 overflow-y-auto p-5 lg:p-8">
         <div
           className={`mx-auto w-full ${
-            section === "profile" || section === "welcome" || section === "subscriptions"
+            section === "profile" ||
+            section === "welcome" ||
+            section === "subscriptions" ||
+            section === "offers"
               ? "max-w-2xl"
               : section === "editor" || section === "posts"
               ? "max-w-4xl"
@@ -473,6 +489,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <SocialProofManager />
           ) : section === "subscriptions" ? (
             <SubscriptionSettings />
+          ) : section === "offers" ? (
+            <PopupOfferSettings />
           ) : section === "welcome" ? (
             <WelcomeMessageEditor />
           ) : section === "editor" ? (

@@ -7,8 +7,8 @@ import {
   packTotalTokens,
   formatTokens,
   FIRST_TOPUP_OFFER_PACK_ID,
-  FIRST_TOPUP_OFFER_PRICE_CENTS,
 } from "@/lib/tokens";
+import { popupOfferFromMetadata } from "@/lib/popupOffer";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { requestOrigin } from "@/lib/smsNotify";
 import Stripe from "stripe";
@@ -39,17 +39,16 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
   const { data: chat } = await db
     .from("chats")
-    .select("id, stripe_customer_id, stripe_payment_method_id")
+    .select("id, owner_id, stripe_customer_id, stripe_payment_method_id")
     .eq("id", chatId)
     .maybeSingle();
   if (!chat) return NextResponse.json({ error: "Chat not found" }, { status: 404 });
 
-  const tokens = packTotalTokens(pack);
   const origin = requestOrigin(req.headers);
   const s = stripe();
 
-  // First-ever top-up buying the VIP pack → the one-time offer price. The
-  // check runs server-side so the discount can't be requested twice.
+  // First-ever top-up buying the VIP pack → the creator's one-time offer.
+  // The check runs server-side so the discount can't be requested twice.
   const { count: topupCount } = await db
     .from("token_transactions")
     .select("id", { count: "exact", head: true })
@@ -57,7 +56,17 @@ export async function POST(req: NextRequest) {
     .eq("kind", "topup");
   const offerApplies =
     (topupCount ?? 0) === 0 && pack.id === FIRST_TOPUP_OFFER_PACK_ID;
-  const priceCents = offerApplies ? FIRST_TOPUP_OFFER_PRICE_CENTS : pack.priceCents;
+
+  let priceCents = pack.priceCents;
+  let tokens = packTotalTokens(pack);
+  let originalCents = pack.priceCents;
+  if (offerApplies) {
+    const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
+    const offer = popupOfferFromMetadata(ownerUser?.user?.user_metadata ?? {});
+    priceCents = offer.priceCents;
+    tokens = offer.tokens;
+    originalCents = offer.originalCents;
+  }
 
   // One-tap when we already have a saved card.
   if (chat.stripe_customer_id && chat.stripe_payment_method_id) {
@@ -111,7 +120,7 @@ export async function POST(req: NextRequest) {
           product_data: {
             name: formatTokens(tokens),
             description: offerApplies
-              ? `One-time offer — normally $${(pack.priceCents / 100).toFixed(2)}`
+              ? `One-time offer — normally $${(originalCents / 100).toFixed(2)}`
               : pack.bonusTokens > 0
                 ? `${pack.tokens} Tokens + ${pack.bonusTokens} bonus`
                 : "Token top-up",

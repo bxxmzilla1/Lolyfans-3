@@ -18,11 +18,15 @@ import {
   MIN_TIP_TOKENS,
   TOKEN_PACKS,
   FIRST_TOPUP_OFFER_PACK_ID,
-  FIRST_TOPUP_OFFER_PRICE_CENTS,
   formatTokens,
   packPriceLabel,
   packTotalTokens,
 } from "@/lib/tokens";
+import {
+  DEFAULT_POPUP_OFFER,
+  offerPriceLabel,
+  type PopupOffer,
+} from "@/lib/popupOffer";
 import {
   IconBack,
   IconChat,
@@ -41,7 +45,6 @@ import {
 const MAX_ATTACHMENTS = 12;
 
 const OFFER_PACK = TOKEN_PACKS.find((p) => p.id === FIRST_TOPUP_OFFER_PACK_ID)!;
-const OFFER_PRICE_LABEL = `$${(FIRST_TOPUP_OFFER_PRICE_CENTS / 100).toFixed(2)}`;
 
 export default function ChatView({
   chatId,
@@ -85,10 +88,12 @@ export default function ChatView({
   // The message the fan tried to accept while short on tokens — it unlocks
   // automatically the moment their top-up lands.
   const pendingUnlockIdRef = useRef<string | null>(null);
-  // One-time offer for fans who never topped up (VIP pack at $4.99): shown
-  // highlighted in the sheet, and as a popup after their first locked media.
+  // One-time offer for fans who never topped up: shown highlighted in the
+  // sheet, and as a popup after their first locked media. Tokens, prices and
+  // the popup delay come from the creator's Pop up Offers settings.
   const [firstOffer, setFirstOffer] = useState(false);
   const [offerPopup, setOfferPopup] = useState(false);
+  const [offer, setOffer] = useState<PopupOffer>(DEFAULT_POPUP_OFFER);
   const [peerTyping, setPeerTyping] = useState(false);
   const [msgSelectMode, setMsgSelectMode] = useState(false);
   const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
@@ -255,6 +260,7 @@ export default function ChatView({
         const data = await res.json();
         if (typeof data.balance === "number") setBalance(data.balance);
         setFirstOffer(!!data.firstTopupOffer);
+        if (data.offer) setOffer(data.offer);
       }
     } catch {
       // Balance pill just stays hidden until the next refresh.
@@ -266,7 +272,7 @@ export default function ChatView({
   }, [refreshWallet]);
 
   // First locked media in the chat + never topped up → the one-time offer
-  // pops up once, 7 seconds after the locked content lands.
+  // pops up once, after the creator's configured delay.
   useEffect(() => {
     if (role !== "guest" || !firstOffer) return;
     const hasLocked = messages.some(
@@ -283,9 +289,9 @@ export default function ChatView({
         localStorage.setItem(seenKey, "1");
       } catch {}
       setOfferPopup(true);
-    }, 7000);
+    }, offer.delaySeconds * 1000);
     return () => clearTimeout(t);
-  }, [role, firstOffer, messages, chatId]);
+  }, [role, firstOffer, messages, chatId, offer.delaySeconds]);
 
   // After Stripe Checkout (token top-up): confirm the session (covers webhook
   // 308 failures), refresh the wallet and the thread, then finish a pending
@@ -1240,13 +1246,17 @@ export default function ChatView({
               )}
               <div className="grid grid-cols-2 gap-2">
                 {TOKEN_PACKS.map((pack) => {
-                  const total = packTotalTokens(pack);
                   const busy = toppingUp === pack.id;
                   // First-purchase offer: the VIP pack takes the highlight
-                  // (and a pulse) away from "Most popular".
-                  const offer = firstOffer && pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+                  // (and a pulse) away from "Most popular", showing the
+                  // creator's configured tokens and prices.
+                  const isOffer = firstOffer && pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+                  const total = isOffer ? offer.tokens : packTotalTokens(pack);
+                  const bonus = isOffer
+                    ? Math.max(0, offer.tokens - pack.tokens)
+                    : pack.bonusTokens;
                   const highlight =
-                    offer || (pack.tag === "Most popular" && !firstOffer);
+                    isOffer || (pack.tag === "Most popular" && !firstOffer);
                   return (
                     <button
                       key={pack.id}
@@ -1256,30 +1266,30 @@ export default function ChatView({
                         highlight
                           ? "border-accent bg-accent/10"
                           : "bg-card2 border-line hover:border-accent"
-                      } ${offer ? "offer-pulse" : ""}`}
+                      } ${isOffer ? "offer-pulse" : ""}`}
                     >
-                      {(offer || pack.tag) && (
+                      {(isOffer || pack.tag) && (
                         <span className="absolute -top-2 right-2 rounded-full bg-accent text-white text-[10px] font-bold px-2 py-0.5">
-                          {offer ? "One-time offer" : pack.tag}
+                          {isOffer ? "One-time offer" : pack.tag}
                         </span>
                       )}
                       <p className="text-base font-extrabold tabular-nums">
                         {total.toLocaleString("en-US")}
                         <span className="text-xs font-semibold text-muted"> Tokens</span>
                       </p>
-                      {pack.bonusTokens > 0 && (
+                      {bonus > 0 && (
                         <p className="text-[11px] font-semibold text-emerald-500">
-                          incl. +{pack.bonusTokens.toLocaleString("en-US")} free
+                          incl. +{bonus.toLocaleString("en-US")} free
                         </p>
                       )}
                       <p className="mt-1 text-sm font-bold text-accent">
                         {busy ? (
                           "Processing…"
-                        ) : offer ? (
+                        ) : isOffer ? (
                           <>
-                            {OFFER_PRICE_LABEL}{" "}
+                            {offerPriceLabel(offer.priceCents)}{" "}
                             <span className="text-[11px] font-semibold text-muted line-through">
-                              {packPriceLabel(pack)}
+                              {offerPriceLabel(offer.originalCents)}
                             </span>
                           </>
                         ) : (
@@ -1324,18 +1334,20 @@ export default function ChatView({
                 One-time offer
               </p>
               <p className="relative text-4xl font-extrabold tabular-nums leading-none">
-                {packTotalTokens(OFFER_PACK).toLocaleString("en-US")}
+                {offer.tokens.toLocaleString("en-US")}
                 <span className="text-lg font-semibold text-muted"> Tokens</span>
               </p>
-              <p className="relative text-xs font-semibold text-emerald-500">
-                incl. +{OFFER_PACK.bonusTokens.toLocaleString("en-US")} free
-              </p>
+              {offer.tokens > OFFER_PACK.tokens && (
+                <p className="relative text-xs font-semibold text-emerald-500">
+                  incl. +{(offer.tokens - OFFER_PACK.tokens).toLocaleString("en-US")} free
+                </p>
+              )}
               <p className="relative">
                 <span className="text-3xl font-extrabold text-accent tabular-nums">
-                  {OFFER_PRICE_LABEL}
+                  {offerPriceLabel(offer.priceCents)}
                 </span>{" "}
                 <span className="text-base font-semibold text-muted line-through tabular-nums">
-                  {packPriceLabel(OFFER_PACK)}
+                  {offerPriceLabel(offer.originalCents)}
                 </span>
               </p>
               <p className="relative text-[11px] text-muted leading-snug">
@@ -1348,7 +1360,7 @@ export default function ChatView({
               >
                 {toppingUp
                   ? "Processing…"
-                  : `Claim ${packTotalTokens(OFFER_PACK).toLocaleString("en-US")} Tokens for ${OFFER_PRICE_LABEL}`}
+                  : `Claim ${offer.tokens.toLocaleString("en-US")} Tokens for ${offerPriceLabel(offer.priceCents)}`}
               </button>
               <p className="relative text-[10px] text-muted/80">
                 Secured by Stripe · All Token purchases are final and
