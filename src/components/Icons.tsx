@@ -54,6 +54,15 @@ export function IconTip({ className }: IconProps) {
   );
 }
 
+export function IconWallet({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M17 8V5a1 1 0 0 0-1-1H6a2 2 0 0 0 0 4h12a1 1 0 0 1 1 1v3m0 4v3a1 1 0 0 1-1 1H6a2 2 0 0 1-2-2V6" />
+      <path d="M20 12v4h-4a2 2 0 0 1 0-4h4" />
+    </Svg>
+  );
+}
+
 export function IconGear({ className }: IconProps) {
   return (
     <Svg className={className}>

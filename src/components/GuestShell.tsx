@@ -7,7 +7,7 @@ import GuestNav from "./GuestNav";
 import { GuestShellProvider } from "./GuestShellContext";
 import { useInboxSignals } from "@/lib/useInboxSignals";
 import GuestChatList from "./GuestChatList";
-import GuestProfileEditor from "./GuestProfileEditor";
+import GuestWallet from "./GuestWallet";
 import FollowButton from "./FollowButton";
 import PostFeed from "./PostFeed";
 import {
@@ -272,10 +272,10 @@ export default function GuestShell() {
                 className={tab === "profile" ? "block" : "hidden"}
                 aria-hidden={tab !== "profile"}
               >
-                <PanelShell title="Profile">
-                  <GuestProfileEditor
-                    initialName={data.profile.name}
-                    initialAvatarPath={data.profile.avatarPath}
+                <PanelShell title="Wallet">
+                  <GuestWallet
+                    profileName={data.profile.name}
+                    profileAvatarPath={data.profile.avatarPath}
                   />
                 </PanelShell>
               </div>

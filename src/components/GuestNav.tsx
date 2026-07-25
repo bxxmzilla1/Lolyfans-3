@@ -6,10 +6,10 @@ import { useGuestShell } from "./GuestShellContext";
 import { useInboxSignals, type ChatOwnerPair } from "@/lib/useInboxSignals";
 import GuestAppPresence from "./GuestAppPresence";
 import Logo from "./Logo";
-import { IconChat, IconHome, IconUser } from "./Icons";
+import { IconChat, IconHome, IconWallet } from "./Icons";
 
 /**
- * Guest navigation: Home, Chats, Profile. Soft-pushes the URL so the fan
+ * Guest navigation: Home, Chats, Wallet. Soft-pushes the URL so the fan
  * shell can keep panels mounted and switch instantly.
  */
 export default function GuestNav() {
@@ -75,7 +75,7 @@ export default function GuestNav() {
       icon: IconChat,
       badge: onChats ? 0 : unread,
     },
-    { href: "/profile", label: "Profile", icon: IconUser, badge: 0 },
+    { href: "/profile", label: "Wallet", icon: IconWallet, badge: 0 },
   ];
 
   function Badge({ count, className }: { count: number; className?: string }) {

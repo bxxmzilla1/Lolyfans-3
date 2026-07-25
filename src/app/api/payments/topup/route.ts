@@ -17,10 +17,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
   }
 
-  const { chatId, packId } = await req.json();
+  const { chatId, packId, returnTo } = await req.json();
   if (!chatId || !packId) {
     return NextResponse.json({ error: "chatId and packId required" }, { status: 400 });
   }
+  // Where Checkout drops the fan afterwards: the chat (default) or the Wallet tab.
+  const returnPath = returnTo === "profile" ? "/profile" : "/chat";
   const pack = packById(String(packId));
   if (!pack) return NextResponse.json({ error: "Unknown pack" }, { status: 400 });
 
@@ -104,8 +106,8 @@ export async function POST(req: NextRequest) {
       metadata: { chatId, kind: "topup", tokens: String(tokens), packId: pack.id },
     },
     metadata: { chatId, kind: "topup", tokens: String(tokens), packId: pack.id },
-    success_url: `${origin}/chat?topup=1&session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${origin}/chat`,
+    success_url: `${origin}${returnPath}?topup=1&session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${origin}${returnPath}`,
   });
 
   if (!session.url) {
