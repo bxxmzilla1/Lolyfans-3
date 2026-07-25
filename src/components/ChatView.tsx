@@ -17,6 +17,8 @@ import {
   TIP_TOKEN_PRESETS,
   MIN_TIP_TOKENS,
   TOKEN_PACKS,
+  FIRST_TOPUP_OFFER_PACK_ID,
+  FIRST_TOPUP_OFFER_PRICE_CENTS,
   formatTokens,
   packPriceLabel,
   packTotalTokens,
@@ -37,6 +39,9 @@ import {
 } from "./Icons";
 
 const MAX_ATTACHMENTS = 12;
+
+const OFFER_PACK = TOKEN_PACKS.find((p) => p.id === FIRST_TOPUP_OFFER_PACK_ID)!;
+const OFFER_PRICE_LABEL = `$${(FIRST_TOPUP_OFFER_PRICE_CENTS / 100).toFixed(2)}`;
 
 export default function ChatView({
   chatId,
@@ -80,6 +85,10 @@ export default function ChatView({
   // The message the fan tried to accept while short on tokens — it unlocks
   // automatically the moment their top-up lands.
   const pendingUnlockIdRef = useRef<string | null>(null);
+  // One-time offer for fans who never topped up (VIP pack at $4.99): shown
+  // highlighted in the sheet, and as a popup after their first locked media.
+  const [firstOffer, setFirstOffer] = useState(false);
+  const [offerPopup, setOfferPopup] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const [msgSelectMode, setMsgSelectMode] = useState(false);
   const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
@@ -245,6 +254,7 @@ export default function ChatView({
       if (res.ok) {
         const data = await res.json();
         if (typeof data.balance === "number") setBalance(data.balance);
+        setFirstOffer(!!data.firstTopupOffer);
       }
     } catch {
       // Balance pill just stays hidden until the next refresh.
@@ -254,6 +264,28 @@ export default function ChatView({
   useEffect(() => {
     refreshWallet();
   }, [refreshWallet]);
+
+  // First locked media in the chat + never topped up → the one-time offer
+  // pops up once, 2 seconds after the locked content lands.
+  useEffect(() => {
+    if (role !== "guest" || !firstOffer) return;
+    const hasLocked = messages.some(
+      (m) =>
+        m.sender === "owner" && m.locked && (m.price_cents ?? 0) > 0 && !m.unlocked
+    );
+    if (!hasLocked) return;
+    const seenKey = `lf-offer-seen:${chatId}`;
+    try {
+      if (localStorage.getItem(seenKey)) return;
+    } catch {}
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(seenKey, "1");
+      } catch {}
+      setOfferPopup(true);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [role, firstOffer, messages, chatId]);
 
   // After Stripe Checkout (token top-up): confirm the session (covers webhook
   // 308 failures), refresh the wallet and the thread, then finish a pending
@@ -359,6 +391,9 @@ export default function ChatView({
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.topped) {
         if (typeof data.balance === "number") setBalance(data.balance);
+        // Any successful top-up ends the first-purchase offer.
+        setFirstOffer(false);
+        setOfferPopup(false);
         setToppingUp(null);
         // The fan was mid-accept when the balance ran short: finish that
         // accept right away with the fresh tokens.
@@ -1207,20 +1242,25 @@ export default function ChatView({
                 {TOKEN_PACKS.map((pack) => {
                   const total = packTotalTokens(pack);
                   const busy = toppingUp === pack.id;
+                  // First-purchase offer: the VIP pack takes the highlight
+                  // (and a pulse) away from "Most popular".
+                  const offer = firstOffer && pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+                  const highlight =
+                    offer || (pack.tag === "Most popular" && !firstOffer);
                   return (
                     <button
                       key={pack.id}
                       onClick={() => topUp(pack.id)}
                       disabled={!!toppingUp}
                       className={`relative rounded-xl border px-3 py-3 text-left transition-colors disabled:opacity-60 ${
-                        pack.tag === "Most popular"
+                        highlight
                           ? "border-accent bg-accent/10"
                           : "bg-card2 border-line hover:border-accent"
-                      }`}
+                      } ${offer ? "offer-pulse" : ""}`}
                     >
-                      {pack.tag && (
+                      {(offer || pack.tag) && (
                         <span className="absolute -top-2 right-2 rounded-full bg-accent text-white text-[10px] font-bold px-2 py-0.5">
-                          {pack.tag}
+                          {offer ? "One-time offer" : pack.tag}
                         </span>
                       )}
                       <p className="text-base font-extrabold tabular-nums">
@@ -1233,7 +1273,18 @@ export default function ChatView({
                         </p>
                       )}
                       <p className="mt-1 text-sm font-bold text-accent">
-                        {busy ? "Processing…" : packPriceLabel(pack)}
+                        {busy ? (
+                          "Processing…"
+                        ) : offer ? (
+                          <>
+                            {OFFER_PRICE_LABEL}{" "}
+                            <span className="text-[11px] font-semibold text-muted line-through">
+                              {packPriceLabel(pack)}
+                            </span>
+                          </>
+                        ) : (
+                          packPriceLabel(pack)
+                        )}
                       </p>
                     </button>
                   );
@@ -1244,6 +1295,64 @@ export default function ChatView({
               </p>
               <p className="text-[11px] text-muted/80 text-center -mt-2">
                 All Token purchases are final and non-refundable.
+              </p>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {offerPopup && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4"
+            onClick={() => setOfferPopup(false)}
+          >
+            <div
+              className="relative bg-card border border-accent/40 rounded-3xl p-6 pt-8 w-full max-w-sm text-center space-y-2.5 fade-up overflow-hidden"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Soft accent glow behind the headline */}
+              <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-72 h-44 rounded-full bg-accent/25 blur-3xl pointer-events-none" />
+              <button
+                onClick={() => setOfferPopup(false)}
+                className="absolute top-3 right-3 text-muted text-sm px-1"
+                aria-label="Close"
+              >
+                ✕
+              </button>
+              <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
+                One-time offer
+              </p>
+              <p className="relative text-4xl font-extrabold tabular-nums leading-none">
+                {packTotalTokens(OFFER_PACK).toLocaleString("en-US")}
+                <span className="text-lg font-semibold text-muted"> Tokens</span>
+              </p>
+              <p className="relative text-xs font-semibold text-emerald-500">
+                incl. +{OFFER_PACK.bonusTokens.toLocaleString("en-US")} free
+              </p>
+              <p className="relative">
+                <span className="text-3xl font-extrabold text-accent tabular-nums">
+                  {OFFER_PRICE_LABEL}
+                </span>{" "}
+                <span className="text-base font-semibold text-muted line-through tabular-nums">
+                  {packPriceLabel(OFFER_PACK)}
+                </span>
+              </p>
+              <p className="relative text-[11px] text-muted leading-snug">
+                Only on your very first top-up — once it&apos;s gone, it&apos;s gone.
+              </p>
+              <button
+                onClick={() => topUp(OFFER_PACK.id)}
+                disabled={!!toppingUp}
+                className="relative w-full rounded-full ig-gradient glow-accent offer-pulse text-white text-sm font-bold py-3 disabled:opacity-60"
+              >
+                {toppingUp
+                  ? "Processing…"
+                  : `Claim ${packTotalTokens(OFFER_PACK).toLocaleString("en-US")} Tokens for ${OFFER_PRICE_LABEL}`}
+              </button>
+              <p className="relative text-[10px] text-muted/80">
+                Secured by Stripe · All Token purchases are final and
+                non-refundable.
               </p>
             </div>
           </div>

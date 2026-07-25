@@ -58,5 +58,8 @@ export async function GET(req: NextRequest) {
     chatId: chat.id,
     balance: row?.token_balance ?? 0,
     history,
+    // Spends can't exist without a prior top-up, so an empty topup history
+    // means the one-time first-purchase offer is still available.
+    firstTopupOffer: !history.some((h) => h.kind === "topup"),
   });
 }

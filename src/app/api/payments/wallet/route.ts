@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { tokenBalance } from "@/lib/payments";
 import { TOKEN_PACKS } from "@/lib/tokens";
@@ -12,6 +13,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const balance = await tokenBalance(chatId);
-  return NextResponse.json({ balance, packs: TOKEN_PACKS });
+  // Never topped up → the one-time first-purchase offer is still available.
+  const [balance, { count: topupCount }] = await Promise.all([
+    tokenBalance(chatId),
+    supabaseAdmin()
+      .from("token_transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("chat_id", chatId)
+      .eq("kind", "topup"),
+  ]);
+  return NextResponse.json({
+    balance,
+    packs: TOKEN_PACKS,
+    firstTopupOffer: (topupCount ?? 0) === 0,
+  });
 }

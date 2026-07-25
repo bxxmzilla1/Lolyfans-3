@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { creditTokens, ensureStripeCustomer, tokenBalance } from "@/lib/payments";
-import { packById, packTotalTokens, formatTokens } from "@/lib/tokens";
+import {
+  packById,
+  packTotalTokens,
+  formatTokens,
+  FIRST_TOPUP_OFFER_PACK_ID,
+  FIRST_TOPUP_OFFER_PRICE_CENTS,
+} from "@/lib/tokens";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { requestOrigin } from "@/lib/smsNotify";
 import Stripe from "stripe";
@@ -42,11 +48,22 @@ export async function POST(req: NextRequest) {
   const origin = requestOrigin(req.headers);
   const s = stripe();
 
+  // First-ever top-up buying the VIP pack → the one-time offer price. The
+  // check runs server-side so the discount can't be requested twice.
+  const { count: topupCount } = await db
+    .from("token_transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("chat_id", chatId)
+    .eq("kind", "topup");
+  const offerApplies =
+    (topupCount ?? 0) === 0 && pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+  const priceCents = offerApplies ? FIRST_TOPUP_OFFER_PRICE_CENTS : pack.priceCents;
+
   // One-tap when we already have a saved card.
   if (chat.stripe_customer_id && chat.stripe_payment_method_id) {
     try {
       const pi = await s.paymentIntents.create({
-        amount: pack.priceCents,
+        amount: priceCents,
         currency: "usd",
         customer: chat.stripe_customer_id,
         payment_method: chat.stripe_payment_method_id,
@@ -90,11 +107,12 @@ export async function POST(req: NextRequest) {
         quantity: 1,
         price_data: {
           currency: "usd",
-          unit_amount: pack.priceCents,
+          unit_amount: priceCents,
           product_data: {
             name: formatTokens(tokens),
-            description:
-              pack.bonusTokens > 0
+            description: offerApplies
+              ? `One-time offer — normally $${(pack.priceCents / 100).toFixed(2)}`
+              : pack.bonusTokens > 0
                 ? `${pack.tokens} Tokens + ${pack.bonusTokens} bonus`
                 : "Token top-up",
           },

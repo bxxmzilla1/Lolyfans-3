@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   TOKEN_PACKS,
+  FIRST_TOPUP_OFFER_PACK_ID,
+  FIRST_TOPUP_OFFER_PRICE_CENTS,
   formatTokens,
   packPriceLabel,
   packTotalTokens,
@@ -35,6 +37,8 @@ function priceLabel(cents: number): string {
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
+const OFFER_PRICE_LABEL = `$${(FIRST_TOPUP_OFFER_PRICE_CENTS / 100).toFixed(2)}`;
+
 function dateLabel(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
     month: "short",
@@ -62,6 +66,8 @@ export default function GuestWallet({
   const [loading, setLoading] = useState(true);
   const [toppingUp, setToppingUp] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // One-time offer: fans who never topped up get the VIP pack at $4.99.
+  const [firstOffer, setFirstOffer] = useState(false);
   const packsRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
@@ -72,6 +78,7 @@ export default function GuestWallet({
         setChatId(data.chatId ?? null);
         if (typeof data.balance === "number") setBalance(data.balance);
         setHistory(data.history ?? []);
+        setFirstOffer(!!data.firstTopupOffer);
       }
     } catch {
       // Offline — the card shows a placeholder until the next refresh.
@@ -201,20 +208,24 @@ export default function GuestWallet({
           {TOKEN_PACKS.map((pack) => {
             const total = packTotalTokens(pack);
             const busy = toppingUp === pack.id;
+            // First-purchase offer: the VIP pack takes the highlight
+            // (and a pulse) away from "Most popular".
+            const offer = firstOffer && pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+            const highlight = offer || (pack.tag === "Most popular" && !firstOffer);
             return (
               <button
                 key={pack.id}
                 onClick={() => topUp(pack.id)}
                 disabled={!!toppingUp || !chatId}
                 className={`relative rounded-xl border px-3 py-3 text-left transition-colors disabled:opacity-60 ${
-                  pack.tag === "Most popular"
+                  highlight
                     ? "border-accent bg-accent/10"
                     : "bg-card2 border-line hover:border-accent"
-                }`}
+                } ${offer ? "offer-pulse" : ""}`}
               >
-                {pack.tag && (
+                {(offer || pack.tag) && (
                   <span className="absolute -top-2 right-2 rounded-full bg-accent text-white text-[10px] font-bold px-2 py-0.5">
-                    {pack.tag}
+                    {offer ? "One-time offer" : pack.tag}
                   </span>
                 )}
                 <p className="text-base font-extrabold tabular-nums">
@@ -227,7 +238,18 @@ export default function GuestWallet({
                   </p>
                 )}
                 <p className="mt-1 text-sm font-bold text-accent">
-                  {busy ? "Processing…" : packPriceLabel(pack)}
+                  {busy ? (
+                    "Processing…"
+                  ) : offer ? (
+                    <>
+                      {OFFER_PRICE_LABEL}{" "}
+                      <span className="text-[11px] font-semibold text-muted line-through">
+                        {packPriceLabel(pack)}
+                      </span>
+                    </>
+                  ) : (
+                    packPriceLabel(pack)
+                  )}
                 </p>
               </button>
             );
