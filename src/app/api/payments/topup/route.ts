@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
   }
 
-  const { chatId, packId, returnTo } = await req.json();
+  const { chatId, packId, returnTo, claimOffer } = await req.json();
   if (!chatId || !packId) {
     return NextResponse.json({ error: "chatId and packId required" }, { status: 400 });
   }
@@ -39,13 +39,27 @@ export async function POST(req: NextRequest) {
   const db = supabaseAdmin();
   const { data: chat } = await db
     .from("chats")
-    .select("id, owner_id, stripe_customer_id, stripe_payment_method_id")
+    .select("id, owner_id, stripe_customer_id, stripe_payment_method_id, custom_offer")
     .eq("id", chatId)
     .maybeSingle();
   if (!chat) return NextResponse.json({ error: "Chat not found" }, { status: 404 });
 
   const origin = requestOrigin(req.headers);
   const s = stripe();
+
+  // Creator-sent custom offer for this fan: priced from the stored offer,
+  // regardless of any earlier top-ups. Cleared once the payment lands.
+  const customOffer =
+    claimOffer === "custom"
+      ? (chat.custom_offer as {
+          tokens?: number;
+          priceCents?: number;
+          originalCents?: number;
+        } | null)
+      : null;
+  if (claimOffer === "custom" && !customOffer) {
+    return NextResponse.json({ error: "This offer is no longer available" }, { status: 410 });
+  }
 
   // First-ever top-up buying the VIP pack → the creator's one-time offer.
   // The check runs server-side so the discount can't be requested twice.
@@ -55,12 +69,18 @@ export async function POST(req: NextRequest) {
     .eq("chat_id", chatId)
     .eq("kind", "topup");
   const offerApplies =
-    (topupCount ?? 0) === 0 && pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+    !customOffer &&
+    (topupCount ?? 0) === 0 &&
+    pack.id === FIRST_TOPUP_OFFER_PACK_ID;
 
   let priceCents = pack.priceCents;
   let tokens = packTotalTokens(pack);
   let originalCents = pack.priceCents;
-  if (offerApplies) {
+  if (customOffer) {
+    priceCents = Math.max(1, Math.round(Number(customOffer.priceCents)));
+    tokens = Math.max(1, Math.round(Number(customOffer.tokens)));
+    originalCents = Math.max(1, Math.round(Number(customOffer.originalCents)));
+  } else if (offerApplies) {
     const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
     const offer = popupOfferFromMetadata(ownerUser?.user?.user_metadata ?? {});
     priceCents = offer.priceCents;
@@ -87,6 +107,9 @@ export async function POST(req: NextRequest) {
         description: `Top up ${formatTokens(tokens)}`,
       });
       const balance = await creditTokens({ chatId, tokens, paymentIntentId: pi.id });
+      if (customOffer) {
+        await db.from("chats").update({ custom_offer: null }).eq("id", chatId);
+      }
       return NextResponse.json({
         ok: true,
         topped: true,
@@ -119,20 +142,33 @@ export async function POST(req: NextRequest) {
           unit_amount: priceCents,
           product_data: {
             name: formatTokens(tokens),
-            description: offerApplies
-              ? `One-time offer — normally $${(originalCents / 100).toFixed(2)}`
-              : pack.bonusTokens > 0
-                ? `${pack.tokens} Tokens + ${pack.bonusTokens} bonus`
-                : "Token top-up",
+            description:
+              customOffer || offerApplies
+                ? `One-time offer — normally $${(originalCents / 100).toFixed(2)}`
+                : pack.bonusTokens > 0
+                  ? `${pack.tokens} Tokens + ${pack.bonusTokens} bonus`
+                  : "Token top-up",
           },
         },
       },
     ],
     payment_intent_data: {
       setup_future_usage: "off_session",
-      metadata: { chatId, kind: "topup", tokens: String(tokens), packId: pack.id },
+      metadata: {
+        chatId,
+        kind: "topup",
+        tokens: String(tokens),
+        packId: pack.id,
+        ...(customOffer ? { customOffer: "1" } : {}),
+      },
     },
-    metadata: { chatId, kind: "topup", tokens: String(tokens), packId: pack.id },
+    metadata: {
+      chatId,
+      kind: "topup",
+      tokens: String(tokens),
+      packId: pack.id,
+      ...(customOffer ? { customOffer: "1" } : {}),
+    },
     success_url: `${origin}${returnPath}?topup=1&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}${returnPath}`,
   });

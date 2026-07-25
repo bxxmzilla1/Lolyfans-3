@@ -94,6 +94,22 @@ export default function ChatView({
   const [firstOffer, setFirstOffer] = useState(false);
   const [offerPopup, setOfferPopup] = useState(false);
   const [offer, setOffer] = useState<PopupOffer>(DEFAULT_POPUP_OFFER);
+  // Creator-sent custom offer for this specific fan. It surfaces as a
+  // platform popup (never as a message from the creator), one time only.
+  const [customOffer, setCustomOffer] = useState<{
+    id: string;
+    tokens: number;
+    priceCents: number;
+    originalCents: number;
+  } | null>(null);
+  const [customOfferPopup, setCustomOfferPopup] = useState(false);
+  // Owner side: the "send a custom offer" composer dialog.
+  const [offerDialog, setOfferDialog] = useState<{
+    tokens: string;
+    price: string;
+    original: string;
+  } | null>(null);
+  const [sendingOffer, setSendingOffer] = useState(false);
   const [peerTyping, setPeerTyping] = useState(false);
   const [msgSelectMode, setMsgSelectMode] = useState(false);
   const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
@@ -239,6 +255,17 @@ export default function ChatView({
         if (typingHideRef.current) clearTimeout(typingHideRef.current);
         typingHideRef.current = setTimeout(() => setPeerTyping(false), 3000);
       })
+      .on("broadcast", { event: "custom-offer" }, ({ payload }) => {
+        // Creator just sent this fan a personal offer — popup appears live.
+        if (role !== "guest") return;
+        const o = payload as {
+          id: string;
+          tokens: number;
+          priceCents: number;
+          originalCents: number;
+        };
+        if (o?.id) setCustomOffer(o);
+      })
       .subscribe();
     channelRef.current = channel;
 
@@ -261,6 +288,7 @@ export default function ChatView({
         if (typeof data.balance === "number") setBalance(data.balance);
         setFirstOffer(!!data.firstTopupOffer);
         if (data.offer) setOffer(data.offer);
+        setCustomOffer(data.customOffer?.id ? data.customOffer : null);
       }
     } catch {
       // Balance pill just stays hidden until the next refresh.
@@ -292,6 +320,23 @@ export default function ChatView({
     }, offer.delaySeconds * 1000);
     return () => clearTimeout(t);
   }, [role, firstOffer, messages, chatId, offer.delaySeconds]);
+
+  // A creator-sent custom offer pops up once per offer — whether it just
+  // arrived over realtime or was waiting when the fan opened the chat.
+  useEffect(() => {
+    if (role !== "guest" || !customOffer) return;
+    const seenKey = `lf-custom-offer-seen:${customOffer.id}`;
+    try {
+      if (localStorage.getItem(seenKey)) return;
+    } catch {}
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(seenKey, "1");
+      } catch {}
+      setCustomOfferPopup(true);
+    }, 800);
+    return () => clearTimeout(t);
+  }, [role, customOffer]);
 
   // After Stripe Checkout (token top-up): confirm the session (covers webhook
   // 308 failures), refresh the wallet and the thread, then finish a pending
@@ -385,14 +430,14 @@ export default function ChatView({
   }
 
   /** Buy a token pack: one tap with a saved card, Stripe Checkout otherwise. */
-  async function topUp(packId: string) {
+  async function topUp(packId: string, claim?: "custom") {
     if (toppingUp) return;
     setToppingUp(packId);
     try {
       const res = await fetch("/api/payments/topup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, packId }),
+        body: JSON.stringify({ chatId, packId, claimOffer: claim }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.topped) {
@@ -400,6 +445,9 @@ export default function ChatView({
         // Any successful top-up ends the first-purchase offer.
         setFirstOffer(false);
         setOfferPopup(false);
+        // A claimed custom offer is single-use — it's gone now.
+        if (claim === "custom") setCustomOffer(null);
+        setCustomOfferPopup(false);
         setToppingUp(null);
         // The fan was mid-accept when the balance ran short: finish that
         // accept right away with the fresh tokens.
@@ -429,6 +477,38 @@ export default function ChatView({
       alert("Could not top up");
     }
     setToppingUp(null);
+  }
+
+  /**
+   * Owner: send this fan a personal one-time offer. It reaches them as a
+   * platform popup (never as a chat message from the creator).
+   */
+  async function sendCustomOffer() {
+    if (!offerDialog || sendingOffer) return;
+    const tokens = Math.round(parseFloat(offerDialog.tokens));
+    const priceCents = Math.round(parseFloat(offerDialog.price) * 100);
+    const originalCents = Math.round(parseFloat(offerDialog.original) * 100);
+    if (!(tokens > 0) || !(priceCents > 0) || !(originalCents > 0)) {
+      alert("Enter the tokens, price and original price.");
+      return;
+    }
+    setSendingOffer(true);
+    try {
+      const res = await fetch("/api/chats/offer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, tokens, priceCents, originalCents }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setOfferDialog(null);
+      } else {
+        alert(data.error || "Could not send the offer");
+      }
+    } catch {
+      alert("Could not send the offer");
+    }
+    setSendingOffer(false);
   }
 
   async function sendTip() {
@@ -1080,6 +1160,26 @@ export default function ChatView({
               {sendLocked ? <IconLock className="w-4.5 h-4.5" /> : <IconUnlock className="w-4.5 h-4.5" />}
             </button>
           )}
+          {role === "owner" && (
+            <button
+              onClick={() =>
+                setOfferDialog({
+                  tokens: String(DEFAULT_POPUP_OFFER.tokens),
+                  price: (DEFAULT_POPUP_OFFER.priceCents / 100).toString(),
+                  original: (DEFAULT_POPUP_OFFER.originalCents / 100).toString(),
+                })
+              }
+              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold transition-colors ${
+                offerDialog
+                  ? "bg-accent text-white glow-accent"
+                  : "bg-transparent border border-line text-muted hover:text-fg"
+              }`}
+              aria-label="Send a one-time offer"
+              title="Send this fan a custom one-time offer popup"
+            >
+              %
+            </button>
+          )}
           <textarea
             value={text}
             onChange={(e) => {
@@ -1311,61 +1411,176 @@ export default function ChatView({
         </Portal>
       )}
 
-      {offerPopup && (
+      {(offerPopup || (customOfferPopup && customOffer)) &&
+        (() => {
+          // Same platform popup for both flavors: the automatic first-top-up
+          // offer, and a custom one the creator sent to this fan.
+          const isCustom = customOfferPopup && !!customOffer;
+          const po = isCustom ? customOffer! : offer;
+          const close = () => {
+            setOfferPopup(false);
+            setCustomOfferPopup(false);
+          };
+          return (
+            <Portal>
+              <div
+                className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4"
+                onClick={close}
+              >
+                <div
+                  className="relative bg-card border border-accent/40 rounded-3xl p-6 pt-8 w-full max-w-sm text-center space-y-2.5 fade-up overflow-hidden"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {/* Soft accent glow behind the headline */}
+                  <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-72 h-44 rounded-full bg-accent/25 blur-3xl pointer-events-none" />
+                  <button
+                    onClick={close}
+                    className="absolute top-3 right-3 text-muted text-sm px-1"
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
+                  <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
+                    {isCustom ? "Exclusive one-time offer" : "One-time offer"}
+                  </p>
+                  <p className="relative text-4xl font-extrabold tabular-nums leading-none">
+                    {po.tokens.toLocaleString("en-US")}
+                    <span className="text-lg font-semibold text-muted"> Tokens</span>
+                  </p>
+                  {!isCustom && offer.tokens > OFFER_PACK.tokens && (
+                    <p className="relative text-xs font-semibold text-emerald-500">
+                      incl. +{(offer.tokens - OFFER_PACK.tokens).toLocaleString("en-US")} free
+                    </p>
+                  )}
+                  <p className="relative">
+                    <span className="text-3xl font-extrabold text-accent tabular-nums">
+                      {offerPriceLabel(po.priceCents)}
+                    </span>{" "}
+                    <span className="text-base font-semibold text-muted line-through tabular-nums">
+                      {offerPriceLabel(po.originalCents)}
+                    </span>
+                  </p>
+                  <p className="relative text-[11px] text-muted leading-snug">
+                    {isCustom
+                      ? "Unlocked just for you — this one won't come back."
+                      : "Only on your very first top-up — once it's gone, it's gone."}
+                  </p>
+                  <button
+                    onClick={() => topUp(OFFER_PACK.id, isCustom ? "custom" : undefined)}
+                    disabled={!!toppingUp}
+                    className="relative w-full rounded-full ig-gradient glow-accent offer-pulse text-white text-sm font-bold py-3 disabled:opacity-60"
+                  >
+                    {toppingUp
+                      ? "Processing…"
+                      : `Claim ${po.tokens.toLocaleString("en-US")} Tokens for ${offerPriceLabel(po.priceCents)}`}
+                  </button>
+                  <p className="relative text-[10px] text-muted/80">
+                    Secured by Stripe · All Token purchases are final and
+                    non-refundable.
+                  </p>
+                </div>
+              </div>
+            </Portal>
+          );
+        })()}
+
+      {offerDialog && (
         <Portal>
           <div
-            className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4"
-            onClick={() => setOfferPopup(false)}
+            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setOfferDialog(null)}
           >
             <div
-              className="relative bg-card border border-accent/40 rounded-3xl p-6 pt-8 w-full max-w-sm text-center space-y-2.5 fade-up overflow-hidden"
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* Soft accent glow behind the headline */}
-              <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-72 h-44 rounded-full bg-accent/25 blur-3xl pointer-events-none" />
-              <button
-                onClick={() => setOfferPopup(false)}
-                className="absolute top-3 right-3 text-muted text-sm px-1"
-                aria-label="Close"
-              >
-                ✕
-              </button>
-              <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
-                One-time offer
-              </p>
-              <p className="relative text-4xl font-extrabold tabular-nums leading-none">
-                {offer.tokens.toLocaleString("en-US")}
-                <span className="text-lg font-semibold text-muted"> Tokens</span>
-              </p>
-              {offer.tokens > OFFER_PACK.tokens && (
-                <p className="relative text-xs font-semibold text-emerald-500">
-                  incl. +{(offer.tokens - OFFER_PACK.tokens).toLocaleString("en-US")} free
+              <div>
+                <p className="font-bold">Send a one-time offer</p>
+                <p className="text-xs text-muted mt-0.5">
+                  This fan gets a personal popup, shown once, presented as a
+                  platform offer — not as a message from you.
                 </p>
-              )}
-              <p className="relative">
-                <span className="text-3xl font-extrabold text-accent tabular-nums">
-                  {offerPriceLabel(offer.priceCents)}
-                </span>{" "}
-                <span className="text-base font-semibold text-muted line-through tabular-nums">
-                  {offerPriceLabel(offer.originalCents)}
-                </span>
-              </p>
-              <p className="relative text-[11px] text-muted leading-snug">
-                Only on your very first top-up — once it&apos;s gone, it&apos;s gone.
-              </p>
-              <button
-                onClick={() => topUp(OFFER_PACK.id)}
-                disabled={!!toppingUp}
-                className="relative w-full rounded-full ig-gradient glow-accent offer-pulse text-white text-sm font-bold py-3 disabled:opacity-60"
-              >
-                {toppingUp
-                  ? "Processing…"
-                  : `Claim ${offer.tokens.toLocaleString("en-US")} Tokens for ${offerPriceLabel(offer.priceCents)}`}
-              </button>
-              <p className="relative text-[10px] text-muted/80">
-                Secured by Stripe · All Token purchases are final and
-                non-refundable.
-              </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted">Tokens</label>
+                <input
+                  autoFocus
+                  inputMode="numeric"
+                  value={offerDialog.tokens}
+                  onChange={(e) =>
+                    setOfferDialog({
+                      ...offerDialog,
+                      tokens: e.target.value.replace(/[^\d]/g, ""),
+                    })
+                  }
+                  placeholder="e.g. 1300"
+                  className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted">Price ($)</label>
+                  <input
+                    inputMode="decimal"
+                    value={offerDialog.price}
+                    onChange={(e) =>
+                      setOfferDialog({
+                        ...offerDialog,
+                        price: e.target.value.replace(/[^\d.]/g, ""),
+                      })
+                    }
+                    placeholder="4.99"
+                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted">
+                    Original price ($)
+                  </label>
+                  <input
+                    inputMode="decimal"
+                    value={offerDialog.original}
+                    onChange={(e) =>
+                      setOfferDialog({
+                        ...offerDialog,
+                        original: e.target.value.replace(/[^\d.]/g, ""),
+                      })
+                    }
+                    placeholder="12.99"
+                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                  />
+                </div>
+              </div>
+              {(() => {
+                const t = Math.round(parseFloat(offerDialog.tokens)) || 0;
+                const p = Math.round(parseFloat(offerDialog.price) * 100) || 0;
+                const o = Math.round(parseFloat(offerDialog.original) * 100) || 0;
+                if (!t || !p || !o) return null;
+                return (
+                  <p className="text-xs text-muted">
+                    They&apos;ll see:{" "}
+                    <span className="font-semibold text-fg">
+                      {t.toLocaleString("en-US")} Tokens for {offerPriceLabel(p)}
+                    </span>{" "}
+                    <span className="line-through">{offerPriceLabel(o)}</span>
+                  </p>
+                );
+              })()}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setOfferDialog(null)}
+                  className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={sendCustomOffer}
+                  disabled={sendingOffer}
+                  className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
+                >
+                  {sendingOffer ? "Sending…" : "Send offer"}
+                </button>
+              </div>
             </div>
           </div>
         </Portal>

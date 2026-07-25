@@ -422,6 +422,11 @@ alter table chats add column if not exists stripe_payment_method_id text;
 -- purchase) and spend them on unlocks and tips inside the chat.
 alter table chats add column if not exists token_balance int not null default 0;
 
+-- A creator-sent one-time offer for this specific fan ({id, tokens,
+-- price_cents, original_cents}). Shown to the fan as a platform offer;
+-- cleared once claimed.
+alter table chats add column if not exists custom_offer jsonb;
+
 -- Every token movement: positive = top-up credit, negative = spend.
 create table if not exists token_transactions (
   id uuid primary key default gen_random_uuid(),

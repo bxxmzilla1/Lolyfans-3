@@ -302,6 +302,10 @@ export async function fulfillCheckout(session: Stripe.Checkout.Session) {
         ? session.payment_intent
         : session.payment_intent?.id ?? null;
     await creditTokens({ chatId, tokens, paymentIntentId });
+    // A claimed creator-sent offer is single-use: clear it once paid.
+    if (session.metadata?.customOffer === "1") {
+      await supabaseAdmin().from("chats").update({ custom_offer: null }).eq("id", chatId);
+    }
     return { ok: true as const, kind: "topup" as const, messageId: null };
   }
 

@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
       .select("id", { count: "exact", head: true })
       .eq("chat_id", chatId)
       .eq("kind", "topup"),
-    db.from("chats").select("owner_id").eq("id", chatId).maybeSingle(),
+    db.from("chats").select("owner_id, custom_offer").eq("id", chatId).maybeSingle(),
   ]);
   const { data: ownerUser } = chat
     ? await db.auth.admin.getUserById(chat.owner_id)
@@ -34,5 +34,6 @@ export async function GET(req: NextRequest) {
     packs: TOKEN_PACKS,
     firstTopupOffer: (topupCount ?? 0) === 0,
     offer: popupOfferFromMetadata(ownerUser?.user?.user_metadata ?? {}),
+    customOffer: chat?.custom_offer ?? null,
   });
 }
