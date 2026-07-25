@@ -18,6 +18,7 @@ export default function PopupOfferSettings() {
     (DEFAULT_POPUP_OFFER.originalCents / 100).toFixed(2)
   );
   const [delay, setDelay] = useState(String(DEFAULT_POPUP_OFFER.delaySeconds));
+  const [popupEnabled, setPopupEnabled] = useState(DEFAULT_POPUP_OFFER.popupEnabled);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -33,6 +34,7 @@ export default function PopupOfferSettings() {
           setOriginal((Number(meta.offer_original_cents) / 100).toFixed(2));
         if (Number(meta.offer_delay_seconds) > 0)
           setDelay(String(meta.offer_delay_seconds));
+        setPopupEnabled(meta.offer_popup_enabled !== false);
       });
   }, []);
 
@@ -53,6 +55,7 @@ export default function PopupOfferSettings() {
           offer_price_cents: priceCents,
           offer_original_cents: originalCents,
           offer_delay_seconds: delayNum,
+          offer_popup_enabled: popupEnabled,
         },
       });
       setSaved(true);
@@ -72,6 +75,32 @@ export default function PopupOfferSettings() {
           first time. Their first purchase also saves their card, so every
           top-up after that is one tap.
         </p>
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-xl bg-card2 border border-line px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold">Automatic popup</p>
+          <p className="text-[11px] text-muted mt-0.5 leading-relaxed">
+            Show the offer as a popup after the fan receives their first locked
+            content. When off, the offer only appears highlighted in their
+            wallet.
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={popupEnabled}
+          onClick={() => setPopupEnabled((v) => !v)}
+          className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
+            popupEnabled ? "bg-accent" : "bg-line"
+          }`}
+          aria-label="Toggle automatic offer popup"
+        >
+          <span
+            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+              popupEnabled ? "translate-x-[22px]" : "translate-x-0.5"
+            }`}
+          />
+        </button>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -114,7 +143,7 @@ export default function PopupOfferSettings() {
             Displayed struck through, so fans see the discount.
           </p>
         </div>
-        <div className="space-y-1.5">
+        <div className={`space-y-1.5 ${popupEnabled ? "" : "opacity-40"}`}>
           <label className="text-xs font-semibold text-muted uppercase tracking-wide">
             Popup delay (seconds)
           </label>
@@ -154,7 +183,9 @@ export default function PopupOfferSettings() {
             </span>
           </p>
           <p className="relative text-[11px] text-muted">
-            Appears {delayNum > 0 ? delayNum : 0}s after your first locked media
+            {popupEnabled
+              ? `Appears ${delayNum > 0 ? delayNum : 0}s after your first locked media`
+              : "Popup off — shown only in the fan's wallet"}
           </p>
         </div>
       </div>

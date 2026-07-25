@@ -19,6 +19,11 @@ export type PopupOffer = {
   originalCents: number;
   /** Seconds after the first locked media before the popup appears. */
   delaySeconds: number;
+  /**
+   * Whether the popup auto-appears after the fan's first locked media.
+   * Off = no popup; the offer still shows highlighted in the fan's wallet.
+   */
+  popupEnabled: boolean;
 };
 
 const OFFER_PACK = TOKEN_PACKS.find((p) => p.id === FIRST_TOPUP_OFFER_PACK_ID)!;
@@ -28,6 +33,7 @@ export const DEFAULT_POPUP_OFFER: PopupOffer = {
   priceCents: FIRST_TOPUP_OFFER_PRICE_CENTS,
   originalCents: OFFER_PACK.priceCents,
   delaySeconds: 7,
+  popupEnabled: true,
 };
 
 function positiveInt(value: unknown, fallback: number): number {
@@ -48,6 +54,8 @@ export function popupOfferFromMetadata(meta: Record<string, unknown>): PopupOffe
       meta.offer_delay_seconds,
       DEFAULT_POPUP_OFFER.delaySeconds
     ),
+    // Anything but an explicit false keeps the popup on (the default).
+    popupEnabled: meta.offer_popup_enabled !== false,
   };
 }
 

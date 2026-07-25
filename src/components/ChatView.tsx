@@ -302,7 +302,8 @@ export default function ChatView({
   // First locked media in the chat + never topped up → the one-time offer
   // pops up once, after the creator's configured delay.
   useEffect(() => {
-    if (role !== "guest" || !firstOffer) return;
+    // Creator can switch the automatic popup off; the wallet highlight stays.
+    if (role !== "guest" || !firstOffer || !offer.popupEnabled) return;
     const hasLocked = messages.some(
       (m) =>
         m.sender === "owner" && m.locked && (m.price_cents ?? 0) > 0 && !m.unlocked
@@ -319,7 +320,7 @@ export default function ChatView({
       setOfferPopup(true);
     }, offer.delaySeconds * 1000);
     return () => clearTimeout(t);
-  }, [role, firstOffer, messages, chatId, offer.delaySeconds]);
+  }, [role, firstOffer, messages, chatId, offer.delaySeconds, offer.popupEnabled]);
 
   // A creator-sent custom offer pops up once per offer — whether it just
   // arrived over realtime or was waiting when the fan opened the chat.
