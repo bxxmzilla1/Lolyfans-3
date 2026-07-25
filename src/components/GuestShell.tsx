@@ -244,10 +244,10 @@ export default function GuestShell() {
         refresh,
       }}
     >
-      {/* Bottom padding must clear the fixed footer nav (~64px) plus the
-          safe-area inset, with headroom for browsers that overlay their own
-          toolbar — otherwise the last content row hides behind the footer. */}
-      <div className="min-h-dvh pb-[calc(128px+env(safe-area-inset-bottom))] lg:pb-10 lg:pl-60">
+      {/* Bottom padding = the footer nav's real rendered height (published by
+          GuestNav as --guest-nav-h) plus a cushion, so the last content row
+          can never hide behind the fixed footer on any device or browser. */}
+      <div className="min-h-dvh pb-[calc(var(--guest-nav-h,72px)+56px)] lg:pb-10 lg:pl-60">
         {loading || !data ? (
           <div className="px-6 py-20 text-center text-muted text-sm">Loading…</div>
         ) : (

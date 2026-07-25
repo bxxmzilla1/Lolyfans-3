@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useGuestShell } from "./GuestShellContext";
 import { useInboxSignals, type ChatOwnerPair } from "@/lib/useInboxSignals";
@@ -19,6 +19,25 @@ export default function GuestNav() {
   const shell = useGuestShell();
   const [fallbackUnread, setFallbackUnread] = useState(0);
   const [pairs, setPairs] = useState<ChatOwnerPair[]>([]);
+  const mobileNavRef = useRef<HTMLElement>(null);
+
+  // Publish the footer's real rendered height (incl. safe-area inset) as a
+  // CSS variable, so page bodies can pad themselves by exactly that amount
+  // and content can never end up hidden underneath the footer.
+  useEffect(() => {
+    const nav = mobileNavRef.current;
+    if (!nav) return;
+    const root = document.documentElement;
+    const publish = () =>
+      root.style.setProperty("--guest-nav-h", `${nav.offsetHeight}px`);
+    publish();
+    const ro = new ResizeObserver(publish);
+    ro.observe(nav);
+    return () => {
+      ro.disconnect();
+      root.style.removeProperty("--guest-nav-h");
+    };
+  }, []);
 
   const loadFallback = useCallback(async () => {
     try {
@@ -124,7 +143,10 @@ export default function GuestNav() {
         </nav>
       </aside>
 
-      <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-line2 bg-card/90 backdrop-blur-lg pb-[env(safe-area-inset-bottom)]">
+      <nav
+        ref={mobileNavRef}
+        className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-line2 bg-card/90 backdrop-blur-lg pb-[env(safe-area-inset-bottom)]"
+      >
         <div className="max-w-lg mx-auto grid grid-cols-3">
           {tabs.map(({ href, label, icon: Icon, badge }) => {
             const active = pathname === href;
