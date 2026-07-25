@@ -19,6 +19,7 @@ export default function PopupOfferSettings() {
   );
   const [delay, setDelay] = useState(String(DEFAULT_POPUP_OFFER.delaySeconds));
   const [popupEnabled, setPopupEnabled] = useState(DEFAULT_POPUP_OFFER.popupEnabled);
+  const [packEnabled, setPackEnabled] = useState(DEFAULT_POPUP_OFFER.packEnabled);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -35,6 +36,7 @@ export default function PopupOfferSettings() {
         if (Number(meta.offer_delay_seconds) > 0)
           setDelay(String(meta.offer_delay_seconds));
         setPopupEnabled(meta.offer_popup_enabled !== false);
+        setPackEnabled(meta.offer_pack_enabled !== false);
       });
   }, []);
 
@@ -56,6 +58,7 @@ export default function PopupOfferSettings() {
           offer_original_cents: originalCents,
           offer_delay_seconds: delayNum,
           offer_popup_enabled: popupEnabled,
+          offer_pack_enabled: packEnabled,
         },
       });
       setSaved(true);
@@ -75,6 +78,31 @@ export default function PopupOfferSettings() {
           first time. Their first purchase also saves their card, so every
           top-up after that is one tap.
         </p>
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-xl bg-card2 border border-line px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold">Show in token packs</p>
+          <p className="text-[11px] text-muted mt-0.5 leading-relaxed">
+            Highlight the discounted offer in the fan&apos;s token pack list.
+            When off, the packs show their normal prices.
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={packEnabled}
+          onClick={() => setPackEnabled((v) => !v)}
+          className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
+            packEnabled ? "bg-accent" : "bg-line"
+          }`}
+          aria-label="Toggle the offer in the token pack list"
+        >
+          <span
+            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+              packEnabled ? "translate-x-[22px]" : "translate-x-0.5"
+            }`}
+          />
+        </button>
       </div>
 
       <div className="flex items-center justify-between gap-4 rounded-xl bg-card2 border border-line px-4 py-3">

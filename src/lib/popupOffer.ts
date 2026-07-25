@@ -24,6 +24,11 @@ export type PopupOffer = {
    * Off = no popup; the offer still shows highlighted in the fan's wallet.
    */
   popupEnabled: boolean;
+  /**
+   * Whether the offer shows highlighted in the fan's token pack list.
+   * Off = packs display their normal prices (the popup can still run).
+   */
+  packEnabled: boolean;
 };
 
 const OFFER_PACK = TOKEN_PACKS.find((p) => p.id === FIRST_TOPUP_OFFER_PACK_ID)!;
@@ -34,6 +39,7 @@ export const DEFAULT_POPUP_OFFER: PopupOffer = {
   originalCents: OFFER_PACK.priceCents,
   delaySeconds: 7,
   popupEnabled: true,
+  packEnabled: true,
 };
 
 function positiveInt(value: unknown, fallback: number): number {
@@ -54,8 +60,9 @@ export function popupOfferFromMetadata(meta: Record<string, unknown>): PopupOffe
       meta.offer_delay_seconds,
       DEFAULT_POPUP_OFFER.delaySeconds
     ),
-    // Anything but an explicit false keeps the popup on (the default).
+    // Anything but an explicit false keeps these on (the default).
     popupEnabled: meta.offer_popup_enabled !== false,
+    packEnabled: meta.offer_pack_enabled !== false,
   };
 }
 

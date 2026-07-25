@@ -1430,13 +1430,17 @@ export default function ChatView({
                   // First-purchase offer: the VIP pack takes the highlight
                   // (and a pulse) away from "Most popular", showing the
                   // creator's configured tokens and prices.
-                  const isOffer = firstOffer && pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+                  const isOffer =
+                    firstOffer &&
+                    offer.packEnabled &&
+                    pack.id === FIRST_TOPUP_OFFER_PACK_ID;
                   const total = isOffer ? offer.tokens : packTotalTokens(pack);
                   const bonus = isOffer
                     ? Math.max(0, offer.tokens - pack.tokens)
                     : pack.bonusTokens;
                   const highlight =
-                    isOffer || (pack.tag === "Most popular" && !firstOffer);
+                    isOffer ||
+                    (pack.tag === "Most popular" && !(firstOffer && offer.packEnabled));
                   return (
                     <button
                       key={pack.id}

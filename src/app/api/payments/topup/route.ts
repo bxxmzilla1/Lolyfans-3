@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     .select("id", { count: "exact", head: true })
     .eq("chat_id", chatId)
     .eq("kind", "topup");
-  const offerApplies =
+  let offerApplies =
     !customOffer &&
     (topupCount ?? 0) === 0 &&
     pack.id === FIRST_TOPUP_OFFER_PACK_ID;
@@ -83,9 +83,15 @@ export async function POST(req: NextRequest) {
   } else if (offerApplies) {
     const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
     const offer = popupOfferFromMetadata(ownerUser?.user?.user_metadata ?? {});
-    priceCents = offer.priceCents;
-    tokens = offer.tokens;
-    originalCents = offer.originalCents;
+    // Creator switched the offer off everywhere → the pack sells at its
+    // normal price.
+    if (offer.packEnabled || offer.popupEnabled) {
+      priceCents = offer.priceCents;
+      tokens = offer.tokens;
+      originalCents = offer.originalCents;
+    } else {
+      offerApplies = false;
+    }
   }
 
   // One-tap when we already have a saved card.
