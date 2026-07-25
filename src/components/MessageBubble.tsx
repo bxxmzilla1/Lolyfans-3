@@ -306,29 +306,29 @@ export default function MessageBubble({
         : "photo";
   const acceptLabel = formatTokens(tokensForCents(price));
 
-  // Fan-side incoming card: a fixed-size placeholder (the real media is not
-  // rendered at all until accepted), with a constant loading shimmer on top.
+  // Fan-side incoming card: the media shows blurred behind a dark scrim,
+  // with the accept/decline flow on top.
   const incomingOverlay = payToUnlock && (
-    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 px-4 py-3 text-center">
+    <div className="absolute inset-0 z-10 bg-black/45 flex flex-col items-center justify-center gap-2 px-4 py-3 text-center">
       {unlocking || stage === "loading" ? (
         <>
-          <span className="w-11 h-11 rounded-full bg-card2 border border-line flex items-center justify-center">
-            <span className="w-5 h-5 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
+          <span className="w-11 h-11 rounded-full bg-black/40 border border-white/20 backdrop-blur flex items-center justify-center">
+            <span className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
           </span>
-          <p className="text-sm font-semibold">
+          <p className="text-sm font-semibold text-white drop-shadow">
             {unlocking ? "Receiving…" : "Incoming media…"}
           </p>
-          <p className="text-[11px] text-muted">Sent just for you</p>
+          <p className="text-[11px] text-white/75 drop-shadow">Sent just for you</p>
         </>
       ) : stage === "offer" ? (
         <>
-          <span className="w-11 h-11 rounded-full bg-accent/15 text-accent flex items-center justify-center animate-pulse">
+          <span className="w-11 h-11 rounded-full bg-white/15 text-white backdrop-blur flex items-center justify-center animate-pulse">
             <IconHeartFilled className="w-5 h-5" />
           </span>
-          <p className="text-sm font-bold leading-tight">
+          <p className="text-sm font-bold leading-tight text-white drop-shadow">
             {peerName || "Someone"} sent you a message with media
           </p>
-          <p className="text-[11px] text-muted -mt-1">
+          <p className="text-[11px] text-white/75 drop-shadow -mt-1">
             Made just for you — accept it to see it
           </p>
           <button
@@ -346,15 +346,17 @@ export default function MessageBubble({
               e.stopPropagation();
               setStage("confirm");
             }}
-            className="text-[11px] font-medium text-muted/70 hover:text-muted"
+            className="text-[11px] font-medium text-white/60 hover:text-white/85"
           >
             Decline
           </button>
         </>
       ) : stage === "confirm" ? (
         <>
-          <p className="text-sm font-bold leading-tight">Decline this {incomingLabel}?</p>
-          <p className="text-[11px] text-muted leading-snug">
+          <p className="text-sm font-bold leading-tight text-white drop-shadow">
+            Decline this {incomingLabel}?
+          </p>
+          <p className="text-[11px] text-white/75 drop-shadow leading-snug">
             This was picked just for you. Once declined, it may never be sent
             to you again.
           </p>
@@ -373,17 +375,17 @@ export default function MessageBubble({
               writeDeclined(message.id, true);
               setStage("declined");
             }}
-            className="text-[11px] font-medium text-muted/70 hover:text-muted"
+            className="text-[11px] font-medium text-white/60 hover:text-white/85"
           >
             Decline anyway
           </button>
         </>
       ) : (
         <>
-          <p className="text-sm font-semibold text-muted">
+          <p className="text-sm font-semibold text-white/85 drop-shadow">
             You declined this {incomingLabel}
           </p>
-          <p className="text-[11px] text-muted/80 -mt-1">
+          <p className="text-[11px] text-white/70 drop-shadow -mt-1">
             It hasn&apos;t left yet — you can still get it
           </p>
           <button
@@ -503,13 +505,7 @@ export default function MessageBubble({
 
         {active && (
           <div className="relative overflow-hidden">
-            {payToUnlock ? (
-              // Fixed-size placeholder: every incoming locked card is the same
-              // size, and the media itself isn't rendered until accepted.
-              <div className="w-72 max-w-full aspect-[4/5] bg-card2 shimmer" />
-            ) : (
-              renderSlide(active)
-            )}
+            {renderSlide(active)}
             {lockedOverlay}
             {incomingOverlay}
             {lockToggle}
