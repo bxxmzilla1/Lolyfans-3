@@ -36,6 +36,7 @@ import {
   IconEyeOff,
   IconLink,
   IconLock,
+  IconMic,
   IconPlus,
   IconSend,
   IconTip,
@@ -121,6 +122,14 @@ export default function ChatView({
     original: string;
   } | null>(null);
   const [sendingOffer, setSendingOffer] = useState(false);
+  // Voice notes: recording state + the moment between stop and message sent.
+  const [recording, setRecording] = useState(false);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const [sendingVoice, setSendingVoice] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const recordChunksRef = useRef<Blob[]>([]);
+  const recordCancelRef = useRef(false);
+  const recordTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [peerTyping, setPeerTyping] = useState(false);
   const [msgSelectMode, setMsgSelectMode] = useState(false);
   const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
@@ -682,6 +691,114 @@ export default function ChatView({
     }
   }
 
+  /** Start recording a voice note from the microphone. */
+  async function startRecording() {
+    if (recording || sendingVoice) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+        ? "audio/webm;codecs=opus"
+        : MediaRecorder.isTypeSupported("audio/mp4")
+          ? "audio/mp4"
+          : "";
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      recordChunksRef.current = [];
+      recordCancelRef.current = false;
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) recordChunksRef.current.push(e.data);
+      };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+        setRecording(false);
+        if (!recordCancelRef.current && recordChunksRef.current.length > 0) {
+          const type = rec.mimeType || "audio/webm";
+          const ext = type.includes("mp4") ? "m4a" : "webm";
+          const blob = new Blob(recordChunksRef.current, { type });
+          sendVoiceNote(new File([blob], `voice-note.${ext}`, { type }));
+        }
+      };
+      recorderRef.current = rec;
+      rec.start();
+      setRecordSeconds(0);
+      setRecording(true);
+      recordTimerRef.current = setInterval(
+        () => setRecordSeconds((s) => s + 1),
+        1000
+      );
+    } catch {
+      alert("Microphone unavailable — check your browser permissions.");
+    }
+  }
+
+  /** Stop recording: send the note, or throw it away. */
+  function stopRecording(cancel: boolean) {
+    recordCancelRef.current = cancel;
+    recorderRef.current?.stop();
+  }
+
+  /** Upload a recorded/attached audio file and send it as a voice note. */
+  async function sendVoiceNote(file: File) {
+    setSendingVoice(true);
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, scope: "chat" }),
+      });
+      if (!res.ok) throw new Error();
+      const { path, token } = await res.json();
+      const { error } = await supabaseBrowser()
+        .storage.from("media")
+        .uploadToSignedUrl(path, token, file, { cacheControl: "31536000" });
+      if (error) throw new Error();
+
+      const mediaItems = [{ path, type: "audio" as MediaKind }];
+      const tempId = `temp-${Date.now()}`;
+      const temp: Message = {
+        id: tempId,
+        chat_id: chatId,
+        sender: role,
+        content: null,
+        media_path: path,
+        media_type: "audio",
+        media_items: mediaItems,
+        reply_to_id: null,
+        locked: false,
+        price_cents: 0,
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, temp]);
+
+      const post = await fetch("/api/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chatId,
+          content: "",
+          mediaItems,
+          mediaPath: path,
+          mediaType: "audio",
+        }),
+      });
+      if (post.ok) {
+        const { message } = await post.json();
+        setMessages((prev) => {
+          const withoutTemp = prev.filter((m) => m.id !== tempId);
+          return withoutTemp.some((m) => m.id === message.id)
+            ? withoutTemp
+            : [...withoutTemp, message];
+        });
+      } else {
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        alert("Could not send the voice note");
+      }
+    } catch {
+      alert("Could not send the voice note");
+    }
+    setSendingVoice(false);
+  }
+
   // Instant token unlock: spends from the wallet; when the balance is short
   // the top-up sheet opens instead (one-tap purchase with a saved card) and
   // the message is remembered so it auto-accepts right after the top-up.
@@ -939,7 +1056,11 @@ export default function ChatView({
                 (() => {
                   const n = mediaItemsFromMessage(replyTo).length;
                   if (n > 1) return `${n} files`;
-                  return replyTo.media_type === "image" ? "Photo" : "Video";
+                  return replyTo.media_type === "image"
+                    ? "Photo"
+                    : replyTo.media_type === "audio"
+                      ? "Voice note"
+                      : "Video";
                 })()}
             </p>
           </div>
@@ -1066,6 +1187,13 @@ export default function ChatView({
                     alt=""
                     className="w-14 h-14 rounded-lg object-cover"
                   />
+                ) : item.type === "audio" ? (
+                  <div
+                    className="w-14 h-14 rounded-lg bg-card border border-line flex items-center justify-center"
+                    title="Voice note"
+                  >
+                    <IconMic className="w-5 h-5 text-accent" />
+                  </div>
                 ) : (
                   <video
                     src={`${mediaUrl(item.path)}#t=0.001`}
@@ -1146,6 +1274,30 @@ export default function ChatView({
             </span>
           </button>
         )}
+        {recording ? (
+          <div className="flex items-center gap-3 bg-card2/80 border border-line2 rounded-2xl px-3 py-2 backdrop-blur">
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
+            <span className="text-sm font-bold tabular-nums">
+              {Math.floor(recordSeconds / 60)}:
+              {String(recordSeconds % 60).padStart(2, "0")}
+            </span>
+            <span className="flex-1 text-xs text-muted">Recording voice note…</span>
+            <button
+              onClick={() => stopRecording(true)}
+              className="text-xs font-semibold text-muted px-2 py-1.5"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => stopRecording(false)}
+              className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 flex items-center justify-center active:opacity-80 transition-opacity"
+              aria-label="Send voice note"
+              title="Send voice note"
+            >
+              <IconSend className="w-4.5 h-4.5" />
+            </button>
+          </div>
+        ) : (
         <div className="flex items-end gap-2 bg-card2/80 border border-line2 rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
             onClick={() => {
@@ -1165,7 +1317,8 @@ export default function ChatView({
           <input
             ref={fileRef}
             type="file"
-            accept="image/*,video/*"
+            // Creators can also attach audio files — they send as voice notes.
+            accept={role === "owner" ? "image/*,video/*,audio/*" : "image/*,video/*"}
             multiple
             hidden
             onChange={(e) => e.target.files?.length && handleFiles(e.target.files)}
@@ -1260,6 +1413,19 @@ export default function ChatView({
               %
             </button>
           )}
+          <button
+            onClick={startRecording}
+            disabled={uploading || tipping || sendingVoice}
+            className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-transparent border border-line text-muted hover:text-fg transition-colors disabled:opacity-50"
+            aria-label="Record a voice note"
+            title="Record a voice note"
+          >
+            {sendingVoice ? (
+              <span className="w-4 h-4 rounded-full border-2 border-accent/40 border-t-accent animate-spin" />
+            ) : (
+              <IconMic className="w-4.5 h-4.5" />
+            )}
+          </button>
           <textarea
             value={text}
             onChange={(e) => {
@@ -1298,6 +1464,7 @@ export default function ChatView({
             )}
           </button>
         </div>
+        )}
       </div>
 
       {tipPickerOpen && (
@@ -1890,6 +2057,8 @@ export default function ChatView({
                   alt="Photo"
                   className="max-w-full max-h-[85vh] rounded-xl object-contain"
                 />
+              ) : item.type === "audio" ? (
+                <audio src={mediaUrl(item.path)} controls autoPlay className="w-80 max-w-full" />
               ) : (
                 <video
                   src={mediaUrl(item.path)}

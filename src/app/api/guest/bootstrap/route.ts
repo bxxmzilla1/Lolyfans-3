@@ -66,7 +66,9 @@ export async function GET(req: NextRequest) {
             ? "Sent a video"
             : data.media_type === "image"
               ? "Sent a photo"
-              : "Say hi!");
+              : data.media_type === "audio"
+                ? "Sent a voice note"
+                : "Say hi!");
         return [chat.id, prefix + body] as const;
       })
     ),

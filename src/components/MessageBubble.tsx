@@ -24,6 +24,7 @@ import {
   IconUnlock,
 } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
+import VoiceNote from "./VoiceNote";
 
 // Token tips ("💸 Tip · 100 Tokens") and legacy dollar tips ("💸 Tip · $10").
 const TIP_LINE_RE = /^💸 Tip · (\$[\d.]+|[\d,]+ Tokens?)(?:\n([\s\S]*))?$/i;
@@ -34,7 +35,7 @@ export type Message = {
   sender: "owner" | "guest";
   content: string | null;
   media_path: string | null;
-  media_type: "image" | "video" | null;
+  media_type: "image" | "video" | "audio" | null;
   /** Multi-media payload; empty/missing falls back to media_path. */
   media_items?: MediaItem[] | null;
   reply_to_id: string | null;
@@ -209,7 +210,11 @@ export default function MessageBubble({
     }
     const count = mediaItemsFromMessage(repliedTo).length;
     if (count > 1) return `${count} files`;
-    return repliedTo.media_type === "image" ? "Photo" : "Video";
+    return repliedTo.media_type === "image"
+      ? "Photo"
+      : repliedTo.media_type === "audio"
+        ? "Voice note"
+        : "Video";
   })();
 
   // Once the fan paid, locking is irrelevant — hide the switch.
@@ -293,6 +298,15 @@ export default function MessageBubble({
   );
 
   function renderSlide(item: MediaItem) {
+    if (item.type === "audio") {
+      // Locked voice note: same-size placeholder, the audio isn't rendered
+      // until it's unlocked (the overlay handles the unlock).
+      if (blurred) {
+        // Tall enough for the lock badge + Unlock pill overlay.
+        return <div className="w-64 max-w-full h-44 bg-card2" />;
+      }
+      return <VoiceNote src={mediaUrl(item.path)} mine={mine} />;
+    }
     if (item.type === "image") {
       return (
         // eslint-disable-next-line @next/next/no-img-element

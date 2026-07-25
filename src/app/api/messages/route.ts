@@ -86,21 +86,22 @@ function normalizeMediaItems(body: {
   mediaItems?: unknown;
   mediaPath?: unknown;
   mediaType?: unknown;
-}): { path: string; type: "image" | "video" }[] {
-  const items: { path: string; type: "image" | "video" }[] = [];
+}): { path: string; type: "image" | "video" | "audio" }[] {
+  const items: { path: string; type: "image" | "video" | "audio" }[] = [];
   if (Array.isArray(body.mediaItems)) {
     for (const entry of body.mediaItems) {
       if (!entry || typeof entry !== "object") continue;
       const path = (entry as { path?: unknown }).path;
       const type = (entry as { type?: unknown }).type;
       if (typeof path !== "string" || !path) continue;
-      if (type !== "image" && type !== "video") continue;
+      if (type !== "image" && type !== "video" && type !== "audio") continue;
       items.push({ path, type });
       if (items.length >= 12) break;
     }
   }
   if (items.length === 0 && typeof body.mediaPath === "string" && body.mediaPath) {
-    const type = body.mediaType === "video" ? "video" : "image";
+    const type =
+      body.mediaType === "video" ? "video" : body.mediaType === "audio" ? "audio" : "image";
     items.push({ path: body.mediaPath, type });
   }
   return items;

@@ -15,7 +15,7 @@ export default function WelcomeMessageEditor() {
   const [enabled, setEnabled] = useState(false);
   const [text, setText] = useState("");
   const [mediaPath, setMediaPath] = useState<string | null>(null);
-  const [mediaType, setMediaType] = useState<"image" | "video" | null>(null);
+  const [mediaType, setMediaType] = useState<"image" | "video" | "audio" | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [loading, setLoading] = useState(true);

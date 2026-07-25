@@ -33,16 +33,18 @@ export async function POST(req: NextRequest) {
   const { chatId, content, mediaPath, mediaType, locked, notify, priceCents } = body;
 
   // Normalize single mediaPath (legacy) or mediaItems (packages).
-  const mediaItems: { path: string; type: "image" | "video" }[] = [];
+  const mediaItems: { path: string; type: "image" | "video" | "audio" }[] = [];
+  const normType = (t: unknown): "image" | "video" | "audio" =>
+    t === "video" ? "video" : t === "audio" ? "audio" : "image";
   if (Array.isArray(body.mediaItems)) {
     for (const it of body.mediaItems) {
       if (it && typeof it.path === "string" && it.path) {
-        mediaItems.push({ path: it.path, type: it.type === "video" ? "video" : "image" });
+        mediaItems.push({ path: it.path, type: normType(it.type) });
       }
     }
   }
   if (mediaItems.length === 0 && typeof mediaPath === "string" && mediaPath) {
-    mediaItems.push({ path: mediaPath, type: mediaType === "video" ? "video" : "image" });
+    mediaItems.push({ path: mediaPath, type: normType(mediaType) });
   }
 
   if (!chatId) {

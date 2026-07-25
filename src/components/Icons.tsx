@@ -179,6 +179,16 @@ export function IconPause({ className }: IconProps) {
   );
 }
 
+export function IconMic({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <rect x="9" y="2" width="6" height="12" rx="3" />
+      <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
+      <path d="M12 18v4" />
+    </Svg>
+  );
+}
+
 export function IconVolume({ className }: IconProps) {
   return (
     <Svg className={className}>

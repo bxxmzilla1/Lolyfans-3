@@ -589,6 +589,8 @@ export default function ChatList() {
                             ? "Photo"
                             : chat.preview?.media_type === "video"
                             ? "Video"
+                            : chat.preview?.media_type === "audio"
+                            ? "Voice note"
                             : "New chat")}
                       </p>
                     )}

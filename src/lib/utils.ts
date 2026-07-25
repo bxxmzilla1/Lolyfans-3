@@ -2,7 +2,7 @@ export function mediaUrl(path: string): string {
   return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/media/${path}`;
 }
 
-export type MediaItem = { path: string; type: "image" | "video" };
+export type MediaItem = { path: string; type: "image" | "video" | "audio" };
 
 /** Normalize legacy single media_path + optional media_items into one list. */
 export function mediaItemsFromMessage(message: {
@@ -17,7 +17,7 @@ export function mediaItemsFromMessage(message: {
     const path = (entry as { path?: unknown }).path;
     const type = (entry as { type?: unknown }).type;
     if (typeof path !== "string" || !path) continue;
-    if (type !== "image" && type !== "video") continue;
+    if (type !== "image" && type !== "video" && type !== "audio") continue;
     items.push({ path, type });
   }
   if (items.length === 0 && message.media_path) {
@@ -87,11 +87,12 @@ export function formatCount(n: number): string {
   return String(n);
 }
 
-export type MediaKind = "image" | "video";
+export type MediaKind = "image" | "video" | "audio";
 
 export function fileKind(file: File): MediaKind | null {
   if (file.type.startsWith("image/")) return "image";
   if (file.type.startsWith("video/")) return "video";
+  if (file.type.startsWith("audio/")) return "audio";
   return null;
 }
 
