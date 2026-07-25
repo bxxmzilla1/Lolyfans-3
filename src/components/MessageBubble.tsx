@@ -570,12 +570,7 @@ export default function MessageBubble({
         )}
 
         {showText && displayContent && (
-          <p
-            className={`px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words ${
-              payToUnlock ? "blur-[6px] select-none pointer-events-none" : ""
-            }`}
-            aria-hidden={payToUnlock || undefined}
-          >
+          <p className="px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words">
             {renderContent(displayContent, mine, hasMedia, locked)}
           </p>
         )}
