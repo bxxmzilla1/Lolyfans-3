@@ -945,6 +945,7 @@ export default function ChatView({
     setTipTokens(null);
     setUploading(true);
     const uploaded: { path: string; type: MediaKind }[] = [];
+    let lastError: string | null = null;
     try {
       for (const file of list) {
         const kind = fileKind(file)!;
@@ -953,13 +954,24 @@ export default function ChatView({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ fileName: file.name, scope: "chat" }),
         });
-        if (!res.ok) continue;
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          lastError = data.error || `Upload failed (${res.status})`;
+          continue;
+        }
         const { path, token } = await res.json();
         const { error } = await supabaseBrowser()
           .storage.from("media")
           .uploadToSignedUrl(path, token, file, { cacheControl: "31536000" });
-        if (error) continue;
+        if (error) {
+          lastError = error.message || "Upload failed";
+          continue;
+        }
         uploaded.push({ path, type: kind });
+      }
+      // Every file failed → say why instead of silently doing nothing.
+      if (uploaded.length === 0 && list.length > 0) {
+        alert(lastError ? `Could not upload: ${lastError}` : "Could not upload the file");
       }
       if (uploaded.length) {
         setAttachments((prev) => {
