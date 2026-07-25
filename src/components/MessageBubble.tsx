@@ -248,10 +248,15 @@ export default function MessageBubble({
             </span>
             <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
             {payToUnlock ? (
-              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent text-white text-sm font-bold px-4 py-1.5 shadow-lg">
-                <IconTip className="w-4 h-4" />
-                Unlock {formatTokens(tokensForCents(price))}
-              </span>
+              <>
+                <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
+                  <IconTip className="w-4 h-4" />
+                  Unlock
+                </span>
+                <span className="text-white text-sm font-bold drop-shadow">
+                  {formatTokens(tokensForCents(price))}
+                </span>
+              </>
             ) : (
               blurredPrice && (
                 <span className="text-white text-sm font-bold drop-shadow">{`$${blurredPrice}`}</span>
