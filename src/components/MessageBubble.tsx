@@ -17,7 +17,6 @@ import {
   IconCheck,
   IconChevronRight,
   IconEyeOff,
-  IconHeartFilled,
   IconLink,
   IconLock,
   IconReply,
@@ -28,29 +27,6 @@ import VideoPlayer from "./VideoPlayer";
 
 // Token tips ("💸 Tip · 100 Tokens") and legacy dollar tips ("💸 Tip · $10").
 const TIP_LINE_RE = /^💸 Tip · (\$[\d.]+|[\d,]+ Tokens?)(?:\n([\s\S]*))?$/i;
-
-// Fan-side incoming priced media: declined message ids live in localStorage
-// so a declined card stays collapsed across reloads (device-local only).
-const DECLINED_KEY = "lf-declined-msgs";
-
-function readDeclined(): string[] {
-  try {
-    const ids = JSON.parse(localStorage.getItem(DECLINED_KEY) || "[]");
-    return Array.isArray(ids) ? ids : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeDeclined(id: string, declined: boolean) {
-  try {
-    const ids = readDeclined();
-    const next = declined ? [...new Set([...ids, id])] : ids.filter((i) => i !== id);
-    localStorage.setItem(DECLINED_KEY, JSON.stringify(next.slice(-500)));
-  } catch {
-    // Storage unavailable — the decline just doesn't survive a reload.
-  }
-}
 
 export type Message = {
   id: string;
@@ -158,7 +134,6 @@ export default function MessageBubble({
   selectMode = false,
   selected = false,
   onSelectToggle,
-  peerName,
 }: {
   message: Message;
   mine: boolean;
@@ -174,7 +149,7 @@ export default function MessageBubble({
   selectMode?: boolean;
   selected?: boolean;
   onSelectToggle?: (m: Message) => void;
-  /** Creator's display name, shown on incoming locked media. */
+  /** Creator's display name (unused by the classic locked overlay). */
   peerName?: string;
 }) {
   const mediaItems = mediaItemsFromMessage(message);
@@ -202,25 +177,8 @@ export default function MessageBubble({
   const soldByMe = mine && price > 0 && !!message.unlocked;
   // Receiver of a locked message: blurred, unless they've paid to unlock it.
   const blurred = locked && !mine && !paidUnlocked;
-  // Priced + not yet unlocked → the fan sees it as an "incoming message"
-  // they accept (pay tokens) or decline, never as a blurred locked preview.
+  // Priced + not yet unlocked → show the pay-to-unlock overlay.
   const payToUnlock = blurred && price > 0;
-
-  // Incoming card stages: a short "receiving…" loading beat, then the
-  // accept/decline offer; declining asks to confirm first (loss aversion),
-  // and a declined card can still be re-accepted later.
-  const [stage, setStage] = useState<"loading" | "offer" | "confirm" | "declined">(
-    "loading"
-  );
-  useEffect(() => {
-    if (!payToUnlock) return;
-    if (readDeclined().includes(message.id)) {
-      setStage("declined");
-      return;
-    }
-    const t = setTimeout(() => setStage("offer"), 1200);
-    return () => clearTimeout(t);
-  }, [payToUnlock, message.id]);
   // Locked media with a link attached: tapping the blurred preview opens the
   // link (e.g. a payment page) in a new tab.
   const blurredLink = blurred && message.content ? firstLinkIn(message.content) : null;
@@ -271,138 +229,62 @@ export default function MessageBubble({
     </button>
   );
 
-  // Legacy lock (no token price, e.g. a link attached): keep the blurred
-  // preview with the lock badge. Priced media renders the incoming card.
-  const lockedOverlay = blurred && !payToUnlock && (
+  // Blurred locked media: lock badge, "Locked" label, and — when priced —
+  // the Unlock pill; tapping the card pays with tokens (one tap).
+  const lockedOverlay = blurred && (
     <>
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 pointer-events-none">
-        <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
-          <IconLock className="w-5 h-5 text-white" />
-        </span>
-        <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
-        {blurredPrice && (
-          <span className="text-white text-sm font-bold drop-shadow">{`$${blurredPrice}`}</span>
+        {unlocking ? (
+          <>
+            <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
+              <span className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+            </span>
+            <span className="text-white text-xs font-semibold drop-shadow">Unlocking…</span>
+          </>
+        ) : (
+          <>
+            <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
+              <IconLock className="w-5 h-5 text-white" />
+            </span>
+            <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
+            {payToUnlock ? (
+              <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent text-white text-sm font-bold px-4 py-1.5 shadow-lg">
+                <IconTip className="w-4 h-4" />
+                Unlock {formatTokens(tokensForCents(price))}
+              </span>
+            ) : (
+              blurredPrice && (
+                <span className="text-white text-sm font-bold drop-shadow">{`$${blurredPrice}`}</span>
+              )
+            )}
+          </>
         )}
       </div>
-      {blurredLink && (
-        <a
-          href={blurredLink}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => e.stopPropagation()}
-          aria-label="Open link"
+      {/* Priced media → one-tap token unlock (wallet top-up if short) */}
+      {payToUnlock && !unlocking ? (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onUnlock?.(message);
+          }}
+          aria-label={`Unlock for ${formatTokens(tokensForCents(price))}`}
           className="absolute inset-0 z-[15] cursor-pointer"
         />
+      ) : unlocking ? (
+        <div className="absolute inset-0 z-[15] cursor-wait" />
+      ) : (
+        blurredLink && (
+          <a
+            href={blurredLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Open link"
+            className="absolute inset-0 z-[15] cursor-pointer"
+          />
+        )
       )}
     </>
-  );
-
-  // What's arriving, for the incoming card copy.
-  const incomingLabel =
-    mediaItems.length > 1
-      ? `${mediaItems.length} files`
-      : mediaItems[0]?.type === "video"
-        ? "video"
-        : "photo";
-  const acceptLabel = formatTokens(tokensForCents(price));
-
-  // Fan-side incoming card: the media shows blurred behind a dark scrim,
-  // with the accept/decline flow on top.
-  const incomingOverlay = payToUnlock && (
-    <div className="absolute inset-0 z-10 bg-black/45 flex flex-col items-center justify-center gap-2 px-4 py-3 text-center">
-      {unlocking || stage === "loading" ? (
-        <>
-          <span className="w-11 h-11 rounded-full bg-black/40 border border-white/20 backdrop-blur flex items-center justify-center">
-            <span className="w-5 h-5 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-          </span>
-          <p className="text-sm font-semibold text-white drop-shadow">
-            {unlocking ? "Receiving…" : "Incoming media…"}
-          </p>
-          <p className="text-[11px] text-white/75 drop-shadow">Sent just for you</p>
-        </>
-      ) : stage === "offer" ? (
-        <>
-          <span className="w-11 h-11 rounded-full bg-white/15 text-white backdrop-blur flex items-center justify-center animate-pulse">
-            <IconHeartFilled className="w-5 h-5" />
-          </span>
-          <p className="text-sm font-bold leading-tight text-white drop-shadow">
-            {peerName || "Someone"} sent you a message with media
-          </p>
-          <p className="text-[11px] text-white/75 drop-shadow -mt-1">
-            Made just for you — accept it to see it
-          </p>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onUnlock?.(message);
-            }}
-            className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold px-5 py-2 shadow-lg transition-colors"
-          >
-            <IconCheck className="w-4 h-4" />
-            Accept · {acceptLabel}
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setStage("confirm");
-            }}
-            className="text-[11px] font-medium text-white/60 hover:text-white/85"
-          >
-            Decline
-          </button>
-        </>
-      ) : stage === "confirm" ? (
-        <>
-          <p className="text-sm font-bold leading-tight text-white drop-shadow">
-            Decline this {incomingLabel}?
-          </p>
-          <p className="text-[11px] text-white/75 drop-shadow leading-snug">
-            This was picked just for you. Once declined, it may never be sent
-            to you again.
-          </p>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setStage("offer");
-            }}
-            className="mt-1 rounded-full bg-accent text-white text-sm font-bold px-5 py-2 shadow-lg"
-          >
-            Keep it
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              writeDeclined(message.id, true);
-              setStage("declined");
-            }}
-            className="text-[11px] font-medium text-white/60 hover:text-white/85"
-          >
-            Decline anyway
-          </button>
-        </>
-      ) : (
-        <>
-          <p className="text-sm font-semibold text-white/85 drop-shadow">
-            You declined this {incomingLabel}
-          </p>
-          <p className="text-[11px] text-white/70 drop-shadow -mt-1">
-            It hasn&apos;t left yet — you can still get it
-          </p>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              writeDeclined(message.id, false);
-              setStage("offer");
-              onUnlock?.(message);
-            }}
-            className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold px-5 py-2 shadow-lg transition-colors"
-          >
-            <IconCheck className="w-4 h-4" />
-            Accept · {acceptLabel}
-          </button>
-        </>
-      )}
-    </div>
   );
 
   function renderSlide(item: MediaItem) {
@@ -507,9 +389,8 @@ export default function MessageBubble({
           <div className="relative overflow-hidden">
             {renderSlide(active)}
             {lockedOverlay}
-            {incomingOverlay}
             {lockToggle}
-            {mediaItems.length > 1 && !payToUnlock && (
+            {mediaItems.length > 1 && (
               <>
                 <button
                   type="button"
