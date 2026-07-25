@@ -67,7 +67,7 @@ create table if not exists messages (
   sender text not null check (sender in ('owner', 'guest')),
   content text,
   media_path text,
-  media_type text check (media_type in ('image', 'video')),
+  media_type text check (media_type in ('image', 'video', 'audio')),
   reply_to_id uuid references messages(id) on delete set null,
   -- Locked media renders blurred for the receiver until the sender unlocks it
   locked boolean not null default false,
@@ -430,6 +430,11 @@ alter table chats add column if not exists custom_offer jsonb;
 -- Auto refill: the token pack charged automatically (to the saved card)
 -- whenever the fan's balance drops below the threshold. Null = off.
 alter table chats add column if not exists auto_refill_pack_id text;
+
+-- Voice notes: 'audio' joins the allowed message media types.
+alter table messages drop constraint if exists messages_media_type_check;
+alter table messages add constraint messages_media_type_check
+  check (media_type in ('image', 'video', 'audio'));
 
 -- Every token movement: positive = top-up credit, negative = spend.
 create table if not exists token_transactions (
