@@ -74,6 +74,9 @@ export default function ChatView({
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNote, setWalletNote] = useState<string | null>(null);
   const [toppingUp, setToppingUp] = useState<string | null>(null);
+  // The message the fan tried to accept while short on tokens — it unlocks
+  // automatically the moment their top-up lands.
+  const pendingUnlockIdRef = useRef<string | null>(null);
   const [peerTyping, setPeerTyping] = useState(false);
   const [msgSelectMode, setMsgSelectMode] = useState(false);
   const [selectedMsgs, setSelectedMsgs] = useState<Set<string>>(new Set());
@@ -250,13 +253,20 @@ export default function ChatView({
   }, [refreshWallet]);
 
   // After Stripe Checkout (token top-up): confirm the session (covers webhook
-  // 308 failures), then refresh the wallet and the thread.
+  // 308 failures), refresh the wallet and the thread, then finish a pending
+  // accept — the message the fan was receiving when the balance ran short.
   useEffect(() => {
     if (role !== "guest") return;
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
     const paid = params.get("paid") || params.get("tipped") || params.get("topup");
-    if (!sessionId && !paid) return;
+    if (!sessionId && !paid) {
+      // Checkout was cancelled or never happened — drop any stale pending accept.
+      try {
+        sessionStorage.removeItem("lf-pending-unlock");
+      } catch {}
+      return;
+    }
     window.history.replaceState({}, "", "/chat");
     (async () => {
       if (sessionId) {
@@ -267,7 +277,14 @@ export default function ChatView({
         }).catch(() => {});
       }
       await Promise.all([load(), refreshWallet()]);
+      let pendingId: string | null = null;
+      try {
+        pendingId = sessionStorage.getItem("lf-pending-unlock");
+        sessionStorage.removeItem("lf-pending-unlock");
+      } catch {}
+      if (sessionId && pendingId) unlockById(pendingId);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, load, refreshWallet]);
 
   useEffect(() => {
@@ -320,6 +337,12 @@ export default function ChatView({
     setWalletOpen(true);
   }
 
+  /** Dismissing the sheet without paying forgets the pending auto-accept. */
+  function closeWallet() {
+    setWalletOpen(false);
+    pendingUnlockIdRef.current = null;
+  }
+
   /** Buy a token pack: one tap with a saved card, Stripe Checkout otherwise. */
   async function topUp(packId: string) {
     if (toppingUp) return;
@@ -333,12 +356,27 @@ export default function ChatView({
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.topped) {
         if (typeof data.balance === "number") setBalance(data.balance);
-        setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
         setToppingUp(null);
+        // The fan was mid-accept when the balance ran short: finish that
+        // accept right away with the fresh tokens.
+        const pendingId = pendingUnlockIdRef.current;
+        if (pendingId) {
+          pendingUnlockIdRef.current = null;
+          setWalletOpen(false);
+          unlockById(pendingId);
+          return;
+        }
+        setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
         return;
       }
       if (res.ok && data.checkoutUrl) {
         // First purchase: Stripe saves the card so next top-ups are one tap.
+        // Remember the message being accepted — it auto-accepts on return.
+        if (pendingUnlockIdRef.current) {
+          try {
+            sessionStorage.setItem("lf-pending-unlock", pendingUnlockIdRef.current);
+          } catch {}
+        }
         window.location.href = data.checkoutUrl;
         return;
       }
@@ -474,28 +512,31 @@ export default function ChatView({
   }
 
   // Instant token unlock: spends from the wallet; when the balance is short
-  // the top-up sheet opens instead (one-tap purchase with a saved card).
-  async function unlockMessage(message: Message) {
+  // the top-up sheet opens instead (one-tap purchase with a saved card) and
+  // the message is remembered so it auto-accepts right after the top-up.
+  async function unlockById(messageId: string) {
     if (unlockingId) return;
-    setUnlockingId(message.id);
+    setUnlockingId(messageId);
     try {
       const res = await fetch("/api/payments/unlock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId: message.id }),
+        body: JSON.stringify({ messageId }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.unlocked) {
         setMessages((prev) =>
-          prev.map((m) => (m.id === message.id ? { ...m, unlocked: true } : m))
+          prev.map((m) => (m.id === messageId ? { ...m, unlocked: true } : m))
         );
         if (typeof data.balance === "number") setBalance(data.balance);
+        pendingUnlockIdRef.current = null;
       } else if (res.status === 402) {
         if (typeof data.balance === "number") setBalance(data.balance);
+        pendingUnlockIdRef.current = messageId;
         openWallet(
           data.needTokens
-            ? `This unlock costs ${formatTokens(data.needTokens)} — top up to see it.`
-            : "Top up your wallet to unlock this."
+            ? `Accepting this costs ${formatTokens(data.needTokens)} — top up to receive it.`
+            : "Top up your wallet to receive this."
         );
       } else if (!res.ok) {
         alert(data.error || "Could not unlock");
@@ -504,6 +545,10 @@ export default function ChatView({
       alert("Could not unlock");
     }
     setUnlockingId(null);
+  }
+
+  function unlockMessage(message: Message) {
+    unlockById(message.id);
   }
 
   async function toggleLock(message: Message) {
@@ -1123,7 +1168,7 @@ export default function ChatView({
         <Portal>
           <div
             className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
-            onClick={() => setWalletOpen(false)}
+            onClick={closeWallet}
           >
             <div
               className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-4 fade-up"
@@ -1132,7 +1177,7 @@ export default function ChatView({
               <div className="flex items-center justify-between gap-3">
                 <p className="font-bold">Your wallet</p>
                 <button
-                  onClick={() => setWalletOpen(false)}
+                  onClick={closeWallet}
                   className="text-muted text-sm px-1"
                   aria-label="Close"
                 >
