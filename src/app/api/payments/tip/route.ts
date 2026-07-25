@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
+  maybeAutoRefill,
   postTipMessage,
   spendTokens,
   tokenBalance,
@@ -56,5 +57,15 @@ export async function POST(req: NextRequest) {
     content: tokenTipMessageContent(tokens, note),
     ownerId: chat.owner_id,
   });
-  return NextResponse.json({ ok: true, tipped: true, message, balance });
+
+  // Balance dipped low → auto refill kicks in (if the fan enabled it).
+  const refill = await maybeAutoRefill(chatId, balance);
+
+  return NextResponse.json({
+    ok: true,
+    tipped: true,
+    message,
+    balance: refill?.balance ?? balance,
+    refilled: refill?.tokens ?? 0,
+  });
 }

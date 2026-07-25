@@ -1,7 +1,14 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
-import { stripe } from "@/lib/stripe";
+import { stripe, stripeConfigured } from "@/lib/stripe";
 import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
+import {
+  AUTO_REFILL_THRESHOLD_TOKENS,
+  autoRefillBonusTokens,
+  formatTokens,
+  packById,
+  packTotalTokens,
+} from "@/lib/tokens";
 import type Stripe from "stripe";
 
 /** Record that a fan unlocked a message (idempotent) and notify the chat. */
@@ -92,6 +99,60 @@ export async function spendTokens(opts: {
     message_id: opts.messageId ?? null,
   });
   return balance;
+}
+
+/**
+ * Auto refill: if the fan enabled it and their balance just dropped below
+ * the threshold, charge their chosen pack to the saved card (off-session)
+ * and credit the tokens plus the loyalty bonus. Runs after a spend; any
+ * failure (no card, declined, Stripe down) silently leaves the balance
+ * as-is — the fan just tops up manually like before.
+ *
+ * Returns { balance, tokens } after a successful refill, null otherwise.
+ */
+export async function maybeAutoRefill(
+  chatId: string,
+  currentBalance: number
+): Promise<{ balance: number; tokens: number } | null> {
+  if (currentBalance >= AUTO_REFILL_THRESHOLD_TOKENS || !stripeConfigured()) {
+    return null;
+  }
+  const db = supabaseAdmin();
+  const { data: chat } = await db
+    .from("chats")
+    .select("id, auto_refill_pack_id, stripe_customer_id, stripe_payment_method_id")
+    .eq("id", chatId)
+    .maybeSingle();
+  const pack = chat?.auto_refill_pack_id ? packById(chat.auto_refill_pack_id) : null;
+  if (!pack || !chat?.stripe_customer_id || !chat?.stripe_payment_method_id) {
+    return null;
+  }
+
+  const tokens = packTotalTokens(pack) + autoRefillBonusTokens(pack);
+  try {
+    const pi = await stripe().paymentIntents.create({
+      amount: pack.priceCents,
+      currency: "usd",
+      customer: chat.stripe_customer_id,
+      payment_method: chat.stripe_payment_method_id,
+      off_session: true,
+      confirm: true,
+      metadata: {
+        chatId,
+        kind: "topup",
+        tokens: String(tokens),
+        packId: pack.id,
+        autoRefill: "1",
+      },
+      description: `Auto refill ${formatTokens(tokens)}`,
+    });
+    const balance = await creditTokens({ chatId, tokens, paymentIntentId: pi.id });
+    if (balance === null) return null;
+    return { balance, tokens };
+  } catch {
+    // Card declined / needs authentication — skip; the fan can top up manually.
+    return null;
+  }
 }
 
 /** Current token balance of a fan chat. */

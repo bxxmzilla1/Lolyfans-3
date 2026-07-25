@@ -427,6 +427,10 @@ alter table chats add column if not exists token_balance int not null default 0;
 -- cleared once claimed.
 alter table chats add column if not exists custom_offer jsonb;
 
+-- Auto refill: the token pack charged automatically (to the saved card)
+-- whenever the fan's balance drops below the threshold. Null = off.
+alter table chats add column if not exists auto_refill_pack_id text;
+
 -- Every token movement: positive = top-up credit, negative = spend.
 create table if not exists token_transactions (
   id uuid primary key default gen_random_uuid(),

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
-import { recordUnlock, spendTokens, tokenBalance } from "@/lib/payments";
+import { maybeAutoRefill, recordUnlock, spendTokens, tokenBalance } from "@/lib/payments";
 import { tokensForCents } from "@/lib/tokens";
 
 /**
@@ -74,5 +74,14 @@ export async function POST(req: NextRequest) {
     priceCents: price,
   });
 
-  return NextResponse.json({ ok: true, unlocked: true, tokens, balance });
+  // Balance dipped low → auto refill kicks in (if the fan enabled it).
+  const refill = await maybeAutoRefill(message.chat_id, balance);
+
+  return NextResponse.json({
+    ok: true,
+    unlocked: true,
+    tokens,
+    balance: refill?.balance ?? balance,
+    refilled: refill?.tokens ?? 0,
+  });
 }
