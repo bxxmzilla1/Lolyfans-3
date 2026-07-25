@@ -96,6 +96,7 @@ export default async function GuestChatPage() {
         header={header}
         initialMessages={initialMessages}
         ownerId={chat.owner_id}
+        peerName={meta.display_name || "Lolyfans"}
       />
       <GuestNav />
     </div>

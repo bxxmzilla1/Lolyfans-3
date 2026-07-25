@@ -44,6 +44,7 @@ export default function ChatView({
   header,
   initialMessages,
   ownerId,
+  peerName,
 }: {
   chatId: string;
   role: "owner" | "guest";
@@ -51,6 +52,8 @@ export default function ChatView({
   initialMessages?: Message[];
   /** Guest side: creator's id, so typing can reach their inbox chat list. */
   ownerId?: string;
+  /** Guest side: creator's display name, shown on incoming locked media. */
+  peerName?: string;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [text, setText] = useState("");
@@ -736,6 +739,7 @@ export default function ChatView({
             onToggleLock={toggleLock}
             onUnlock={unlockMessage}
             unlocking={unlockingId === m.id}
+            peerName={peerName}
             highlighted={highlightId === m.id}
             selectMode={msgSelectMode}
             selected={selectedMsgs.has(m.id)}

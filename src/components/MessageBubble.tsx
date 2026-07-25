@@ -158,6 +158,7 @@ export default function MessageBubble({
   selectMode = false,
   selected = false,
   onSelectToggle,
+  peerName,
 }: {
   message: Message;
   mine: boolean;
@@ -173,6 +174,8 @@ export default function MessageBubble({
   selectMode?: boolean;
   selected?: boolean;
   onSelectToggle?: (m: Message) => void;
+  /** Creator's display name, shown on incoming locked media. */
+  peerName?: string;
 }) {
   const mediaItems = mediaItemsFromMessage(message);
   const hasMedia = mediaItems.length > 0;
@@ -303,17 +306,17 @@ export default function MessageBubble({
         : "photo";
   const acceptLabel = formatTokens(tokensForCents(price));
 
-  // Fan-side incoming card: covers the media (which sets the bubble size)
-  // with a fully opaque layer, so nothing shows until the fan accepts.
+  // Fan-side incoming card: a fixed-size placeholder (the real media is not
+  // rendered at all until accepted), with a constant loading shimmer on top.
   const incomingOverlay = payToUnlock && (
-    <div className="absolute inset-0 z-10 bg-bg/90 backdrop-blur-3xl flex flex-col items-center justify-center gap-2 px-4 py-3 text-center">
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 px-4 py-3 text-center">
       {unlocking || stage === "loading" ? (
         <>
           <span className="w-11 h-11 rounded-full bg-card2 border border-line flex items-center justify-center">
             <span className="w-5 h-5 rounded-full border-2 border-accent/30 border-t-accent animate-spin" />
           </span>
           <p className="text-sm font-semibold">
-            {unlocking ? "Receiving…" : `Incoming ${incomingLabel}…`}
+            {unlocking ? "Receiving…" : "Incoming media…"}
           </p>
           <p className="text-[11px] text-muted">Sent just for you</p>
         </>
@@ -323,7 +326,7 @@ export default function MessageBubble({
             <IconHeartFilled className="w-5 h-5" />
           </span>
           <p className="text-sm font-bold leading-tight">
-            You&apos;ve been sent a {incomingLabel}
+            {peerName || "Someone"} sent you a message with media
           </p>
           <p className="text-[11px] text-muted -mt-1">
             Made just for you — accept it to see it
@@ -500,7 +503,13 @@ export default function MessageBubble({
 
         {active && (
           <div className="relative overflow-hidden">
-            {renderSlide(active)}
+            {payToUnlock ? (
+              // Fixed-size placeholder: every incoming locked card is the same
+              // size, and the media itself isn't rendered until accepted.
+              <div className="w-72 max-w-full aspect-[4/5] bg-card2 shimmer" />
+            ) : (
+              renderSlide(active)
+            )}
             {lockedOverlay}
             {incomingOverlay}
             {lockToggle}
@@ -561,7 +570,12 @@ export default function MessageBubble({
         )}
 
         {showText && displayContent && (
-          <p className="px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words">
+          <p
+            className={`px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words ${
+              payToUnlock ? "blur-[6px] select-none pointer-events-none" : ""
+            }`}
+            aria-hidden={payToUnlock || undefined}
+          >
             {renderContent(displayContent, mine, hasMedia, locked)}
           </p>
         )}

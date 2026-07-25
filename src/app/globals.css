@@ -133,6 +133,33 @@ body::before {
   display: none;
 }
 
+/* Loading shimmer sweeping across incoming locked media cards */
+@keyframes shimmer-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+.shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 25%,
+    color-mix(in oklab, var(--fg) 10%, transparent) 50%,
+    transparent 75%
+  );
+  animation: shimmer-sweep 1.6s ease-in-out infinite;
+}
+
 /* Messenger-style typing indicator */
 @keyframes typing-bounce {
   0%,
