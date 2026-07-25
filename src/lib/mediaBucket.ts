@@ -22,11 +22,18 @@ export function ensureMediaBucketLimits(): Promise<void> {
         public: true,
         // null = no extra bucket cap (use the project global limit only)
         fileSizeLimit: null,
+        // No mime restriction — chat media includes images, videos and
+        // voice-note audio (a dashboard-set allowlist would reject audio).
+        allowedMimeTypes: null,
       });
       if (error) {
         // Fallback: push the bucket cap as high as the API allows.
         await db.storage
-          .updateBucket("media", { public: true, fileSizeLimit: "50GB" })
+          .updateBucket("media", {
+            public: true,
+            fileSizeLimit: "50GB",
+            allowedMimeTypes: null,
+          })
           .catch(() => {});
       }
     })().catch(() => {

@@ -719,7 +719,9 @@ export default function ChatView({
         }
       };
       recorderRef.current = rec;
-      rec.start();
+      // Timeslice so chunks arrive while recording — some browsers only
+      // deliver data on stop otherwise, which can produce empty recordings.
+      rec.start(500);
       setRecordSeconds(0);
       setRecording(true);
       recordTimerRef.current = setInterval(
@@ -746,12 +748,12 @@ export default function ChatView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fileName: file.name, scope: "chat" }),
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) throw new Error("Could not start the upload");
       const { path, token } = await res.json();
       const { error } = await supabaseBrowser()
         .storage.from("media")
         .uploadToSignedUrl(path, token, file, { cacheControl: "31536000" });
-      if (error) throw new Error();
+      if (error) throw new Error(error.message || "Upload failed");
 
       const mediaItems = [{ path, type: "audio" as MediaKind }];
       const tempId = `temp-${Date.now()}`;
@@ -790,11 +792,16 @@ export default function ChatView({
             : [...withoutTemp, message];
         });
       } else {
+        const data = await post.json().catch(() => ({}));
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
-        alert("Could not send the voice note");
+        alert(data.error || "Could not send the voice note");
       }
-    } catch {
-      alert("Could not send the voice note");
+    } catch (err) {
+      alert(
+        err instanceof Error && err.message
+          ? `Could not send the voice note: ${err.message}`
+          : "Could not send the voice note"
+      );
     }
     setSendingVoice(false);
   }
