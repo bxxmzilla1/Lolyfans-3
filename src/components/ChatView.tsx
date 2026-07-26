@@ -122,6 +122,15 @@ export default function ChatView({
     original: string;
   } | null>(null);
   const [sendingOffer, setSendingOffer] = useState(false);
+  // Owner side: custom Stripe payment link (any tokens & price) — lets the
+  // fan pay with a different card than the one saved for one-tap.
+  const [payLinkDialog, setPayLinkDialog] = useState<{
+    tokens: string;
+    price: string;
+    url: string | null;
+  } | null>(null);
+  const [creatingLink, setCreatingLink] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
   // Voice notes: recording state + the moment between stop and message sent.
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -564,6 +573,39 @@ export default function ChatView({
       alert("Could not send the offer");
     }
     setSendingOffer(false);
+  }
+
+  /**
+   * Owner: create a hosted Stripe Checkout link for a custom token amount
+   * and price, to paste into the chat. Checkout accepts any card, so fans
+   * can pay with a different one than their saved card.
+   */
+  async function createPayLink() {
+    if (!payLinkDialog || creatingLink) return;
+    const tokens = Math.round(parseFloat(payLinkDialog.tokens));
+    const priceCents = Math.round(parseFloat(payLinkDialog.price) * 100);
+    if (!(tokens > 0) || !(priceCents >= 50)) {
+      alert("Enter the tokens and a price of at least $0.50.");
+      return;
+    }
+    setCreatingLink(true);
+    try {
+      const res = await fetch("/api/chats/paylink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, tokens, priceCents }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.url) {
+        setLinkCopied(false);
+        setPayLinkDialog({ ...payLinkDialog, url: data.url });
+      } else {
+        alert(data.error || "Could not create the link");
+      }
+    } catch {
+      alert("Could not create the link");
+    }
+    setCreatingLink(false);
   }
 
   async function sendTip() {
@@ -1432,6 +1474,20 @@ export default function ChatView({
               %
             </button>
           )}
+          {role === "owner" && (
+            <button
+              onClick={() => setPayLinkDialog({ tokens: "", price: "", url: null })}
+              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold transition-colors ${
+                payLinkDialog
+                  ? "bg-accent text-white glow-accent"
+                  : "bg-transparent border border-line text-muted hover:text-fg"
+              }`}
+              aria-label="Create a payment link"
+              title="Create a Stripe payment link (custom tokens & price, any card)"
+            >
+              $
+            </button>
+          )}
           <button
             onClick={startRecording}
             disabled={uploading || tipping || sendingVoice}
@@ -1928,6 +1984,138 @@ export default function ChatView({
                   {sendingOffer ? "Sending…" : "Send offer"}
                 </button>
               </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {payLinkDialog && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setPayLinkDialog(null)}
+          >
+            <div
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div>
+                <p className="font-bold">Create a payment link</p>
+                <p className="text-xs text-muted mt-0.5">
+                  A Stripe checkout page for a custom token amount and price.
+                  Works with any card — handy when the fan wants to pay with a
+                  different one. The link is valid for 24 hours.
+                </p>
+              </div>
+
+              {!payLinkDialog.url ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted">Tokens</label>
+                      <input
+                        autoFocus
+                        inputMode="numeric"
+                        value={payLinkDialog.tokens}
+                        onChange={(e) =>
+                          setPayLinkDialog({
+                            ...payLinkDialog,
+                            tokens: e.target.value.replace(/[^\d]/g, ""),
+                          })
+                        }
+                        placeholder="e.g. 500"
+                        className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted">Price ($)</label>
+                      <input
+                        inputMode="decimal"
+                        value={payLinkDialog.price}
+                        onChange={(e) =>
+                          setPayLinkDialog({
+                            ...payLinkDialog,
+                            price: e.target.value.replace(/[^\d.]/g, ""),
+                          })
+                        }
+                        placeholder="9.99"
+                        className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                      />
+                    </div>
+                  </div>
+                  {(() => {
+                    const t = Math.round(parseFloat(payLinkDialog.tokens)) || 0;
+                    const p = Math.round(parseFloat(payLinkDialog.price) * 100) || 0;
+                    if (!t || !p) return null;
+                    return (
+                      <p className="text-xs text-muted">
+                        They&apos;ll pay{" "}
+                        <span className="font-semibold text-fg">
+                          ${(p / 100).toFixed(2)}
+                        </span>{" "}
+                        and receive{" "}
+                        <span className="font-semibold text-fg">
+                          {formatTokens(t)}
+                        </span>
+                        .
+                      </p>
+                    );
+                  })()}
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => setPayLinkDialog(null)}
+                      className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={createPayLink}
+                      disabled={creatingLink || !payLinkDialog.tokens || !payLinkDialog.price}
+                      className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
+                    >
+                      {creatingLink ? "Creating…" : "Create link"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <input
+                    readOnly
+                    value={payLinkDialog.url}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-xs font-mono text-muted"
+                  />
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(payLinkDialog.url!);
+                          setLinkCopied(true);
+                          setTimeout(() => setLinkCopied(false), 1500);
+                        } catch {
+                          // Clipboard blocked — the field above is selectable.
+                        }
+                      }}
+                      className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
+                    >
+                      {linkCopied ? "Copied!" : "Copy link"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setText((prev) =>
+                          prev.trim()
+                            ? `${prev.trim()} ${payLinkDialog.url}`
+                            : payLinkDialog.url!
+                        );
+                        setPayLinkDialog(null);
+                      }}
+                      className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5"
+                    >
+                      Add to message
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </Portal>
