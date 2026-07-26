@@ -47,10 +47,10 @@ type TypeFilter = "all" | "image" | "video";
 /** Per-chat send status of a media path (drives the outline colors). */
 type SendStatus = "free" | "locked" | "unlocked";
 
-const STATUS_RING: Record<SendStatus, string> = {
-  free: "ring-2 ring-inset ring-orange-400",
-  locked: "ring-2 ring-inset ring-red-500",
-  unlocked: "ring-2 ring-inset ring-green-500",
+const STATUS_BORDER: Record<SendStatus, string> = {
+  free: "border-orange-400",
+  locked: "border-red-500",
+  unlocked: "border-green-500",
 };
 
 function formatDuration(seconds: number): string {
@@ -711,7 +711,7 @@ export default function VaultManager() {
               } ${
                 selectMode && selected.has(item.id)
                   ? "ring-2 ring-accent ring-inset"
-                  : (chatId && STATUS_RING[sendStatus[item.media_path]]) || ""
+                  : ""
               }`}
             >
               {item.media_type === "image" ? (
@@ -748,6 +748,15 @@ export default function VaultManager() {
                     </span>
                   )}
                 </>
+              )}
+              {/* Send-status outline for the open chat — drawn on top of the
+                  thumbnail so it can't hide behind the media. */}
+              {!selectMode && chatId && sendStatus[item.media_path] && (
+                <span
+                  className={`absolute inset-0 rounded-md border-4 pointer-events-none ${
+                    STATUS_BORDER[sendStatus[item.media_path]]
+                  }`}
+                />
               )}
               {selectMode && (
                 <span
