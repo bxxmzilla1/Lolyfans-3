@@ -135,8 +135,7 @@ export default function CardOnFileSetup({
         <p className="text-sm font-semibold">Add a card to finish signing up</p>
         <p className="text-xs text-muted">
           <span className="font-semibold text-fg">No charges will be applied</span>{" "}
-          — signing up is free. Your card is only saved to verify your account
-          and enable one-tap purchases later.
+          — signing up is free. Your card is only used to verify your account.
         </p>
       </div>
 
