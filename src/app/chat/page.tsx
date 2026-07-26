@@ -6,6 +6,8 @@ import { ipFromHeaders } from "@/lib/invites";
 import { visitorLocation } from "@/lib/geo";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChatAccessDestination } from "@/lib/subscriptionAccess";
+import { saveStripePaymentMethod } from "@/lib/payments";
+import { stripe, stripeConfigured } from "@/lib/stripe";
 import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
 import GuestNav from "@/components/GuestNav";
@@ -14,11 +16,40 @@ import OwnerEscapeHatch from "@/components/OwnerEscapeHatch";
 
 export const dynamic = "force-dynamic";
 
-export default async function GuestChatPage() {
+export default async function GuestChatPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ setup_intent?: string }>;
+}) {
+  const { setup_intent: setupIntentId } = await searchParams;
   const chatId = await getGuestChatId();
   if (!chatId) redirect("/");
 
-  // Paid profiles: no chat until the subscription is confirmed.
+  // A 3-D Secure redirect from the signup card step lands here before the
+  // card is on the chat row — persist it now so the gate below lets them in.
+  if (setupIntentId && stripeConfigured()) {
+    try {
+      const si = await stripe().setupIntents.retrieve(setupIntentId);
+      if (
+        si.metadata?.chatId === chatId &&
+        si.status === "succeeded" &&
+        si.payment_method
+      ) {
+        await saveStripePaymentMethod(
+          chatId,
+          typeof si.customer === "string" ? si.customer : si.customer?.id,
+          typeof si.payment_method === "string"
+            ? si.payment_method
+            : si.payment_method.id
+        );
+      }
+    } catch {
+      // Bad or foreign SetupIntent — the gate below decides what happens.
+    }
+  }
+
+  // Paid profiles: no chat until the subscription is confirmed. Free
+  // profiles: no chat until the (free) card-on-file step is done.
   const access = await guestChatAccessDestination(chatId);
   if (!access.allowed) redirect(access.href);
 

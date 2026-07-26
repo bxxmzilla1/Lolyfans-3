@@ -22,6 +22,7 @@ export default function JoinForm({
   ownerName,
   plan,
   initialPayStep = false,
+  initialCardStep = false,
 }: {
   code: string;
   buttonText?: string;
@@ -30,6 +31,8 @@ export default function JoinForm({
   plan?: SubPlan | null;
   /** Returning unpaid guest — jump straight to the card step. */
   initialPayStep?: boolean;
+  /** Free signup that hasn't saved a card yet — resume the card step. */
+  initialCardStep?: boolean;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -42,7 +45,7 @@ export default function JoinForm({
   );
   // Free signups still add a card (SetupIntent, nothing charged) so one-tap
   // top-ups work from the first message.
-  const [cardStep, setCardStep] = useState(false);
+  const [cardStep, setCardStep] = useState(() => initialCardStep && !!ownerId);
   const [opening, setOpening] = useState(false);
   const router = useRouter();
 

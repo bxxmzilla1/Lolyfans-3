@@ -6,9 +6,11 @@ import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invit
 import { mediaUrl } from "@/lib/utils";
 import { subPlanFromMetadata } from "@/lib/subscriptionPlan";
 import {
+  chatHasCardOnFile,
   chatHasPaidAccess,
   ownerRequiresPaidSub,
 } from "@/lib/subscriptionAccess";
+import { stripeConfigured } from "@/lib/stripe";
 import JoinForm from "@/components/JoinForm";
 import InviteProfile from "@/components/InviteProfile";
 
@@ -63,14 +65,25 @@ export default async function InviteSignupPage({
 
   const existingChat = cookieChat?.data ?? ipChat?.data ?? null;
   let forcePayStep = pay === "1";
+  let forceCardStep = false;
 
   if (existingChat) {
     const paidOk =
       !(await ownerRequiresPaidSub(existingChat.owner_id)) ||
       (await chatHasPaidAccess(existingChat.id, existingChat.owner_id));
-    if (paidOk) redirect("/chat");
-    // Signed up but hasn't paid yet → stay here and show the card form.
-    forcePayStep = true;
+    if (paidOk) {
+      // Free signups still owe the card-on-file step (nothing charged) —
+      // refreshing this page mustn't skip past it into the chat.
+      const needsCard =
+        stripeConfigured() &&
+        existingChat.owner_id === invite!.owner_id &&
+        !(await chatHasCardOnFile(existingChat.id));
+      if (!needsCard) redirect("/chat");
+      forceCardStep = true;
+    } else {
+      // Signed up but hasn't paid yet → stay here and show the card form.
+      forcePayStep = true;
+    }
   }
 
   const { data: ownerUser } = await db.auth.admin.getUserById(invite!.owner_id);
@@ -94,9 +107,11 @@ export default async function InviteSignupPage({
 
         <div className="text-center -mt-2">
           <p className="text-muted text-sm">
-            {forcePayStep && plan.priceCents > 0
-              ? `Complete your subscription to chat with ${ownerName}.`
-              : `Sign up with your email to subscribe to ${ownerName} and start chatting.`}
+            {forceCardStep
+              ? `One last step — add a card to start chatting with ${ownerName}.`
+              : forcePayStep && plan.priceCents > 0
+                ? `Complete your subscription to chat with ${ownerName}.`
+                : `Sign up with your email to subscribe to ${ownerName} and start chatting.`}
           </p>
         </div>
 
@@ -107,6 +122,7 @@ export default async function InviteSignupPage({
           ownerName={ownerName}
           plan={plan}
           initialPayStep={forcePayStep && plan.priceCents > 0}
+          initialCardStep={forceCardStep}
         />
       </div>
     </main>
