@@ -402,21 +402,6 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, load, refreshWallet]);
 
-  // Rare 3-D Secure redirect from the signup card step lands on /chat with
-  // ?setup_intent=… — persist the verified card on the chat so one-tap works.
-  useEffect(() => {
-    if (role !== "guest" || !ownerId) return;
-    const params = new URLSearchParams(window.location.search);
-    const setupIntentId = params.get("setup_intent");
-    if (!setupIntentId) return;
-    window.history.replaceState({}, "", "/chat");
-    fetch("/api/payments/card", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ownerId, setupIntentId }),
-    }).catch(() => {});
-  }, [role, ownerId]);
-
   useEffect(() => {
     scrollToBottom(true);
   }, [messages.length, peerTyping, scrollToBottom]);

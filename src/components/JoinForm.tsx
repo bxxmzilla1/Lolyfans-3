@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import SubscribeCheckout from "./SubscribeCheckout";
-import CardOnFileSetup from "./CardOnFileSetup";
 import { elementsEnabled } from "@/lib/stripeClient";
 import type { SubPlan } from "@/lib/subscriptionPlan";
 import { IconEye, IconEyeOff } from "./Icons";
@@ -22,7 +21,6 @@ export default function JoinForm({
   ownerName,
   plan,
   initialPayStep = false,
-  initialCardStep = false,
 }: {
   code: string;
   buttonText?: string;
@@ -31,8 +29,6 @@ export default function JoinForm({
   plan?: SubPlan | null;
   /** Returning unpaid guest — jump straight to the card step. */
   initialPayStep?: boolean;
-  /** Free signup that hasn't saved a card yet — resume the card step. */
-  initialCardStep?: boolean;
 }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -43,9 +39,6 @@ export default function JoinForm({
   const [payStep, setPayStep] = useState(
     () => initialPayStep && !!ownerId && (plan?.priceCents ?? 0) > 0
   );
-  // Free signups still add a card (SetupIntent, nothing charged) so one-tap
-  // top-ups work from the first message.
-  const [cardStep, setCardStep] = useState(() => initialCardStep && !!ownerId);
   const [opening, setOpening] = useState(false);
   const router = useRouter();
 
@@ -104,13 +97,6 @@ export default function JoinForm({
       setPayStep(true);
       return;
     }
-
-    // Free profile → mandatory card-on-file step (no charge) before the chat.
-    if (ownerId && elementsEnabled()) {
-      setBusy(false);
-      setCardStep(true);
-      return;
-    }
     openChat();
   }
 
@@ -122,21 +108,6 @@ export default function JoinForm({
             ownerId={ownerId}
             ownerName={ownerName}
             plan={plan}
-            onSuccess={openChat}
-          />
-        </div>
-        {opening && <OpeningSkeleton />}
-      </>
-    );
-  }
-
-  if (cardStep && ownerId) {
-    return (
-      <>
-        <div className="w-full flex flex-col gap-4">
-          <CardOnFileSetup
-            ownerId={ownerId}
-            buttonText={buttonText?.trim() || "Start chatting"}
             onSuccess={openChat}
           />
         </div>

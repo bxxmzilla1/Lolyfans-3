@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { stripeConfigured } from "@/lib/stripe";
 import { subPlanFromMetadata, type SubPlan } from "@/lib/subscriptionPlan";
 
 export const ACTIVE_SUB_STATUSES = ["trialing", "active", "past_due", "canceling"];
@@ -30,16 +29,6 @@ export async function chatHasPaidAccess(
     .in("status", ACTIVE_SUB_STATUSES)
     .maybeSingle();
   return !!data;
-}
-
-/** Fan finished the mandatory card-on-file step (free signups). */
-export async function chatHasCardOnFile(chatId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin()
-    .from("chats")
-    .select("stripe_payment_method_id")
-    .eq("id", chatId)
-    .maybeSingle();
-  return !!data?.stripe_payment_method_id;
 }
 
 /** Invite code to send unpaid fans back to the card step. */
@@ -74,23 +63,14 @@ export async function inviteCodeForChat(chatId: string): Promise<string | null> 
 
 /**
  * Where a returning guest should land. Paid creators with no subscription
- * stay on the signup payment step — never /chat or the fan shell. Free
- * profiles still require a card on file (SetupIntent, nothing charged), so
- * refreshing mid-signup can't skip the card step.
+ * stay on the signup payment step — never /chat or the fan shell.
  */
 export async function guestAccessDestination(
   chatId: string,
   ownerId: string
 ): Promise<{ allowed: boolean; href: string }> {
   if (!(await ownerRequiresPaidSub(ownerId))) {
-    if (!stripeConfigured() || (await chatHasCardOnFile(chatId))) {
-      return { allowed: true, href: "/chat" };
-    }
-    const code = await inviteCodeForChat(chatId);
-    return {
-      allowed: false,
-      href: code ? `/i/${code}/signup?card=1` : "/",
-    };
+    return { allowed: true, href: "/chat" };
   }
   if (await chatHasPaidAccess(chatId, ownerId)) {
     return { allowed: true, href: "/chat" };
