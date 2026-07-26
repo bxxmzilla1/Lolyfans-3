@@ -1,7 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import { fileKind, mediaUrl } from "@/lib/utils";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 import { uploadWithProgress } from "@/lib/uploadWithProgress";
 import {
   IconBack,
@@ -42,6 +44,15 @@ type Item = {
 
 type TypeFilter = "all" | "image" | "video";
 
+/** Per-chat send status of a media path (drives the outline colors). */
+type SendStatus = "free" | "locked" | "unlocked";
+
+const STATUS_RING: Record<SendStatus, string> = {
+  free: "ring-2 ring-inset ring-orange-400",
+  locked: "ring-2 ring-inset ring-red-500",
+  unlocked: "ring-2 ring-inset ring-green-500",
+};
+
 function formatDuration(seconds: number): string {
   const total = Math.round(seconds);
   const h = Math.floor(total / 3600);
@@ -77,6 +88,37 @@ export default function VaultManager() {
     run: () => void;
   } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // When the vault sits next to an open chat, outline each item by its send
+  // status in THAT chat: orange = sent free, red = locked & never unlocked,
+  // green = locked & unlocked. No outline = never sent in this chat.
+  const pathname = usePathname();
+  const chatId = pathname?.match(/^\/inbox\/([^/?#]+)/)?.[1] ?? null;
+  const [sendStatus, setSendStatus] = useState<Record<string, SendStatus>>({});
+
+  const loadSendStatus = useCallback(async () => {
+    if (!chatId) return;
+    const res = await fetch(`/api/vault/status?chatId=${chatId}`).catch(() => null);
+    if (!res?.ok) return;
+    const data = await res.json().catch(() => null);
+    setSendStatus((data?.status as Record<string, SendStatus>) ?? {});
+  }, [chatId]);
+
+  useEffect(() => {
+    setSendStatus({});
+    if (!chatId) return;
+    loadSendStatus();
+    // Live updates: repaint when something is sent or the fan unlocks.
+    const supabase = supabaseBrowser();
+    const channel = supabase
+      .channel(`chat:${chatId}`)
+      .on("broadcast", { event: "new-message" }, () => loadSendStatus())
+      .on("broadcast", { event: "message-unlocked" }, () => loadSendStatus());
+    channel.subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [chatId, loadSendStatus]);
 
   const loadAlbums = useCallback(async () => {
     const res = await fetch("/api/vault/albums");
@@ -627,6 +669,23 @@ export default function VaultManager() {
           No {typeFilter === "image" ? "photos" : "videos"} in this album.
         </p>
       ) : (
+        <>
+        {chatId && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-orange-400" />
+              Sent free
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
+              Locked · not unlocked
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
+              Unlocked
+            </span>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-1">
           {visibleItems.map((item) => (
             <button
@@ -652,7 +711,7 @@ export default function VaultManager() {
               } ${
                 selectMode && selected.has(item.id)
                   ? "ring-2 ring-accent ring-inset"
-                  : ""
+                  : (chatId && STATUS_RING[sendStatus[item.media_path]]) || ""
               }`}
             >
               {item.media_type === "image" ? (
@@ -706,6 +765,7 @@ export default function VaultManager() {
             </button>
           ))}
         </div>
+        </>
       )}
 
       {viewer && (
