@@ -34,6 +34,7 @@ import {
   IconChevronRight,
   IconEye,
   IconEyeOff,
+  IconGift,
   IconLink,
   IconLock,
   IconMic,
@@ -122,6 +123,9 @@ export default function ChatView({
     original: string;
   } | null>(null);
   const [sendingOffer, setSendingOffer] = useState(false);
+  // Owner side: gift free tokens straight into the fan's wallet.
+  const [giftDialog, setGiftDialog] = useState<{ tokens: string } | null>(null);
+  const [sendingGift, setSendingGift] = useState(false);
   // Voice notes: recording state + the moment between stop and message sent.
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -285,6 +289,19 @@ export default function ChatView({
           originalCents: number;
         };
         if (o?.id) setCustomOffer(o);
+      })
+      .on("broadcast", { event: "tokens-gifted" }, ({ payload }) => {
+        // Creator gifted free tokens — update the balance and celebrate.
+        if (role !== "guest") return;
+        const g = payload as { tokens?: number } | null;
+        refreshWallet();
+        if (g?.tokens) {
+          setRefillNote(
+            `🎁 You received ${formatTokens(g.tokens)} — added to your wallet`
+          );
+          if (refillNoteTimerRef.current) clearTimeout(refillNoteTimerRef.current);
+          refillNoteTimerRef.current = setTimeout(() => setRefillNote(null), 6000);
+        }
       })
       .subscribe();
     channelRef.current = channel;
@@ -564,6 +581,33 @@ export default function ChatView({
       alert("Could not send the offer");
     }
     setSendingOffer(false);
+  }
+
+  /** Owner: gift free tokens straight into this fan's wallet (no charge). */
+  async function sendGift() {
+    if (!giftDialog || sendingGift) return;
+    const tokens = Math.round(parseFloat(giftDialog.tokens));
+    if (!(tokens > 0)) {
+      alert("Enter how many tokens to gift.");
+      return;
+    }
+    setSendingGift(true);
+    try {
+      const res = await fetch("/api/chats/gift", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, tokens }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setGiftDialog(null);
+      } else {
+        alert(data.error || "Could not send the tokens");
+      }
+    } catch {
+      alert("Could not send the tokens");
+    }
+    setSendingGift(false);
   }
 
   async function sendTip() {
@@ -1432,6 +1476,20 @@ export default function ChatView({
               %
             </button>
           )}
+          {role === "owner" && (
+            <button
+              onClick={() => setGiftDialog({ tokens: "" })}
+              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center transition-colors ${
+                giftDialog
+                  ? "bg-accent text-white glow-accent"
+                  : "bg-transparent border border-line text-muted hover:text-fg"
+              }`}
+              aria-label="Gift free tokens"
+              title="Gift free tokens to this fan's wallet"
+            >
+              <IconGift className="w-4.5 h-4.5" />
+            </button>
+          )}
           <button
             onClick={startRecording}
             disabled={uploading || tipping || sendingVoice}
@@ -1926,6 +1984,60 @@ export default function ChatView({
                   className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
                 >
                   {sendingOffer ? "Sending…" : "Send offer"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {giftDialog && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setGiftDialog(null)}
+          >
+            <div
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div>
+                <p className="font-bold">Gift free tokens</p>
+                <p className="text-xs text-muted mt-0.5">
+                  Added to this fan&apos;s wallet instantly — free for them, no
+                  charge involved.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted">Tokens</label>
+                <input
+                  autoFocus
+                  inputMode="numeric"
+                  value={giftDialog.tokens}
+                  onChange={(e) =>
+                    setGiftDialog({ tokens: e.target.value.replace(/[^\d]/g, "") })
+                  }
+                  placeholder="e.g. 100"
+                  className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                />
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setGiftDialog(null)}
+                  className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={sendGift}
+                  disabled={sendingGift || !giftDialog.tokens}
+                  className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
+                >
+                  {sendingGift
+                    ? "Sending…"
+                    : giftDialog.tokens
+                      ? `Gift ${formatTokens(Math.round(parseFloat(giftDialog.tokens)) || 0)}`
+                      : "Gift tokens"}
                 </button>
               </div>
             </div>
