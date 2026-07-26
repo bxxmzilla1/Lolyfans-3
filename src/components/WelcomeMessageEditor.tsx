@@ -5,11 +5,14 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl } from "@/lib/utils";
 import { VaultPicker } from "./MassMessage";
 import Portal from "./Portal";
+import VoiceNote from "./VoiceNote";
 
 /**
- * Settings → Welcome message: a pre-made message (text + optional image or
- * video) that is sent automatically, as the creator, the moment a new fan
- * signs up through one of their invite links.
+ * Settings → Welcome message: a pre-made message (text and/or a voice note,
+ * plus an optional image or video) sent automatically, as the creator, the
+ * moment a new fan signs up through one of their invite links. The voice
+ * note arrives as its own bubble right after the media, so it can stand in
+ * for a written caption.
  */
 export default function WelcomeMessageEditor() {
   const [enabled, setEnabled] = useState(false);
@@ -17,12 +20,16 @@ export default function WelcomeMessageEditor() {
   const [mediaPath, setMediaPath] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video" | "audio" | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  // Voice note: its own slot, so it can ride along with an image/video.
+  const [voicePath, setVoicePath] = useState<string | null>(null);
+  const [voiceFile, setVoiceFile] = useState<File | null>(null);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const voiceRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     supabaseBrowser()
@@ -33,6 +40,7 @@ export default function WelcomeMessageEditor() {
         setText((meta.welcome_text as string) ?? "");
         setMediaPath((meta.welcome_media_path as string) || null);
         setMediaType((meta.welcome_media_type as "image" | "video") || null);
+        setVoicePath((meta.welcome_voice_path as string) || null);
         setLoading(false);
       });
   }, []);
@@ -44,11 +52,23 @@ export default function WelcomeMessageEditor() {
     setMediaType(null);
   }
 
+  function pickVoice(f: File) {
+    if (fileKind(f) !== "audio") return;
+    setVoiceFile(f);
+    setVoicePath(null);
+  }
+
   const preview = useMemo(() => {
     if (file) return { url: URL.createObjectURL(file), type: fileKind(file) };
     if (mediaPath && mediaType) return { url: mediaUrl(mediaPath), type: mediaType };
     return null;
   }, [file, mediaPath, mediaType]);
+
+  const voicePreview = useMemo(() => {
+    if (voiceFile) return URL.createObjectURL(voiceFile);
+    if (voicePath) return mediaUrl(voicePath);
+    return null;
+  }, [voiceFile, voicePath]);
 
   async function save() {
     if (saving) return;
@@ -57,23 +77,30 @@ export default function WelcomeMessageEditor() {
     try {
       let path = mediaPath;
       let type = mediaType;
+      let vPath = voicePath;
 
-      // A freshly picked device file gets uploaded first.
-      if (file) {
-        const kind = fileKind(file);
+      async function uploadDeviceFile(f: File): Promise<string> {
         const res = await fetch("/api/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ fileName: file.name, scope: "chat" }),
+          body: JSON.stringify({ fileName: f.name, scope: "chat" }),
         });
         if (!res.ok) throw new Error("Upload failed");
         const { path: uploadPath, token } = await res.json();
         const { error: upErr } = await supabaseBrowser()
           .storage.from("media")
-          .uploadToSignedUrl(uploadPath, token, file, { cacheControl: "31536000" });
+          .uploadToSignedUrl(uploadPath, token, f, { cacheControl: "31536000" });
         if (upErr) throw new Error("Upload failed");
-        path = uploadPath;
-        type = kind;
+        return uploadPath;
+      }
+
+      // Freshly picked device files get uploaded first.
+      if (file) {
+        path = await uploadDeviceFile(file);
+        type = fileKind(file);
+      }
+      if (voiceFile) {
+        vPath = await uploadDeviceFile(voiceFile);
       }
 
       const { error: saveErr } = await supabaseBrowser().auth.updateUser({
@@ -82,6 +109,7 @@ export default function WelcomeMessageEditor() {
           welcome_text: text.trim().slice(0, 1000),
           welcome_media_path: path || "",
           welcome_media_type: path ? type || "" : "",
+          welcome_voice_path: vPath || "",
         },
       });
       if (saveErr) throw new Error(saveErr.message);
@@ -89,6 +117,8 @@ export default function WelcomeMessageEditor() {
       setFile(null);
       setMediaPath(path);
       setMediaType(type);
+      setVoiceFile(null);
+      setVoicePath(vPath);
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
     } catch (e) {
@@ -193,6 +223,50 @@ export default function WelcomeMessageEditor() {
             className="text-sm font-semibold text-accent hover:opacity-80"
           >
             + Choose from vault
+          </button>
+        </div>
+
+        {/* Voice note: sent as its own bubble right after the message above,
+            so it can replace a written caption while media rides along. */}
+        <div className="space-y-2 pt-1">
+          <label className="text-sm font-semibold">
+            Voice note{" "}
+            <span className="text-xs font-normal text-muted">(optional)</span>
+          </label>
+          {voicePreview ? (
+            <div className="relative inline-block max-w-full">
+              <div className="rounded-2xl bg-card2 border border-line">
+                <VoiceNote src={voicePreview} mine={false} />
+              </div>
+              <button
+                onClick={() => {
+                  setVoiceFile(null);
+                  setVoicePath(null);
+                }}
+                aria-label="Remove voice note"
+                className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-card border border-line text-muted hover:text-fg flex items-center justify-center text-xs"
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <p className="text-xs text-muted">
+              Fans hear it as a voice note bubble — perfect instead of a
+              written caption.
+            </p>
+          )}
+          <input
+            ref={voiceRef}
+            type="file"
+            accept="audio/*"
+            hidden
+            onChange={(e) => e.target.files?.[0] && pickVoice(e.target.files[0])}
+          />
+          <button
+            onClick={() => voiceRef.current?.click()}
+            className="text-sm font-semibold text-accent hover:opacity-80"
+          >
+            {voicePreview ? "Change voice note" : "+ Add a voice note (audio file)"}
           </button>
         </div>
 

@@ -21,14 +21,24 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
     welcome_text?: string;
     welcome_media_path?: string;
     welcome_media_type?: string;
+    welcome_voice_path?: string;
   };
   const text = (meta.welcome_text || "").trim();
   const mediaPath = meta.welcome_media_path || null;
-  if (!meta.welcome_enabled || (!text && !mediaPath)) return;
+  const voicePath = meta.welcome_voice_path || null;
+  if (!meta.welcome_enabled || (!text && !mediaPath && !voicePath)) return;
 
-  const { data: message } = await db
-    .from("messages")
-    .insert({
+  // Up to two bubbles: the text/media message, then the voice note — so the
+  // voice can stand in for a written caption while media rides along.
+  const inserts: {
+    chat_id: string;
+    sender: "owner";
+    content: string | null;
+    media_path: string | null;
+    media_type: "image" | "video" | "audio" | null;
+  }[] = [];
+  if (text || mediaPath) {
+    inserts.push({
       chat_id: chatId,
       sender: "owner",
       content: text || null,
@@ -38,21 +48,33 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
           ? "video"
           : "image"
         : null,
-    })
-    .select()
-    .single();
-  if (!message) return;
+    });
+  }
+  if (voicePath) {
+    inserts.push({
+      chat_id: chatId,
+      sender: "owner",
+      content: null,
+      media_path: voicePath,
+      media_type: "audio",
+    });
+  }
+
+  const { data: messages } = await db.from("messages").insert(inserts).select();
+  const sent = messages ?? [];
+  const last = sent[sent.length - 1];
+  if (!last) return;
 
   await Promise.all([
     db
       .from("chats")
       .update({
-        last_message_at: message.created_at,
-        last_read_at: message.created_at,
-        bot_replied_at: message.created_at,
+        last_message_at: last.created_at,
+        last_read_at: last.created_at,
+        bot_replied_at: last.created_at,
       })
       .eq("id", chatId),
-    broadcast(`chat:${chatId}`, "new-message", message),
+    ...sent.map((m) => broadcast(`chat:${chatId}`, "new-message", m)),
     broadcast(`inbox:${ownerId}`, "new-message", { chatId }),
   ]);
 }
