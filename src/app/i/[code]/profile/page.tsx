@@ -177,6 +177,10 @@ export default async function InviteProfilePreviewPage({
               <p className="text-xs text-muted text-center">
                 You must subscribe to this profile to send a message
               </p>
+              <p className="text-xs text-muted text-center">
+                A card is required when signing up
+                {profile.plan.priceCents <= 0 ? " — no charges will be applied" : ""}
+              </p>
             </div>
           </div>
         </section>
