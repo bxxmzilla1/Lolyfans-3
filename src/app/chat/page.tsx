@@ -37,11 +37,9 @@ export default async function GuestChatPage() {
         .eq("hidden", false)
         .order("created_at", { ascending: false })
         .limit(500),
-      db
-        .from("chats")
-        .select("owner_id, guest_ip")
-        .eq("id", chatId)
-        .maybeSingle(),
+      // "*" so the page keeps working even before the owner_appears_offline
+      // column migration has been applied.
+      db.from("chats").select("*").eq("id", chatId).maybeSingle(),
       db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
       visitorLocation(requestHeaders),
     ]);
@@ -78,9 +76,11 @@ export default async function GuestChatPage() {
   const header = (
     <GuestChatHeader
       ownerId={chat.owner_id}
+      chatId={chatId}
       name={meta.display_name || "Lolyfans"}
       avatarPath={meta.avatar_path || null}
       location={location}
+      initialOnline={!chat.owner_appears_offline}
     />
   );
 

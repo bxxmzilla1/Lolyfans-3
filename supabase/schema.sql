@@ -431,6 +431,10 @@ alter table chats add column if not exists custom_offer jsonb;
 -- whenever the fan's balance drops below the threshold. Null = off.
 alter table chats add column if not exists auto_refill_pack_id text;
 
+-- Per-chat "appear offline": the creator can hide their online status from
+-- one specific fan (fans see the creator as online by default).
+alter table chats add column if not exists owner_appears_offline boolean not null default false;
+
 -- Voice notes: 'audio' joins the allowed message media types.
 alter table messages drop constraint if exists messages_media_type_check;
 alter table messages add constraint messages_media_type_check

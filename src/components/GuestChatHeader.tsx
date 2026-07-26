@@ -1,21 +1,48 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { mediaUrl } from "@/lib/utils";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 import { IconBack, IconMapPin, IconUser } from "./Icons";
 
-/** Guest-side chat header: the owner's profile, always shown as online. */
+/**
+ * Guest-side chat header: the owner's profile. Shown as online unless the
+ * creator flipped this chat's switch to "appear offline" — changes arrive
+ * live over the chat's realtime channel.
+ */
 export default function GuestChatHeader({
   ownerId,
+  chatId,
   name,
   avatarPath,
   location,
+  initialOnline = true,
 }: {
   ownerId?: string;
+  chatId?: string;
   name: string;
   avatarPath: string | null;
   location?: string | null;
+  initialOnline?: boolean;
 }) {
+  const [online, setOnline] = useState(initialOnline);
+
+  useEffect(() => {
+    if (!chatId) return;
+    const supabase = supabaseBrowser();
+    const channel = supabase
+      .channel(`chat:${chatId}`)
+      .on("broadcast", { event: "owner-presence" }, ({ payload }) => {
+        const p = payload as { online?: boolean } | null;
+        if (typeof p?.online === "boolean") setOnline(p.online);
+      });
+    channel.subscribe();
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [chatId]);
+
   return (
     <header className="border-b border-line2 px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
       <Link
@@ -40,13 +67,23 @@ export default function GuestChatHeader({
             </div>
           )}
         </div>
-        <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-bg bg-green-500" />
+        <span
+          className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-bg ${
+            online ? "bg-green-500" : "bg-gray-400"
+          }`}
+        />
       </div>
       <div className="min-w-0">
         <p className="font-bold text-[15px] leading-tight truncate">{name}</p>
         <div className="flex items-center gap-2">
-          {/* Mobile keeps just the green dot; the text only shows on desktop */}
-          <p className="hidden lg:block text-xs text-green-400">Online Now</p>
+          {/* Mobile keeps just the status dot; the text only shows on desktop */}
+          <p
+            className={`hidden lg:block text-xs ${
+              online ? "text-green-400" : "text-muted"
+            }`}
+          >
+            {online ? "Online Now" : "Offline"}
+          </p>
           {location && (
             <span className="inline-flex items-center gap-0.5 text-xs text-muted truncate">
               <IconMapPin className="w-3 h-3 text-accent shrink-0" />

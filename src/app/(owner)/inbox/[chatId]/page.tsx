@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { locationFromIp, fullCountryName } from "@/lib/geo";
 import ChatView from "@/components/ChatView";
 import GuestPresenceStatus from "@/components/GuestPresenceStatus";
+import OwnerOnlineSwitch from "@/components/OwnerOnlineSwitch";
 import { IconBack, IconMapPin, IconTip } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
@@ -100,6 +101,13 @@ export default async function OwnerChatPage({
           )}
           <GuestPresenceStatus chatId={chatId} ownerId={ownerId} />
         </p>
+      </div>
+      {/* How this fan sees YOU: online (default) or offline — per chat */}
+      <div className="ml-auto">
+        <OwnerOnlineSwitch
+          chatId={chatId}
+          initialOnline={!chat.owner_appears_offline}
+        />
       </div>
     </header>
   );
