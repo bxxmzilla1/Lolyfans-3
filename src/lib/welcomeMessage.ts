@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
 import { elevenLabsTts, personalizeScript } from "@/lib/elevenlabs";
+import { CENTS_PER_TOKEN } from "@/lib/tokens";
 
 /**
  * If the creator configured a welcome message (Settings → Welcome), drop it
@@ -22,6 +23,8 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
     welcome_text?: string;
     welcome_media_path?: string;
     welcome_media_type?: string;
+    welcome_media_locked?: boolean;
+    welcome_media_price_tokens?: number;
     welcome_voice_path?: string;
     welcome_voice_mode?: string;
     welcome_voice_text?: string;
@@ -80,6 +83,11 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
 
   if (!text && !mediaPath && !voicePath) return;
 
+  // Creator can price the welcome media: it arrives blurred + pay-to-unlock,
+  // exactly like locked content sent from the chat composer.
+  const priceTokens = Math.round(Number(meta.welcome_media_price_tokens)) || 0;
+  const locked = !!mediaPath && !!meta.welcome_media_locked && priceTokens > 0;
+
   // Up to two bubbles: the text/media message, then the voice note — so the
   // voice can stand in for a written caption while media rides along.
   const inserts: {
@@ -88,6 +96,8 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
     content: string | null;
     media_path: string | null;
     media_type: "image" | "video" | "audio" | null;
+    locked: boolean;
+    price_cents: number;
   }[] = [];
   if (text || mediaPath) {
     inserts.push({
@@ -100,8 +110,11 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
           ? "video"
           : "image"
         : null,
+      locked,
+      price_cents: locked ? priceTokens * CENTS_PER_TOKEN : 0,
     });
   }
+  // The voice note bubble is never locked — it's the greeting itself.
   if (voicePath) {
     inserts.push({
       chat_id: chatId,
@@ -109,6 +122,8 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
       content: null,
       media_path: voicePath,
       media_type: "audio",
+      locked: false,
+      price_cents: 0,
     });
   }
 

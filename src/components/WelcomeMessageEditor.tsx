@@ -20,6 +20,9 @@ export default function WelcomeMessageEditor() {
   const [mediaPath, setMediaPath] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video" | "audio" | null>(null);
   const [file, setFile] = useState<File | null>(null);
+  // Locked media: the fan sees it blurred and pays tokens to unlock.
+  const [mediaLocked, setMediaLocked] = useState(false);
+  const [priceTokens, setPriceTokens] = useState("");
   // Voice note: its own slot, so it can ride along with an image/video.
   // "upload" sends the same audio to everyone; "tts" generates a unique
   // ElevenLabs (v3) voice note per fan with FIRSTNAME swapped in.
@@ -46,6 +49,9 @@ export default function WelcomeMessageEditor() {
         setText((meta.welcome_text as string) ?? "");
         setMediaPath((meta.welcome_media_path as string) || null);
         setMediaType((meta.welcome_media_type as "image" | "video") || null);
+        setMediaLocked(!!meta.welcome_media_locked);
+        const tokens = Number(meta.welcome_media_price_tokens);
+        setPriceTokens(tokens > 0 ? String(tokens) : "");
         setVoicePath((meta.welcome_voice_path as string) || null);
         setVoiceMode(meta.welcome_voice_mode === "tts" ? "tts" : "upload");
         setVoiceText((meta.welcome_voice_text as string) ?? "");
@@ -82,6 +88,11 @@ export default function WelcomeMessageEditor() {
 
   async function save() {
     if (saving) return;
+    const tokens = Math.round(Number(priceTokens)) || 0;
+    if (mediaLocked && (file || mediaPath) && tokens < 1) {
+      setError("Set an unlock price (at least 1 token) or turn the lock off.");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -119,6 +130,8 @@ export default function WelcomeMessageEditor() {
           welcome_text: text.trim().slice(0, 1000),
           welcome_media_path: path || "",
           welcome_media_type: path ? type || "" : "",
+          welcome_media_locked: !!path && mediaLocked && tokens > 0,
+          welcome_media_price_tokens: path && mediaLocked ? tokens : 0,
           welcome_voice_path: vPath || "",
           welcome_voice_mode: voiceMode,
           welcome_voice_text: voiceText.trim().slice(0, 1000),
@@ -238,6 +251,48 @@ export default function WelcomeMessageEditor() {
             + Choose from vault
           </button>
         </div>
+
+        {/* Lock + price: only meaningful once an image/video is attached */}
+        {preview && (
+          <div className="rounded-xl border border-line bg-card2 px-3 py-2.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold">Send as locked content</p>
+                <p className="text-xs text-muted">
+                  New fans see it blurred and pay tokens to unlock it.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setMediaLocked((v) => !v)}
+                aria-label={mediaLocked ? "Unlock media" : "Lock media"}
+                className="relative shrink-0 w-12 h-7 rounded-full bg-bg border border-line transition-colors"
+              >
+                <span
+                  className={`absolute top-1 w-4.5 h-4.5 rounded-full transition-all ${
+                    mediaLocked ? "left-6.5 bg-accent" : "left-1 bg-muted"
+                  }`}
+                />
+              </button>
+            </div>
+            {mediaLocked && (
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted">
+                  Unlock price (Tokens)
+                </label>
+                <input
+                  inputMode="numeric"
+                  value={priceTokens}
+                  onChange={(e) =>
+                    setPriceTokens(e.target.value.replace(/[^\d]/g, ""))
+                  }
+                  placeholder="e.g. 50"
+                  className="w-full bg-bg border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+                />
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Voice note: sent as its own bubble right after the message above,
             so it can replace a written caption while media rides along. */}
