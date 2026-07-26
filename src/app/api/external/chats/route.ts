@@ -46,13 +46,16 @@ function shapeMessage(m: MsgRow, unlockedIds?: Set<string>) {
     at: m.created_at,
     media: m.media_path
       ? {
-          kind: m.media_type === "video" ? "video" : "image",
+          kind:
+            m.media_type === "video" || m.media_type === "audio"
+              ? m.media_type
+              : "image",
           url: mediaUrl(m.media_path),
           path: m.media_path,
         }
       : null,
     mediaItems: items.map((it) => ({
-      kind: it.type === "video" ? "video" : "image",
+      kind: it.type,
       url: mediaUrl(it.path),
       path: it.path,
     })),

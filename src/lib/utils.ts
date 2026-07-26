@@ -21,7 +21,10 @@ export function mediaItemsFromMessage(message: {
     items.push({ path, type });
   }
   if (items.length === 0 && message.media_path) {
-    const type = message.media_type === "video" ? "video" : "image";
+    const type =
+      message.media_type === "video" || message.media_type === "audio"
+        ? message.media_type
+        : "image";
     items.push({ path: message.media_path, type });
   }
   return items;
