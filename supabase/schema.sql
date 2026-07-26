@@ -446,11 +446,6 @@ create table if not exists token_transactions (
   stripe_payment_intent_id text,
   created_at timestamptz not null default now()
 );
-
--- Creators can gift free tokens straight into a fan's wallet.
-alter table token_transactions drop constraint if exists token_transactions_kind_check;
-alter table token_transactions add constraint token_transactions_kind_check
-  check (kind in ('topup', 'unlock', 'tip', 'gift'));
 alter table token_transactions enable row level security;
 create index if not exists token_tx_chat_idx on token_transactions (chat_id, created_at desc);
 -- The webhook and the return-URL confirm can both try to credit the same
