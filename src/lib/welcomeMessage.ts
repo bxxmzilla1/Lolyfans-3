@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
+import { elevenLabsTts, personalizeScript } from "@/lib/elevenlabs";
 
 /**
  * If the creator configured a welcome message (Settings → Welcome), drop it
@@ -22,11 +23,62 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
     welcome_media_path?: string;
     welcome_media_type?: string;
     welcome_voice_path?: string;
+    welcome_voice_mode?: string;
+    welcome_voice_text?: string;
+    welcome_voice_id?: string;
+    elevenlabs_api_key?: string;
   };
+  if (!meta.welcome_enabled) return;
   const text = (meta.welcome_text || "").trim();
   const mediaPath = meta.welcome_media_path || null;
-  const voicePath = meta.welcome_voice_path || null;
-  if (!meta.welcome_enabled || (!text && !mediaPath && !voicePath)) return;
+  let voicePath = meta.welcome_voice_path || null;
+
+  // AI voice mode: synthesize a voice note unique to this fan (their first
+  // name spliced into the script) with ElevenLabs' v3 model. Any failure
+  // falls back to the uploaded voice note (if one exists) so the welcome
+  // still goes out.
+  const voiceScript = (meta.welcome_voice_text || "").trim();
+  const ttsReady =
+    meta.welcome_voice_mode === "tts" &&
+    !!voiceScript &&
+    !!meta.welcome_voice_id &&
+    !!meta.elevenlabs_api_key;
+  if (meta.welcome_voice_mode === "tts" && !ttsReady) voicePath = null;
+  if (ttsReady) {
+    voicePath = null;
+    try {
+      const { data: chat } = await db
+        .from("chats")
+        .select("guest_name")
+        .eq("id", chatId)
+        .single();
+      const spoken = personalizeScript(voiceScript, chat?.guest_name || "");
+      if (spoken) {
+        const audio = await elevenLabsTts(
+          meta.elevenlabs_api_key!,
+          meta.welcome_voice_id!,
+          spoken
+        );
+        const path = `welcome-voice/${chatId}/${Date.now()}.mp3`;
+        const { error: upErr } = await db.storage
+          .from("media")
+          .upload(path, audio, {
+            contentType: "audio/mpeg",
+            cacheControl: "31536000",
+          });
+        if (!upErr) voicePath = path;
+        else console.error("Welcome voice upload failed:", upErr.message);
+      }
+    } catch (e) {
+      console.error(
+        "Welcome voice generation failed:",
+        e instanceof Error ? e.message : e
+      );
+      voicePath = meta.welcome_voice_path || null;
+    }
+  }
+
+  if (!text && !mediaPath && !voicePath) return;
 
   // Up to two bubbles: the text/media message, then the voice note — so the
   // voice can stand in for a written caption while media rides along.

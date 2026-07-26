@@ -21,8 +21,14 @@ export default function WelcomeMessageEditor() {
   const [mediaType, setMediaType] = useState<"image" | "video" | "audio" | null>(null);
   const [file, setFile] = useState<File | null>(null);
   // Voice note: its own slot, so it can ride along with an image/video.
+  // "upload" sends the same audio to everyone; "tts" generates a unique
+  // ElevenLabs (v3) voice note per fan with FIRSTNAME swapped in.
+  const [voiceMode, setVoiceMode] = useState<"upload" | "tts">("upload");
   const [voicePath, setVoicePath] = useState<string | null>(null);
   const [voiceFile, setVoiceFile] = useState<File | null>(null);
+  const [voiceText, setVoiceText] = useState("");
+  const [voiceId, setVoiceId] = useState("");
+  const [hasElevenKey, setHasElevenKey] = useState(false);
   const [vaultOpen, setVaultOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -41,6 +47,10 @@ export default function WelcomeMessageEditor() {
         setMediaPath((meta.welcome_media_path as string) || null);
         setMediaType((meta.welcome_media_type as "image" | "video") || null);
         setVoicePath((meta.welcome_voice_path as string) || null);
+        setVoiceMode(meta.welcome_voice_mode === "tts" ? "tts" : "upload");
+        setVoiceText((meta.welcome_voice_text as string) ?? "");
+        setVoiceId((meta.welcome_voice_id as string) ?? "");
+        setHasElevenKey(!!meta.elevenlabs_api_key);
         setLoading(false);
       });
   }, []);
@@ -110,6 +120,9 @@ export default function WelcomeMessageEditor() {
           welcome_media_path: path || "",
           welcome_media_type: path ? type || "" : "",
           welcome_voice_path: vPath || "",
+          welcome_voice_mode: voiceMode,
+          welcome_voice_text: voiceText.trim().slice(0, 1000),
+          welcome_voice_id: voiceId.trim(),
         },
       });
       if (saveErr) throw new Error(saveErr.message);
@@ -228,46 +241,110 @@ export default function WelcomeMessageEditor() {
 
         {/* Voice note: sent as its own bubble right after the message above,
             so it can replace a written caption while media rides along. */}
-        <div className="space-y-2 pt-1">
+        <div className="space-y-3 pt-1">
           <label className="text-sm font-semibold">
             Voice note{" "}
             <span className="text-xs font-normal text-muted">(optional)</span>
           </label>
-          {voicePreview ? (
-            <div className="relative inline-block max-w-full">
-              <div className="rounded-2xl bg-card2 border border-line">
-                <VoiceNote src={voicePreview} mine={false} />
-              </div>
+
+          <div className="flex rounded-xl border border-line bg-card2 p-1 text-sm font-semibold">
+            <button
+              type="button"
+              onClick={() => setVoiceMode("upload")}
+              className={`flex-1 rounded-lg py-1.5 transition-colors ${
+                voiceMode === "upload" ? "bg-accent text-white" : "text-muted"
+              }`}
+            >
+              Upload audio
+            </button>
+            <button
+              type="button"
+              onClick={() => setVoiceMode("tts")}
+              className={`flex-1 rounded-lg py-1.5 transition-colors ${
+                voiceMode === "tts" ? "bg-accent text-white" : "text-muted"
+              }`}
+            >
+              AI voice · unique per fan
+            </button>
+          </div>
+
+          {voiceMode === "upload" ? (
+            <>
+              {voicePreview ? (
+                <div className="relative inline-block max-w-full">
+                  <div className="rounded-2xl bg-card2 border border-line">
+                    <VoiceNote src={voicePreview} mine={false} />
+                  </div>
+                  <button
+                    onClick={() => {
+                      setVoiceFile(null);
+                      setVoicePath(null);
+                    }}
+                    aria-label="Remove voice note"
+                    className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-card border border-line text-muted hover:text-fg flex items-center justify-center text-xs"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : (
+                <p className="text-xs text-muted">
+                  Fans hear it as a voice note bubble — perfect instead of a
+                  written caption.
+                </p>
+              )}
+              <input
+                ref={voiceRef}
+                type="file"
+                accept="audio/*"
+                hidden
+                onChange={(e) => e.target.files?.[0] && pickVoice(e.target.files[0])}
+              />
               <button
-                onClick={() => {
-                  setVoiceFile(null);
-                  setVoicePath(null);
-                }}
-                aria-label="Remove voice note"
-                className="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-card border border-line text-muted hover:text-fg flex items-center justify-center text-xs"
+                onClick={() => voiceRef.current?.click()}
+                className="text-sm font-semibold text-accent hover:opacity-80"
               >
-                ✕
+                {voicePreview ? "Change voice note" : "+ Add a voice note (audio file)"}
               </button>
-            </div>
+            </>
           ) : (
-            <p className="text-xs text-muted">
-              Fans hear it as a voice note bubble — perfect instead of a
-              written caption.
-            </p>
+            <div className="space-y-2">
+              <textarea
+                value={voiceText}
+                onChange={(e) => setVoiceText(e.target.value)}
+                rows={3}
+                maxLength={1000}
+                placeholder="Hey FIRSTNAME! [excited] So happy you found me…"
+                className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none resize-none"
+              />
+              <p className="text-xs text-muted">
+                Write <span className="font-mono text-fg">FIRSTNAME</span>{" "}
+                anywhere and each fan hears their own first name (taken from
+                their full name, emojis ignored — odd names become “Mister
+                A”). Generated fresh for every fan with ElevenLabs&nbsp;v3, so
+                you can add v3 audio tags like{" "}
+                <span className="font-mono text-fg">[whispers]</span> or{" "}
+                <span className="font-mono text-fg">[laughs]</span> for
+                delivery.
+              </p>
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-muted">
+                  ElevenLabs voice ID
+                </label>
+                <input
+                  value={voiceId}
+                  onChange={(e) => setVoiceId(e.target.value)}
+                  placeholder="e.g. JBFqnCBsd6RMkjVDRZzb"
+                  className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm font-mono placeholder:text-muted focus:border-accent outline-none"
+                />
+              </div>
+              {!hasElevenKey && (
+                <p className="text-xs text-amber-500">
+                  Add your ElevenLabs API key in Settings → API Key so voice
+                  notes can be generated.
+                </p>
+              )}
+            </div>
           )}
-          <input
-            ref={voiceRef}
-            type="file"
-            accept="audio/*"
-            hidden
-            onChange={(e) => e.target.files?.[0] && pickVoice(e.target.files[0])}
-          />
-          <button
-            onClick={() => voiceRef.current?.click()}
-            className="text-sm font-semibold text-accent hover:opacity-80"
-          >
-            {voicePreview ? "Change voice note" : "+ Add a voice note (audio file)"}
-          </button>
         </div>
 
         {error && <p className="text-red-400 text-sm">{error}</p>}
