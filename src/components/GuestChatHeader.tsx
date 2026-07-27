@@ -1,10 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { mediaUrl } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { IconBack, IconMapPin, IconTip, IconUser, IconVerified } from "./Icons";
+import { IconMapPin, IconTip, IconUser, IconVerified } from "./Icons";
 
 /**
  * Guest-side chat header: the owner's profile. Shown as online unless the
@@ -74,13 +73,6 @@ export default function GuestChatHeader({
     // z-40 so the wallet bubble hanging below the header stays above the
     // message list (which sits at z-30 and under)
     <header className="relative z-40 border-b border-line2 px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
-      <Link
-        href="/chats"
-        aria-label="Back to chats"
-        className="relative z-50 shrink-0 -ml-1 w-8 h-8 rounded-full flex items-center justify-center text-muted active:bg-card2"
-      >
-        <IconBack className="w-5 h-5" />
-      </Link>
       <div className="relative shrink-0">
         <div className="ig-ring">
           {avatarPath ? (
