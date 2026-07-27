@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { mediaUrl } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { IconBack, IconMapPin, IconTip, IconUser } from "./Icons";
+import { IconBack, IconMapPin, IconTip, IconUser, IconVerified } from "./Icons";
 
 /**
  * Guest-side chat header: the owner's profile. Shown as online unless the
@@ -16,12 +16,14 @@ export default function GuestChatHeader({
   name,
   avatarPath,
   location,
+  verified = false,
   initialOnline = true,
 }: {
   chatId?: string;
   name: string;
   avatarPath: string | null;
   location?: string | null;
+  verified?: boolean;
   initialOnline?: boolean;
 }) {
   const [online, setOnline] = useState(initialOnline);
@@ -101,7 +103,17 @@ export default function GuestChatHeader({
         />
       </div>
       <div className="min-w-0">
-        <p className="font-bold text-[15px] leading-tight truncate">{name}</p>
+        <p className="font-bold text-[15px] leading-tight flex items-center gap-1">
+          <span className="truncate">{name}</span>
+          {verified && (
+            <span className="flex items-center gap-0.5 shrink-0">
+              <IconVerified className="w-4 h-4 text-sky-500" />
+              <span className="text-[10px] font-semibold text-sky-500">
+                ID Verified
+              </span>
+            </span>
+          )}
+        </p>
         <div className="flex items-center gap-2">
           {/* Mobile keeps just the status dot; the text only shows on desktop */}
           <p

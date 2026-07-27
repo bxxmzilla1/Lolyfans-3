@@ -126,7 +126,14 @@ export default async function CreatorProfilePage({
             <div>
               <p className="font-bold text-xl flex items-center gap-1.5">
                 {profile.name}
-                {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
+                {profile.verified && (
+                  <span className="flex items-center gap-1 shrink-0">
+                    <IconVerified className="w-5 h-5 text-sky-500" />
+                    <span className="text-xs font-semibold text-sky-500">
+                      ID Verified
+                    </span>
+                  </span>
+                )}
               </p>
               <p className="text-sm text-muted">
                 {formatCount(followers)} {followers === 1 ? "subscriber" : "subscribers"}

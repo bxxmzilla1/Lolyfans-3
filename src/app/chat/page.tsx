@@ -71,6 +71,7 @@ export default async function GuestChatPage() {
   const meta = (ownerUser?.user?.user_metadata ?? {}) as {
     display_name?: string;
     avatar_path?: string;
+    invite_verified?: boolean;
   };
 
   const header = (
@@ -79,6 +80,7 @@ export default async function GuestChatPage() {
       name={meta.display_name || "Lolyfans"}
       avatarPath={meta.avatar_path || null}
       location={location}
+      verified={!!meta.invite_verified}
       initialOnline={!chat.owner_appears_offline}
     />
   );
