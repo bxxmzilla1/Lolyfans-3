@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { mediaUrl } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { IconBack, IconMapPin, IconUser } from "./Icons";
+import { IconBack, IconMapPin, IconTip, IconUser } from "./Icons";
 
 /**
  * Guest-side chat header: the owner's profile. Shown as online unless the
@@ -12,14 +12,12 @@ import { IconBack, IconMapPin, IconUser } from "./Icons";
  * live over the chat's realtime channel.
  */
 export default function GuestChatHeader({
-  ownerId,
   chatId,
   name,
   avatarPath,
   location,
   initialOnline = true,
 }: {
-  ownerId?: string;
   chatId?: string;
   name: string;
   avatarPath: string | null;
@@ -27,6 +25,28 @@ export default function GuestChatHeader({
   initialOnline?: boolean;
 }) {
   const [online, setOnline] = useState(initialOnline);
+  // Wallet bubble: keyed so a re-tap restarts the pop animation; balance is
+  // null while it's still being fetched.
+  const [bubble, setBubble] = useState<{ key: number; balance: number | null } | null>(
+    null
+  );
+
+  async function showWalletBubble() {
+    if (!chatId) return;
+    const key = Date.now();
+    setBubble({ key, balance: null });
+    try {
+      const res = await fetch(`/api/payments/wallet?chatId=${chatId}`);
+      const data = await res.json();
+      if (res.ok) {
+        setBubble((b) =>
+          b && b.key === key ? { key, balance: Number(data.balance ?? 0) } : b
+        );
+      }
+    } catch {
+      // Bubble just hides on its own if the fetch fails
+    }
+  }
 
   useEffect(() => {
     if (!chatId) return;
@@ -44,7 +64,9 @@ export default function GuestChatHeader({
   }, [chatId]);
 
   return (
-    <header className="border-b border-line2 px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
+    // z-40 so the wallet bubble hanging below the header stays above the
+    // message list (which sits at z-30 and under)
+    <header className="relative z-40 border-b border-line2 px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
       <Link
         href="/chats"
         aria-label="Back to chats"
@@ -92,14 +114,31 @@ export default function GuestChatHeader({
           )}
         </div>
       </div>
-      {ownerId && (
-        <Link
-          href={`/p/${ownerId}`}
+      {chatId && (
+        <button
+          type="button"
+          onClick={showWalletBubble}
+          aria-label="Show token balance"
           // z-50 keeps it clickable under the invisible owner corner button
-          className="relative z-50 ml-auto shrink-0 px-3.5 py-2 rounded-full bg-accent text-white text-xs font-semibold whitespace-nowrap active:opacity-80"
+          className="relative z-50 ml-auto shrink-0 w-9 h-9 rounded-full bg-accent/10 text-accent flex items-center justify-center active:opacity-80"
         >
-          Visit Profile
-        </Link>
+          <IconTip className="w-5 h-5" />
+        </button>
+      )}
+      {bubble && (
+        <div
+          key={bubble.key}
+          onAnimationEnd={() => setBubble(null)}
+          className="wallet-bubble absolute right-3 top-full mt-2 z-50 pointer-events-none rounded-2xl rounded-tr-sm bg-card border border-line shadow-lg px-3.5 py-2 flex items-center gap-2"
+        >
+          <span className="w-6 h-6 rounded-full bg-accent/15 text-accent flex items-center justify-center shrink-0">
+            <IconTip className="w-4 h-4" />
+          </span>
+          <span className="text-sm font-extrabold tabular-nums whitespace-nowrap">
+            {bubble.balance === null ? "…" : bubble.balance.toLocaleString("en-US")}
+            <span className="text-xs font-semibold text-muted"> Tokens</span>
+          </span>
+        </div>
       )}
     </header>
   );

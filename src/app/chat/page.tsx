@@ -75,7 +75,6 @@ export default async function GuestChatPage() {
 
   const header = (
     <GuestChatHeader
-      ownerId={chat.owner_id}
       chatId={chatId}
       name={meta.display_name || "Lolyfans"}
       avatarPath={meta.avatar_path || null}
