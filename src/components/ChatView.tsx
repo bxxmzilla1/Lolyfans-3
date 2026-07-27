@@ -59,6 +59,8 @@ export default function ChatView({
   initialMessages,
   ownerId,
   peerName,
+  initialHasCard,
+  initialVerifyEnabled,
 }: {
   chatId: string;
   role: "owner" | "guest";
@@ -68,6 +70,12 @@ export default function ChatView({
   ownerId?: string;
   /** Guest side: creator's display name, shown on incoming locked media. */
   peerName?: string;
+  /**
+   * Guest side, server-rendered so Card Verify blurs media on the very first
+   * paint (no unblurred flash while the wallet fetch is in flight).
+   */
+  initialHasCard?: boolean;
+  initialVerifyEnabled?: boolean;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [text, setText] = useState("");
@@ -105,9 +113,12 @@ export default function ChatView({
   const pendingUnlockIdRef = useRef<string | null>(null);
   // Card Verify: while there's no card on file, the creator's photos/videos
   // render locked with a "Verify to view" button that opens the embedded
-  // card wizard — a SetupIntent, so nothing is charged.
-  const [hasCard, setHasCard] = useState(true);
-  const [verifyCfg, setVerifyCfg] = useState<VerifyPopup | null>(null);
+  // card wizard — a SetupIntent, so nothing is charged. Both start from the
+  // server-rendered values so blurred media never flashes visible on load.
+  const [hasCard, setHasCard] = useState(initialHasCard ?? true);
+  const [verifyCfg, setVerifyCfg] = useState<VerifyPopup | null>(
+    initialVerifyEnabled === undefined ? null : { enabled: initialVerifyEnabled }
+  );
   const [startingVerify, setStartingVerify] = useState(false);
   const [cardVerify, setCardVerify] = useState<{
     clientSecret: string;
