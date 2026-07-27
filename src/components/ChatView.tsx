@@ -1881,12 +1881,18 @@ export default function ChatView({
                   </p>
                   {isWelcome && (
                     <>
-                      <p className="relative text-sm font-semibold">
+                      <p className="relative text-lg font-bold">
                         Welcome! So happy you&apos;re here 🎉
                       </p>
+                      {/* The one thing the fan must not miss: content costs Tokens */}
+                      <div className="relative rounded-2xl bg-accent/15 border border-accent/40 px-4 py-3">
+                        <p className="text-[15px] font-extrabold leading-snug">
+                          All photos &amp; videos here unlock with{" "}
+                          <span className="text-accent">Tokens</span> 🔓
+                        </p>
+                      </div>
                       <p className="relative text-xs text-muted leading-relaxed">
-                        Quick heads up: photos and videos here unlock with
-                        Tokens. Start with a full wallet:
+                        Start with a full wallet:
                       </p>
                     </>
                   )}

@@ -152,12 +152,17 @@ export default function WelcomeOfferSettings() {
           <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
             Welcome offer
           </p>
-          <p className="relative text-sm font-semibold">
+          <p className="relative text-base font-bold">
             Welcome! So happy you&apos;re here 🎉
           </p>
+          <div className="relative rounded-2xl bg-accent/15 border border-accent/40 px-4 py-3">
+            <p className="text-sm font-extrabold leading-snug">
+              All photos &amp; videos here unlock with{" "}
+              <span className="text-accent">Tokens</span> 🔓
+            </p>
+          </div>
           <p className="relative text-xs text-muted leading-relaxed">
-            Quick heads up: photos and videos here unlock with Tokens. Start
-            with a full wallet:
+            Start with a full wallet:
           </p>
           <p className="relative text-3xl font-extrabold tabular-nums leading-none">
             {(tokensNum > 0 ? tokensNum : 0).toLocaleString("en-US")}
