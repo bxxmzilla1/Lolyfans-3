@@ -372,15 +372,34 @@ export default function ChatView({
     return () => clearTimeout(t);
   }, [role, firstOffer, messages, chatId, offer.delaySeconds, offer.popupEnabled]);
 
+  // Verify media trigger: while this is on and the fan is unverified, the
+  // creator's photos/videos render locked ("Verify to view").
+  const verifyLockActive =
+    role === "guest" &&
+    !hasCard &&
+    !!verifyCfg?.enabled &&
+    !!verifyCfg?.mediaTrigger &&
+    elementsEnabled();
+
   // Verify popup: fires once the fan has sent the creator-configured number
-  // of messages and still has no card on file. Verification is a Stripe
-  // SetupIntent — the card is saved but nothing is charged. Dismissing it
-  // snoozes it for the session; it returns next visit until they verify.
+  // of messages — or, with the media trigger on, the moment the creator's
+  // photo/video arrives — while they have no card on file. Verification is
+  // a Stripe SetupIntent — the card is saved but nothing is charged.
+  // Dismissing it snoozes it for the session; it returns until they verify.
   useEffect(() => {
     if (role !== "guest" || hasCard || !verifyCfg?.enabled) return;
     if (cardTopup || cardVerify || !elementsEnabled()) return;
     const sent = messages.filter((m) => m.sender === "guest").length;
-    if (sent < verifyCfg.messages) return;
+    const mediaArrived =
+      verifyCfg.mediaTrigger &&
+      messages.some(
+        (m) =>
+          m.sender === "owner" &&
+          mediaItemsFromMessage(m).some(
+            (i) => i.type === "image" || i.type === "video"
+          )
+      );
+    if (sent < verifyCfg.messages && !mediaArrived) return;
     try {
       if (sessionStorage.getItem(`lf-verify-dismissed:${chatId}`)) return;
     } catch {}
@@ -1222,6 +1241,8 @@ export default function ChatView({
             selectMode={msgSelectMode}
             selected={selectedMsgs.has(m.id)}
             onSelectToggle={toggleMsgSelected}
+            verifyLock={verifyLockActive}
+            onVerifyRequest={() => setVerifyPopupOpen(true)}
           />
         ))}
         {peerTyping && (

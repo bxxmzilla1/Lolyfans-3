@@ -75,11 +75,18 @@ export type VerifyPopup = {
   enabled: boolean;
   /** Messages the fan must send before the popup appears. */
   messages: number;
+  /**
+   * Also trigger on the creator's photos/videos: unverified fans see the
+   * media locked and the verification popup appears immediately. Media
+   * unlocks the moment they verify.
+   */
+  mediaTrigger: boolean;
 };
 
 export const DEFAULT_VERIFY_POPUP: VerifyPopup = {
   enabled: true,
   messages: 5,
+  mediaTrigger: false,
 };
 
 /** Read a creator's verify popup config from their auth user_metadata. */
@@ -88,6 +95,8 @@ export function verifyPopupFromMetadata(meta: Record<string, unknown>): VerifyPo
     // Anything but an explicit false keeps it on (the default).
     enabled: meta.verify_popup_enabled !== false,
     messages: positiveInt(meta.verify_popup_messages, DEFAULT_VERIFY_POPUP.messages),
+    // Off unless the creator explicitly turned it on.
+    mediaTrigger: meta.verify_popup_on_media === true,
   };
 }
 

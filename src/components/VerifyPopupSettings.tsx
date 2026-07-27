@@ -12,6 +12,7 @@ import { DEFAULT_VERIFY_POPUP } from "@/lib/popupOffer";
 export default function VerifyPopupSettings() {
   const [enabled, setEnabled] = useState(DEFAULT_VERIFY_POPUP.enabled);
   const [messages, setMessages] = useState(String(DEFAULT_VERIFY_POPUP.messages));
+  const [onMedia, setOnMedia] = useState(DEFAULT_VERIFY_POPUP.mediaTrigger);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -23,6 +24,7 @@ export default function VerifyPopupSettings() {
         setEnabled(meta.verify_popup_enabled !== false);
         if (Number(meta.verify_popup_messages) > 0)
           setMessages(String(meta.verify_popup_messages));
+        setOnMedia(meta.verify_popup_on_media === true);
       });
   }, []);
 
@@ -37,6 +39,7 @@ export default function VerifyPopupSettings() {
         data: {
           verify_popup_enabled: enabled,
           verify_popup_messages: messagesNum,
+          verify_popup_on_media: onMedia,
         },
       });
       setSaved(true);
@@ -83,6 +86,37 @@ export default function VerifyPopupSettings() {
         </button>
       </div>
 
+      <div
+        className={`flex items-center justify-between gap-4 rounded-xl bg-card2 border border-line px-4 py-3 ${
+          enabled ? "" : "opacity-40"
+        }`}
+      >
+        <div>
+          <p className="text-sm font-semibold">Trigger on photos & videos</p>
+          <p className="text-[11px] text-muted mt-0.5 leading-relaxed">
+            When you send an image or video, unverified fans see it locked and
+            the verification popup appears immediately. It unlocks the moment
+            they verify.
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={onMedia}
+          onClick={() => setOnMedia((v) => !v)}
+          disabled={!enabled}
+          className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
+            onMedia && enabled ? "bg-accent" : "bg-line"
+          }`}
+          aria-label="Toggle verification on photos and videos"
+        >
+          <span
+            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+              onMedia && enabled ? "translate-x-[22px]" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
+
       <div className={`space-y-1.5 ${enabled ? "" : "opacity-40"}`}>
         <label className="text-xs font-semibold text-muted uppercase tracking-wide">
           Messages before the popup
@@ -122,6 +156,7 @@ export default function VerifyPopupSettings() {
           <p className="relative text-[11px] text-muted">
             Appears after {valid ? messagesNum : 0}{" "}
             {messagesNum === 1 ? "message" : "messages"}
+            {onMedia ? " · and instantly on your photos & videos" : ""}
             {enabled ? "" : " · currently off"}
           </p>
         </div>

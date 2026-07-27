@@ -135,6 +135,8 @@ export default function MessageBubble({
   selectMode = false,
   selected = false,
   onSelectToggle,
+  verifyLock = false,
+  onVerifyRequest,
 }: {
   message: Message;
   mine: boolean;
@@ -152,6 +154,12 @@ export default function MessageBubble({
   onSelectToggle?: (m: Message) => void;
   /** Creator's display name (unused by the classic locked overlay). */
   peerName?: string;
+  /**
+   * Verify popup "media trigger": incoming photos/videos render locked until
+   * the fan verifies their card. Tapping the media opens the verify popup.
+   */
+  verifyLock?: boolean;
+  onVerifyRequest?: () => void;
 }) {
   const mediaItems = mediaItemsFromMessage(message);
   const hasMedia = mediaItems.length > 0;
@@ -178,6 +186,15 @@ export default function MessageBubble({
   const soldByMe = mine && price > 0 && !!message.unlocked;
   // Receiver of a locked message: blurred, unless they've paid to unlock it.
   const blurred = locked && !mine && !paidUnlocked;
+  // Verify media trigger: incoming photos/videos stay locked until the fan
+  // verifies their card (voice notes are unaffected). Price locks win.
+  const verifyBlurred =
+    verifyLock &&
+    !mine &&
+    !blurred &&
+    mediaItems.some((i) => i.type === "image" || i.type === "video");
+  // Any reason the media renders obscured.
+  const dim = blurred || verifyBlurred;
   // Priced + not yet unlocked → show the pay-to-unlock overlay.
   const payToUnlock = blurred && price > 0;
   // Locked media with a link attached: tapping the blurred preview opens the
@@ -297,6 +314,33 @@ export default function MessageBubble({
     </>
   );
 
+  // Verification-locked media: lock badge + "Verify to view"; tapping the
+  // card opens the verification popup (SetupIntent — no charge).
+  const verifyOverlay = verifyBlurred && (
+    <>
+      <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 pointer-events-none">
+        <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
+          <IconLock className="w-5 h-5 text-white" />
+        </span>
+        <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
+        <span className="mt-1 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
+          Verify to view
+        </span>
+        <span className="text-white text-[11px] font-semibold drop-shadow">
+          Free · no charge
+        </span>
+      </div>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onVerifyRequest?.();
+        }}
+        aria-label="Verify your account to view"
+        className="absolute inset-0 z-[15] cursor-pointer"
+      />
+    </>
+  );
+
   function renderSlide(item: MediaItem) {
     if (item.type === "audio") {
       // Locked voice note: same-size placeholder, the audio isn't rendered
@@ -312,18 +356,18 @@ export default function MessageBubble({
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={mediaUrl(item.path)}
-          alt={blurred ? "Locked photo" : "Photo"}
+          alt={dim ? "Locked photo" : "Photo"}
           className={`w-full max-h-80 object-cover ${
-            blurred
+            dim
               ? "blur-2xl scale-110 pointer-events-none select-none"
               : "cursor-pointer"
           }`}
-          onClick={blurred ? undefined : () => onMediaClick(message, slide)}
+          onClick={dim ? undefined : () => onMediaClick(message, slide)}
           draggable={false}
         />
       );
     }
-    if (blurred) {
+    if (dim) {
       return (
         <video
           src={`${mediaUrl(item.path)}#t=0.001`}
@@ -408,6 +452,7 @@ export default function MessageBubble({
           <div className="relative overflow-hidden">
             {renderSlide(active)}
             {lockedOverlay}
+            {verifyOverlay}
             {lockToggle}
             {mediaItems.length > 1 && (
               <>
