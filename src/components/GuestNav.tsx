@@ -155,7 +155,8 @@ export default function GuestNav() {
                 key={href}
                 type="button"
                 onClick={() => go(href)}
-                className={`relative flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-semibold transition-colors ${
+                aria-label={label}
+                className={`relative flex flex-col items-center py-2 transition-colors ${
                   active ? "text-accent" : "text-muted"
                 }`}
               >
@@ -163,7 +164,6 @@ export default function GuestNav() {
                   <Icon className="w-6 h-6" />
                   <Badge count={badge} className="absolute -top-1.5 -right-2" />
                 </span>
-                {label}
               </button>
             );
           })}

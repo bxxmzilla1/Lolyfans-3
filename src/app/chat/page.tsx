@@ -88,7 +88,8 @@ export default async function GuestChatPage() {
   return (
     // On mobile the footer menu stays visible, so the chat (and its message
     // box) is padded up to sit above it; on desktop the nav is a left sidebar.
-    <div className="h-dvh pb-[calc(60px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-60">
+    // 42px matches the icon-only footer height (24px icon + 16px padding + border)
+    <div className="h-dvh pb-[calc(42px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-60">
       <GuestPresence chatId={chatId} ownerId={chat.owner_id} />
       <OwnerEscapeHatch />
       <ChatView
