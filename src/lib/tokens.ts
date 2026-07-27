@@ -57,6 +57,17 @@ export function packPriceLabel(pack: TokenPack): string {
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
+/**
+ * Per-token cost, shown on the pack cards instead of the pack price — the
+ * baseline is 10¢/token, so bigger packs read as an obvious per-token deal.
+ */
+export function perTokenLabel(priceCents: number, tokens: number): string {
+  const cents = priceCents / Math.max(1, tokens);
+  const rounded = Math.round(cents * 10) / 10;
+  const str = Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+  return `${str}¢ / Token`;
+}
+
 /** Tip amounts shown in the picker (tokens). */
 export const TIP_TOKEN_PRESETS = [50, 100, 200, 500, 1000];
 export const MIN_TIP_TOKENS = 10;

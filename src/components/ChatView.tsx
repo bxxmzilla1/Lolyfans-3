@@ -19,8 +19,8 @@ import {
   TOKEN_PACKS,
   FIRST_TOPUP_OFFER_PACK_ID,
   formatTokens,
-  packPriceLabel,
   packTotalTokens,
+  perTokenLabel,
 } from "@/lib/tokens";
 import {
   DEFAULT_POPUP_OFFER,
@@ -1665,13 +1665,13 @@ export default function ChatView({
                           "Processing…"
                         ) : isOffer ? (
                           <>
-                            {offerPriceLabel(offer.priceCents)}{" "}
+                            {perTokenLabel(offer.priceCents, offer.tokens)}{" "}
                             <span className="text-[11px] font-semibold text-muted line-through">
-                              {offerPriceLabel(offer.originalCents)}
+                              {perTokenLabel(offer.originalCents, offer.tokens)}
                             </span>
                           </>
                         ) : (
-                          packPriceLabel(pack)
+                          perTokenLabel(pack.priceCents, total)
                         )}
                       </p>
                     </button>
