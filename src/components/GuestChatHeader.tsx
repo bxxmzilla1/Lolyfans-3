@@ -120,9 +120,9 @@ export default function GuestChatHeader({
           onClick={showWalletBubble}
           aria-label="Show token balance"
           // z-50 keeps it clickable under the invisible owner corner button
-          className="relative z-50 ml-auto shrink-0 w-9 h-9 rounded-full bg-accent/10 text-accent flex items-center justify-center active:opacity-80"
+          className="relative z-50 ml-auto shrink-0 px-3.5 py-2 rounded-full bg-accent text-white text-xs font-semibold whitespace-nowrap active:opacity-80"
         >
-          <IconTip className="w-5 h-5" />
+          Wallet
         </button>
       )}
       {bubble && (
