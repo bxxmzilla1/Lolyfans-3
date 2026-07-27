@@ -61,6 +61,22 @@ alter table chats add column if not exists in_all boolean not null default true;
 create index if not exists chats_owner_idx on chats (owner_id, last_message_at desc);
 create index if not exists chats_guest_ip_idx on chats (guest_ip);
 
+-- Full activity log per invite link: one row for EVERY click (unlike
+-- invite_visits, revisits from the same IP are logged too) and one row for
+-- every signup, each stamped with date + time.
+create table if not exists invite_events (
+  id uuid primary key default gen_random_uuid(),
+  invite_id uuid not null references invites(id) on delete cascade,
+  kind text not null check (kind in ('click', 'signup')),
+  -- The chat created by the signup (null for clicks)
+  chat_id uuid references chats(id) on delete set null,
+  ip text,
+  country text,
+  created_at timestamptz not null default now()
+);
+create index if not exists invite_events_invite_idx on invite_events (invite_id, created_at desc);
+alter table invite_events enable row level security;
+
 create table if not exists messages (
   id uuid primary key default gen_random_uuid(),
   chat_id uuid not null references chats(id) on delete cascade,

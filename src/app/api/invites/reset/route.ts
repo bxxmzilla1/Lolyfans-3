@@ -29,6 +29,9 @@ export async function POST() {
         .eq("owner_id", ownerId)
         .not("invite_id", "is", null),
       db.from("invites").update({ uses: 0 }).in("id", ids),
+      // The full click/signup activity log resets too. Best-effort: the
+      // table may not be migrated yet, and the reset must still work.
+      db.from("invite_events").delete().in("invite_id", ids),
     ]);
     const failed = visits.error || chats.error || uses.error;
     if (failed) return NextResponse.json({ error: failed.message }, { status: 500 });

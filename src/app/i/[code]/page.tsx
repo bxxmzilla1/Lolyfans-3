@@ -5,6 +5,7 @@ import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
+import { recordInviteEvent } from "@/lib/inviteEvents";
 import { visitorGeoParts } from "@/lib/geo";
 import { mediaUrl } from "@/lib/utils";
 import InviteProfile from "@/components/InviteProfile";
@@ -74,6 +75,13 @@ export default async function InvitePage({
             { onConflict: "invite_id,ip", ignoreDuplicates: true }
           );
       }
+      // Full log: EVERY click gets its own timestamped row.
+      await recordInviteEvent({
+        inviteId: invite.id,
+        kind: "click",
+        ip: visitorIp,
+        country,
+      });
     });
   }
 

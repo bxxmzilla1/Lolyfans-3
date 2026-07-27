@@ -6,6 +6,7 @@ import { hashPassword, verifyPassword } from "@/lib/password";
 import { broadcast } from "@/lib/realtime";
 import { ownerRequiresPaidSub } from "@/lib/subscriptionAccess";
 import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
+import { recordInviteEvent } from "@/lib/inviteEvents";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -122,6 +123,15 @@ export async function POST(req: NextRequest) {
       .from("invites")
       .update({ uses: (invite!.uses ?? 0) + 1 })
       .eq("id", invite!.id);
+
+    // Timestamped signup row in the invite activity log.
+    await recordInviteEvent({
+      inviteId: invite!.id,
+      kind: "signup",
+      chatId: chat.id,
+      ip,
+      country,
+    });
 
     if (paidProfile) {
       await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id });
