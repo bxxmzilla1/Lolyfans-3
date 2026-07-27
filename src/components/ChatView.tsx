@@ -1408,21 +1408,6 @@ export default function ChatView({
             hidden
             onChange={(e) => e.target.files?.length && handleFiles(e.target.files)}
           />
-          {role === "guest" && (
-            <button
-              onClick={() => setTipPickerOpen(true)}
-              disabled={tipping}
-              className={`h-9 px-3 rounded-xl shrink-0 flex items-center justify-center text-sm font-semibold transition-colors disabled:opacity-50 ${
-                tipTokens != null
-                  ? "bg-accent text-white glow-accent"
-                  : "bg-transparent border border-line text-muted hover:text-fg"
-              }`}
-              aria-label="Send a tip"
-              title="Send a tip"
-            >
-              Tip
-            </button>
-          )}
           {role === "owner" && (
             <button
               onClick={() => {
