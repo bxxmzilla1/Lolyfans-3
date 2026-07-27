@@ -94,9 +94,14 @@ export default function ChatView({
   // enabling it the smart deal.
   const [autoRefillPackId, setAutoRefillPackId] = useState<string | null>(null);
   const [lastPackId, setLastPackId] = useState<string | null>(null);
-  // Post-purchase pitch: activate auto refill now → 2X tokens on the first
-  // refill. Shown after every purchase while refill is still off.
+  // Pre-purchase pitch: tapping a pack (pricier than the last bought one,
+  // refill off) first offers auto refill → 2X tokens on the first refill.
+  // Accept or decline, the tapped purchase continues right after.
   const [refillOfferPopup, setRefillOfferPopup] = useState(false);
+  const [pendingTopUp, setPendingTopUp] = useState<{
+    packId: string;
+    claim?: "custom" | "welcome";
+  } | null>(null);
   // Welcome offer popup: opt into auto refill with the $9.99 pack (2X first
   // refill) in the same tap that claims the offer.
   const [welcomeRefillOptIn, setWelcomeRefillOptIn] = useState(true);
@@ -436,18 +441,13 @@ export default function ChatView({
           body: JSON.stringify({ sessionId }),
         }).catch(() => {});
       }
-      const [, wallet] = await Promise.all([load(), refreshWallet()]);
+      await Promise.all([load(), refreshWallet()]);
       let pendingId: string | null = null;
       try {
         pendingId = sessionStorage.getItem("lf-pending-unlock");
         sessionStorage.removeItem("lf-pending-unlock");
       } catch {}
       if (sessionId && pendingId) unlockById(pendingId);
-      // Back from a token purchase with auto refill still off → pitch it
-      // (2X tokens on the first refill).
-      if (params.get("topup") && wallet && !wallet.autoRefill?.packId) {
-        setTimeout(() => setRefillOfferPopup(true), 900);
-      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, load, refreshWallet]);
@@ -547,8 +547,29 @@ export default function ChatView({
     pendingUnlockIdRef.current = null;
   }
 
-  /** Buy a token pack: one tap with a saved card, Stripe Checkout otherwise. */
+  /**
+   * Tap on a token pack. The auto refill pitch comes BEFORE the purchase —
+   * and before Stripe's card form on first buys. It only shows when refill
+   * is off and this pack costs MORE than the last one bought (never for
+   * cheaper packs); the welcome offer is excluded — it has its own opt-in.
+   * Accept or decline, the purchase continues right after.
+   */
   async function topUp(packId: string, claim?: "custom" | "welcome") {
+    if (toppingUp) return;
+    if (role === "guest" && claim !== "welcome" && !autoRefillPackId) {
+      const cur = packById(packId);
+      const prev = lastPackId ? packById(lastPackId) : null;
+      if (cur && (!prev || cur.priceCents > prev.priceCents)) {
+        setPendingTopUp({ packId, claim });
+        setRefillOfferPopup(true);
+        return;
+      }
+    }
+    await executeTopUp(packId, claim);
+  }
+
+  /** Buy a token pack: one tap with a saved card, Stripe Checkout otherwise. */
+  async function executeTopUp(packId: string, claim?: "custom" | "welcome") {
     if (toppingUp) return;
     setToppingUp(packId);
     const withWelcomeRefill = claim === "welcome" && welcomeRefillOptIn;
@@ -578,10 +599,9 @@ export default function ChatView({
         if (withWelcomeRefill) setAutoRefillPackId(WELCOME_REFILL_PACK_ID);
         else if (autoRefillPackId) setAutoRefillPackId(packId);
         setLastPackId(packId);
-        // Bought tokens but refill still off → pitch it (2X first refill).
-        if (!withWelcomeRefill && !autoRefillPackId) {
-          setTimeout(() => setRefillOfferPopup(true), 900);
-        }
+        // Server is the source of truth for the refill pack (it may have
+        // just been activated through the pre-purchase pitch).
+        refreshWallet();
         // The fan was mid-accept when the balance ran short: finish that
         // accept right away with the fresh tokens.
         const pendingId = pendingUnlockIdRef.current;
@@ -2007,17 +2027,25 @@ export default function ChatView({
         })()}
 
       {refillOfferPopup &&
+        pendingTopUp &&
         (() => {
-          // Post-purchase pitch: turn auto refill on now and the FIRST
-          // automatic refill grants 2X the pack's tokens.
-          const pack = packById(lastPackId || "") ?? packById("plus")!;
+          // Pre-purchase pitch: the fan just tapped this pack. Accept turns
+          // auto refill on (2X tokens on the FIRST refill); either way the
+          // tapped purchase continues right after — one tap with a saved
+          // card, or Stripe's card form on a first buy.
+          const pack = packById(pendingTopUp.packId) ?? packById("plus")!;
           const total = packTotalTokens(pack);
-          const close = () => setRefillOfferPopup(false);
+          const proceed = () => {
+            const pending = pendingTopUp;
+            setRefillOfferPopup(false);
+            setPendingTopUp(null);
+            if (pending) executeTopUp(pending.packId, pending.claim);
+          };
           return (
             <Portal>
               <div
                 className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4"
-                onClick={close}
+                onClick={proceed}
               >
                 <div
                   className="relative bg-card border border-emerald-500/40 rounded-3xl p-6 pt-8 w-full max-w-sm text-center space-y-2.5 fade-up overflow-hidden"
@@ -2031,9 +2059,9 @@ export default function ChatView({
                     2X Tokens on your first refill
                   </p>
                   <p className="relative text-xs text-muted leading-relaxed">
-                    Turn on auto refill and never run dry: when your balance
-                    drops below {autoRefillMeta.threshold} Tokens, your last
-                    purchased pack tops up automatically with your saved card.
+                    Add auto refill to this purchase and never run dry: when
+                    your balance drops below {autoRefillMeta.threshold} Tokens,
+                    your last purchased pack tops up automatically.
                   </p>
                   <div className="relative rounded-2xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-3">
                     <p className="text-sm font-extrabold tabular-nums">
@@ -2050,12 +2078,7 @@ export default function ChatView({
                   <button
                     onClick={async () => {
                       const ok = await saveAutoRefill(true, true);
-                      if (ok) {
-                        close();
-                        setWalletNote(
-                          "Auto refill is on — 2X Tokens on your first refill 🎉"
-                        );
-                      }
+                      if (ok) proceed();
                     }}
                     disabled={savingAutoRefill}
                     className="relative w-full rounded-full bg-emerald-500 glow-accent text-white text-sm font-bold py-3 disabled:opacity-60"
@@ -2063,14 +2086,14 @@ export default function ChatView({
                     {savingAutoRefill ? "Activating…" : "Accept — activate auto refill"}
                   </button>
                   <button
-                    onClick={close}
+                    onClick={proceed}
                     className="relative w-full rounded-full border border-line text-muted text-sm font-semibold py-2.5"
                   >
-                    Decline
+                    No thanks, just this purchase
                   </button>
                   <p className="relative text-[10px] text-muted/80">
-                    Charged to your saved card via Stripe · turn it off anytime
-                    in your wallet.
+                    Refills charge your saved card via Stripe · turn it off
+                    anytime in your wallet.
                   </p>
                 </div>
               </div>
