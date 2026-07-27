@@ -39,8 +39,13 @@ export default function GuestChatHeader({
       const res = await fetch(`/api/payments/wallet?chatId=${chatId}`);
       const data = await res.json();
       if (res.ok) {
+        // A slow fetch eats into the bubble's on-screen time, so restart the
+        // pop animation (new key) to give the number its full display window.
+        const slow = Date.now() - key > 800;
         setBubble((b) =>
-          b && b.key === key ? { key, balance: Number(data.balance ?? 0) } : b
+          b && b.key === key
+            ? { key: slow ? Date.now() : key, balance: Number(data.balance ?? 0) }
+            : b
         );
       }
     } catch {
@@ -134,10 +139,18 @@ export default function GuestChatHeader({
           <span className="w-6 h-6 rounded-full bg-accent/15 text-accent flex items-center justify-center shrink-0">
             <IconTip className="w-4 h-4" />
           </span>
-          <span className="text-sm font-extrabold tabular-nums whitespace-nowrap">
-            {bubble.balance === null ? "…" : bubble.balance.toLocaleString("en-US")}
-            <span className="text-xs font-semibold text-muted"> Tokens</span>
-          </span>
+          {bubble.balance === null ? (
+            <span className="flex items-center gap-1 px-1 py-2" aria-label="Loading balance">
+              <span className="typing-dot w-1.5 h-1.5 rounded-full bg-accent" />
+              <span className="typing-dot w-1.5 h-1.5 rounded-full bg-accent" />
+              <span className="typing-dot w-1.5 h-1.5 rounded-full bg-accent" />
+            </span>
+          ) : (
+            <span className="text-sm font-extrabold tabular-nums whitespace-nowrap">
+              {bubble.balance.toLocaleString("en-US")}
+              <span className="text-xs font-semibold text-muted"> Tokens</span>
+            </span>
+          )}
         </div>
       )}
     </header>
