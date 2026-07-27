@@ -1290,10 +1290,10 @@ export default function ChatView({
                   key={pack.id}
                   onClick={() => topUp(pack.id)}
                   disabled={!!toppingUp}
-                  className="rounded-xl bg-card border border-line hover:border-accent px-1 py-1.5 text-center transition-colors disabled:opacity-60"
+                  className="rounded-xl bg-card border-2 border-accent/60 hover:border-accent px-1 py-1.5 text-center transition-colors disabled:opacity-60"
                   aria-label={`Buy ${packTotalTokens(pack)} Tokens for ${packPriceLabel(pack)}`}
                 >
-                  <span className="block text-base font-extrabold tabular-nums leading-tight text-accent">
+                  <span className="token-pulse block text-base font-extrabold tabular-nums leading-tight text-accent">
                     {busy ? "…" : packTotalTokens(pack).toLocaleString("en-US")}
                   </span>
                   <span className="block text-[9px] font-semibold text-muted leading-tight">
