@@ -1299,7 +1299,7 @@ export default function ChatView({
                   <span className="block text-[9px] font-semibold text-muted leading-tight">
                     Tokens
                   </span>
-                  <span className="block text-[10px] font-semibold text-muted tabular-nums leading-tight mt-0.5">
+                  <span className="block text-[9px] font-medium text-muted/50 tabular-nums leading-tight mt-0.5">
                     {packPriceLabel(pack)}
                   </span>
                 </button>
