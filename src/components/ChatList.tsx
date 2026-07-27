@@ -7,7 +7,7 @@ import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime, messagePreviewText } from "@/lib/utils";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
-import { IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
+import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
 import MassMessage from "./MassMessage";
@@ -20,6 +20,8 @@ type ChatRow = {
   guest_country: string | null;
   last_message_at: string;
   in_all: boolean;
+  /** Card on file → the fan can one-tap purchase (credit-card icon). */
+  stripe_payment_method_id: string | null;
   invites: { label: string | null; code: string } | null;
   preview: { content: string | null; media_type: string | null } | null;
   unread: number;
@@ -564,6 +566,11 @@ export default function ChatList() {
                     <p className={`text-[14px] flex items-center gap-1.5 min-w-0 ${
                       chat.unread > 0 && !active ? "font-bold" : "font-semibold"
                     }`}>
+                      {chat.stripe_payment_method_id && (
+                        <span title="Card registered" className="shrink-0 text-accent">
+                          <IconCard className="w-3.5 h-3.5" />
+                        </span>
+                      )}
                       <span className="truncate">{displayName}</span>
                       {chat.custom_name && (
                         <span className="text-muted text-[11px] font-normal truncate">
