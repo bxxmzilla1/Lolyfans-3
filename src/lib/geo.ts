@@ -8,7 +8,12 @@ function countryName(code: string): string {
   }
 }
 
-type GeoParts = { city: string | null; country: string | null };
+type GeoParts = {
+  city: string | null;
+  country: string | null;
+  /** Raw ISO 3166-1 alpha-2 code (e.g. "PH"), for forms that need a code. */
+  countryCode: string | null;
+};
 
 // Warm serverless instances answer repeat lookups (same guest reloading the
 // chat) instantly instead of hitting ipinfo every time.
@@ -28,6 +33,7 @@ async function ipinfoLookup(ip: string): Promise<GeoParts | null> {
         const parts: GeoParts = {
           city: data.city || null,
           country: data.country ? countryName(data.country) : null,
+          countryCode: data.country ? data.country.toUpperCase() : null,
         };
         if (geoCache.size > 5000) geoCache.clear();
         geoCache.set(ip, parts);
@@ -88,5 +94,20 @@ export async function visitorGeoParts(h: Headers): Promise<GeoParts> {
   return {
     city: city ? decodeURIComponent(city) : null,
     country: country ? countryName(country) : null,
+    countryCode: country ? country.toUpperCase() : null,
   };
+}
+
+/**
+ * The visitor's ISO country code ("PH") via ipinfo, falling back to Vercel's
+ * geo header — used to pre-select the country in embedded payment forms.
+ */
+export async function visitorCountryCode(h: Headers): Promise<string | null> {
+  const ip = ipFromHeaders(h);
+  if (ip) {
+    const parts = await ipinfoLookup(ip);
+    if (parts?.countryCode) return parts.countryCode;
+  }
+  const header = h.get("x-vercel-ip-country");
+  return header ? header.toUpperCase() : null;
 }

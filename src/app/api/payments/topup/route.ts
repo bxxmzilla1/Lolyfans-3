@@ -11,6 +11,7 @@ import {
 import { popupOfferFromMetadata, welcomeOfferFromMetadata } from "@/lib/popupOffer";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { requestOrigin } from "@/lib/smsNotify";
+import { visitorCountryCode } from "@/lib/geo";
 import Stripe from "stripe";
 
 /**
@@ -23,7 +24,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
   }
 
-  const { chatId, packId, returnTo, claimOffer } = await req.json();
+  const { chatId, packId, returnTo, claimOffer, embedded } = await req.json();
   if (!chatId || !packId) {
     return NextResponse.json({ error: "chatId and packId required" }, { status: 400 });
   }
@@ -160,8 +161,35 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // First purchase (or card retry): hosted Checkout that also saves the card.
+  // First purchase (or card retry): the fan enters their card. Embedded mode
+  // keeps them in the chat — a PaymentIntent confirmed by the in-page 3-step
+  // card wizard (the webhook + /topup/complete credit the tokens). Otherwise
+  // fall back to hosted Checkout. Both save the card for one-tap next time.
   const customerId = await ensureStripeCustomer(chatId);
+
+  if (embedded === true) {
+    const pi = await s.paymentIntents.create({
+      amount: priceCents,
+      currency: "usd",
+      customer: customerId,
+      payment_method_types: ["card"],
+      setup_future_usage: "off_session",
+      metadata: {
+        chatId,
+        kind: "topup",
+        tokens: String(tokens),
+        packId: pack.id,
+        ...(customOffer ? { customOffer: "1" } : {}),
+      },
+      description: `Top up ${formatTokens(tokens)}`,
+    });
+    return NextResponse.json({
+      clientSecret: pi.client_secret,
+      amountCents: priceCents,
+      tokens,
+      country: await visitorCountryCode(req.headers),
+    });
+  }
   const session = await s.checkout.sessions.create({
     mode: "payment",
     customer: customerId,

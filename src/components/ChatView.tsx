@@ -12,6 +12,8 @@ import {
 } from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
 import Portal from "./Portal";
+import EmbeddedCardTopup from "./EmbeddedCardTopup";
+import { elementsEnabled } from "@/lib/stripeClient";
 import {
   CENTS_PER_TOKEN,
   TIP_TOKEN_PRESETS,
@@ -88,6 +90,15 @@ export default function ChatView({
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNote, setWalletNote] = useState<string | null>(null);
   const [toppingUp, setToppingUp] = useState<string | null>(null);
+  // First purchase: the composer area swaps for the embedded 3-step card
+  // wizard instead of redirecting to Stripe Checkout.
+  const [cardTopup, setCardTopup] = useState<{
+    clientSecret: string;
+    amountCents: number;
+    tokens: number;
+    country: string | null;
+    claim?: "custom" | "welcome";
+  } | null>(null);
   // The message the fan tried to accept while short on tokens — it unlocks
   // automatically the moment their top-up lands.
   const pendingUnlockIdRef = useRef<string | null>(null);
@@ -472,7 +483,11 @@ export default function ChatView({
     pendingUnlockIdRef.current = null;
   }
 
-  /** Buy a token pack: one tap with a saved card, Stripe Checkout otherwise. */
+  /**
+   * Buy a token pack: one tap with a saved card; first purchase opens the
+   * in-chat 3-step card wizard (falling back to Stripe Checkout when the
+   * publishable key isn't configured).
+   */
   async function topUp(packId: string, claim?: "custom" | "welcome") {
     if (toppingUp) return;
     setToppingUp(packId);
@@ -480,7 +495,12 @@ export default function ChatView({
       const res = await fetch("/api/payments/topup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, packId, claimOffer: claim }),
+        body: JSON.stringify({
+          chatId,
+          packId,
+          claimOffer: claim,
+          embedded: elementsEnabled(),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.topped) {
@@ -505,6 +525,23 @@ export default function ChatView({
         setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
         return;
       }
+      if (res.ok && data.clientSecret) {
+        // First purchase: show the embedded 3-step card wizard in place of
+        // the composer. The pending unlock ref survives since we stay here.
+        setWalletOpen(false);
+        setOfferPopup(false);
+        setWelcomeOfferPopup(false);
+        setCustomOfferPopup(false);
+        setCardTopup({
+          clientSecret: data.clientSecret,
+          amountCents: Number(data.amountCents ?? 0),
+          tokens: Number(data.tokens ?? 0),
+          country: data.country ?? null,
+          claim,
+        });
+        setToppingUp(null);
+        return;
+      }
       if (res.ok && data.checkoutUrl) {
         // First purchase: Stripe saves the card so next top-ups are one tap.
         // Remember the message being accepted — it auto-accepts on return.
@@ -521,6 +558,41 @@ export default function ChatView({
       alert("Could not top up");
     }
     setToppingUp(null);
+  }
+
+  /**
+   * The embedded card wizard confirmed the payment: credit the tokens (and
+   * the newly saved card) server-side, then resume whatever the fan was
+   * doing — e.g. finish a pending locked-media accept.
+   */
+  async function completeCardTopup(paymentIntentId: string) {
+    const claim = cardTopup?.claim;
+    let data: { balance?: number; tokens?: number } = {};
+    try {
+      const res = await fetch("/api/payments/topup/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, paymentIntentId }),
+      });
+      if (res.ok) data = await res.json().catch(() => ({}));
+    } catch {
+      // The webhook still credits the payment; the balance catches up.
+    }
+    setCardTopup(null);
+    if (typeof data.balance === "number") setBalance(data.balance);
+    // Any successful top-up ends the first-purchase offers.
+    setFirstOffer(false);
+    setOfferPopup(false);
+    setWelcomeOfferPopup(false);
+    if (claim === "custom") setCustomOffer(null);
+    setCustomOfferPopup(false);
+    const pendingId = pendingUnlockIdRef.current;
+    if (pendingId) {
+      pendingUnlockIdRef.current = null;
+      unlockById(pendingId);
+      return;
+    }
+    setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
   }
 
   /**
@@ -1279,6 +1351,22 @@ export default function ChatView({
       )}
 
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+        {cardTopup ? (
+          // First purchase: the packs + composer area becomes the embedded
+          // 3-step card wizard so the fan never leaves the chat.
+          <EmbeddedCardTopup
+            clientSecret={cardTopup.clientSecret}
+            amountCents={cardTopup.amountCents}
+            tokens={cardTopup.tokens}
+            countryGuess={cardTopup.country}
+            onSuccess={completeCardTopup}
+            onCancel={() => {
+              pendingUnlockIdRef.current = null;
+              setCardTopup(null);
+            }}
+          />
+        ) : (
+        <>
         {/* One-tap token packs sit above the input so the composer keeps its
             space; "Pack Price" opens the wallet sheet with the full cards. */}
         {role === "guest" && balance !== null && (
@@ -1496,6 +1584,8 @@ export default function ChatView({
             )}
           </button>
         </div>
+        )}
+        </>
         )}
       </div>
 
