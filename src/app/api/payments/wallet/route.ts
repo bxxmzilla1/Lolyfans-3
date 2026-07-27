@@ -8,7 +8,7 @@ import {
   TOKEN_PACKS,
   packById,
 } from "@/lib/tokens";
-import { popupOfferFromMetadata } from "@/lib/popupOffer";
+import { popupOfferFromMetadata, welcomeOfferFromMetadata } from "@/lib/popupOffer";
 
 /** Fan wallet: current token balance + the top-up packs on offer. */
 export async function GET(req: NextRequest) {
@@ -43,6 +43,7 @@ export async function GET(req: NextRequest) {
     packs: TOKEN_PACKS,
     firstTopupOffer: (topupCount ?? 0) === 0,
     offer: popupOfferFromMetadata(ownerUser?.user?.user_metadata ?? {}),
+    welcomeOffer: welcomeOfferFromMetadata(ownerUser?.user?.user_metadata ?? {}),
     customOffer: chat?.custom_offer ?? null,
     autoRefill: {
       packId: chat?.auto_refill_pack_id ?? null,

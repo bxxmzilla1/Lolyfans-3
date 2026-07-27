@@ -26,6 +26,7 @@ import {
   DEFAULT_POPUP_OFFER,
   offerPriceLabel,
   type PopupOffer,
+  type WelcomeOffer,
 } from "@/lib/popupOffer";
 import {
   IconBack,
@@ -106,6 +107,10 @@ export default function ChatView({
   const [firstOffer, setFirstOffer] = useState(false);
   const [offerPopup, setOfferPopup] = useState(false);
   const [offer, setOffer] = useState<PopupOffer>(DEFAULT_POPUP_OFFER);
+  // Welcome offer: greets the fan right after signup, explains that photos
+  // and videos unlock with Tokens, and offers a discounted starter pack.
+  const [welcomeOffer, setWelcomeOffer] = useState<WelcomeOffer | null>(null);
+  const [welcomeOfferPopup, setWelcomeOfferPopup] = useState(false);
   // Creator-sent custom offer for this specific fan. It surfaces as a
   // platform popup (never as a message from the creator), one time only.
   const [customOffer, setCustomOffer] = useState<{
@@ -317,6 +322,7 @@ export default function ChatView({
         if (typeof data.balance === "number") setBalance(data.balance);
         setFirstOffer(!!data.firstTopupOffer);
         if (data.offer) setOffer(data.offer);
+        if (data.welcomeOffer) setWelcomeOffer(data.welcomeOffer);
         setCustomOffer(data.customOffer?.id ? data.customOffer : null);
         if (data.autoRefill) {
           setAutoRefillPackId(data.autoRefill.packId ?? null);
@@ -358,6 +364,23 @@ export default function ChatView({
     }, offer.delaySeconds * 1000);
     return () => clearTimeout(t);
   }, [role, firstOffer, messages, chatId, offer.delaySeconds, offer.popupEnabled]);
+
+  // Welcome offer: greets the fan the first time they open the chat after
+  // signing up. Shown once per chat, and only while they've never topped up.
+  useEffect(() => {
+    if (role !== "guest" || !firstOffer || !welcomeOffer?.enabled) return;
+    const seenKey = `lf-welcome-offer-seen:${chatId}`;
+    try {
+      if (localStorage.getItem(seenKey)) return;
+    } catch {}
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(seenKey, "1");
+      } catch {}
+      setWelcomeOfferPopup(true);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [role, firstOffer, welcomeOffer, chatId]);
 
   // A creator-sent custom offer pops up once per offer — whether it just
   // arrived over realtime or was waiting when the fan opened the chat.
@@ -494,7 +517,7 @@ export default function ChatView({
   }
 
   /** Buy a token pack: one tap with a saved card, Stripe Checkout otherwise. */
-  async function topUp(packId: string, claim?: "custom") {
+  async function topUp(packId: string, claim?: "custom" | "welcome") {
     if (toppingUp) return;
     setToppingUp(packId);
     try {
@@ -509,6 +532,7 @@ export default function ChatView({
         // Any successful top-up ends the first-purchase offer.
         setFirstOffer(false);
         setOfferPopup(false);
+        setWelcomeOfferPopup(false);
         // A claimed custom offer is single-use — it's gone now.
         if (claim === "custom") setCustomOffer(null);
         setCustomOfferPopup(false);
@@ -1814,15 +1838,20 @@ export default function ChatView({
         </Portal>
       )}
 
-      {(offerPopup || (customOfferPopup && customOffer)) &&
+      {(offerPopup ||
+        (customOfferPopup && customOffer) ||
+        (welcomeOfferPopup && welcomeOffer)) &&
         (() => {
-          // Same platform popup for both flavors: the automatic first-top-up
-          // offer, and a custom one the creator sent to this fan.
-          const isCustom = customOfferPopup && !!customOffer;
-          const po = isCustom ? customOffer! : offer;
+          // Same platform popup for all three flavors: the post-signup
+          // welcome offer, the automatic first-top-up offer, and a custom
+          // one the creator sent to this fan.
+          const isWelcome = welcomeOfferPopup && !!welcomeOffer;
+          const isCustom = !isWelcome && customOfferPopup && !!customOffer;
+          const po = isWelcome ? welcomeOffer! : isCustom ? customOffer! : offer;
           const close = () => {
             setOfferPopup(false);
             setCustomOfferPopup(false);
+            setWelcomeOfferPopup(false);
           };
           return (
             <Portal>
@@ -1844,13 +1873,28 @@ export default function ChatView({
                     ✕
                   </button>
                   <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
-                    {isCustom ? "Exclusive one-time offer" : "One-time offer"}
+                    {isWelcome
+                      ? "Welcome offer"
+                      : isCustom
+                        ? "Exclusive one-time offer"
+                        : "One-time offer"}
                   </p>
+                  {isWelcome && (
+                    <>
+                      <p className="relative text-sm font-semibold">
+                        Welcome! So happy you&apos;re here 🎉
+                      </p>
+                      <p className="relative text-xs text-muted leading-relaxed">
+                        Quick heads up: photos and videos here unlock with
+                        Tokens. Start with a full wallet:
+                      </p>
+                    </>
+                  )}
                   <p className="relative text-4xl font-extrabold tabular-nums leading-none">
                     {po.tokens.toLocaleString("en-US")}
                     <span className="text-lg font-semibold text-muted"> Tokens</span>
                   </p>
-                  {!isCustom && offer.tokens > OFFER_PACK.tokens && (
+                  {!isCustom && !isWelcome && offer.tokens > OFFER_PACK.tokens && (
                     <p className="relative text-xs font-semibold text-emerald-500">
                       incl. +{(offer.tokens - OFFER_PACK.tokens).toLocaleString("en-US")} free
                     </p>
@@ -1864,12 +1908,19 @@ export default function ChatView({
                     </span>
                   </p>
                   <p className="relative text-[11px] text-muted leading-snug">
-                    {isCustom
-                      ? "Unlocked just for you — this one won't come back."
-                      : "Only on your very first top-up — once it's gone, it's gone."}
+                    {isWelcome
+                      ? "A one-time deal for new members — it won't be shown again."
+                      : isCustom
+                        ? "Unlocked just for you — this one won't come back."
+                        : "Only on your very first top-up — once it's gone, it's gone."}
                   </p>
                   <button
-                    onClick={() => topUp(OFFER_PACK.id, isCustom ? "custom" : undefined)}
+                    onClick={() =>
+                      topUp(
+                        OFFER_PACK.id,
+                        isWelcome ? "welcome" : isCustom ? "custom" : undefined
+                      )
+                    }
                     disabled={!!toppingUp}
                     className="relative w-full rounded-full ig-gradient glow-accent offer-pulse text-white text-sm font-bold py-3 disabled:opacity-60"
                   >

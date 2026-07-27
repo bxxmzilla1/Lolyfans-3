@@ -8,7 +8,7 @@ import {
   formatTokens,
   FIRST_TOPUP_OFFER_PACK_ID,
 } from "@/lib/tokens";
-import { popupOfferFromMetadata } from "@/lib/popupOffer";
+import { popupOfferFromMetadata, welcomeOfferFromMetadata } from "@/lib/popupOffer";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { requestOrigin } from "@/lib/smsNotify";
 import Stripe from "stripe";
@@ -70,8 +70,30 @@ export async function POST(req: NextRequest) {
     .eq("kind", "topup");
   let offerApplies =
     !customOffer &&
+    claimOffer !== "welcome" &&
     (topupCount ?? 0) === 0 &&
     pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+
+  // Welcome offer (post-signup popup): only valid on the fan's very first
+  // top-up, priced from the creator's Welcome offer settings server-side.
+  let welcomeOffer = null;
+  if (!customOffer && claimOffer === "welcome") {
+    if ((topupCount ?? 0) > 0) {
+      return NextResponse.json(
+        { error: "This offer is no longer available" },
+        { status: 410 }
+      );
+    }
+    const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
+    const wo = welcomeOfferFromMetadata(ownerUser?.user?.user_metadata ?? {});
+    if (!wo.enabled) {
+      return NextResponse.json(
+        { error: "This offer is no longer available" },
+        { status: 410 }
+      );
+    }
+    welcomeOffer = wo;
+  }
 
   let priceCents = pack.priceCents;
   let tokens = packTotalTokens(pack);
@@ -80,6 +102,10 @@ export async function POST(req: NextRequest) {
     priceCents = Math.max(1, Math.round(Number(customOffer.priceCents)));
     tokens = Math.max(1, Math.round(Number(customOffer.tokens)));
     originalCents = Math.max(1, Math.round(Number(customOffer.originalCents)));
+  } else if (welcomeOffer) {
+    priceCents = welcomeOffer.priceCents;
+    tokens = welcomeOffer.tokens;
+    originalCents = welcomeOffer.originalCents;
   } else if (offerApplies) {
     const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
     const offer = popupOfferFromMetadata(ownerUser?.user?.user_metadata ?? {});
@@ -149,7 +175,7 @@ export async function POST(req: NextRequest) {
           product_data: {
             name: formatTokens(tokens),
             description:
-              customOffer || offerApplies
+              customOffer || welcomeOffer || offerApplies
                 ? `One-time offer — normally $${(originalCents / 100).toFixed(2)}`
                 : pack.bonusTokens > 0
                   ? `${pack.tokens} Tokens + ${pack.bonusTokens} bonus`

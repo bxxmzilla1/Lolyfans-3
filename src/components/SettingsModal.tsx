@@ -11,6 +11,7 @@ import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
 import PopupOfferSettings from "./PopupOfferSettings";
+import WelcomeOfferSettings from "./WelcomeOfferSettings";
 import WelcomeMessageEditor from "./WelcomeMessageEditor";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
@@ -33,6 +34,7 @@ type Section =
   | "social"
   | "subscriptions"
   | "offers"
+  | "welcomeoffer"
   | "welcome"
   | "links"
   | "editor"
@@ -410,6 +412,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconUnlock className="w-3.5 h-3.5" /> Pop up Offers
         </button>
         <button
+          onClick={() => setSection("welcomeoffer")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "welcomeoffer"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconTip className="w-3.5 h-3.5" /> Welcome offer
+        </button>
+        <button
           onClick={() => setSection("welcome")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "welcome"
@@ -474,7 +486,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             section === "profile" ||
             section === "welcome" ||
             section === "subscriptions" ||
-            section === "offers"
+            section === "offers" ||
+            section === "welcomeoffer"
               ? "max-w-2xl"
               : section === "editor" || section === "posts"
               ? "max-w-4xl"
@@ -491,6 +504,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <SubscriptionSettings />
           ) : section === "offers" ? (
             <PopupOfferSettings />
+          ) : section === "welcomeoffer" ? (
+            <WelcomeOfferSettings />
           ) : section === "welcome" ? (
             <WelcomeMessageEditor />
           ) : section === "editor" ? (

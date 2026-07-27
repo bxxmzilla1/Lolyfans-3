@@ -70,3 +70,43 @@ export function offerPriceLabel(cents: number): string {
   const dollars = cents / 100;
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
+
+/**
+ * Welcome offer: a popup the fan sees once, right after signing up and
+ * landing in the chat. It welcomes them, explains that photos and videos
+ * unlock with Tokens, and offers a discounted starter pack. Like the
+ * first-top-up offer, it only ever applies to a fan's very first purchase.
+ */
+export type WelcomeOffer = {
+  enabled: boolean;
+  /** Tokens the fan receives. */
+  tokens: number;
+  /** What the fan actually pays. */
+  priceCents: number;
+  /** The struck-through "original" price shown next to the offer. */
+  originalCents: number;
+};
+
+export const DEFAULT_WELCOME_OFFER: WelcomeOffer = {
+  enabled: true,
+  tokens: packTotalTokens(OFFER_PACK),
+  priceCents: FIRST_TOPUP_OFFER_PRICE_CENTS,
+  originalCents: OFFER_PACK.priceCents,
+};
+
+/** Read a creator's welcome offer config from their auth user_metadata. */
+export function welcomeOfferFromMetadata(meta: Record<string, unknown>): WelcomeOffer {
+  return {
+    // Anything but an explicit false keeps it on (the default).
+    enabled: meta.welcome_offer_enabled !== false,
+    tokens: positiveInt(meta.welcome_offer_tokens, DEFAULT_WELCOME_OFFER.tokens),
+    priceCents: positiveInt(
+      meta.welcome_offer_price_cents,
+      DEFAULT_WELCOME_OFFER.priceCents
+    ),
+    originalCents: positiveInt(
+      meta.welcome_offer_original_cents,
+      DEFAULT_WELCOME_OFFER.originalCents
+    ),
+  };
+}
