@@ -23,21 +23,31 @@ function priceLabel(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+type WizardProps = {
+  clientSecret: string;
+  /**
+   * "payment": confirms a PaymentIntent and charges the card (top-up).
+   * "setup": confirms a SetupIntent — saves the card with NO charge (the
+   * verification popup flow).
+   */
+  mode?: "payment" | "setup";
+  amountCents?: number;
+  tokens?: number;
+  countryGuess: string | null;
+  /** Receives the PaymentIntent id ("payment") or SetupIntent id ("setup"). */
+  onSuccess: (intentId: string) => Promise<void> | void;
+  onCancel: () => void;
+};
+
 function CardWizard({
   clientSecret,
-  amountCents,
-  tokens,
+  mode = "payment",
+  amountCents = 0,
+  tokens = 0,
   countryGuess,
   onSuccess,
   onCancel,
-}: {
-  clientSecret: string;
-  amountCents: number;
-  tokens: number;
-  countryGuess: string | null;
-  onSuccess: (paymentIntentId: string) => Promise<void> | void;
-  onCancel: () => void;
-}) {
+}: WizardProps) {
   const stripe = useStripe();
   const elements = useElements();
 
@@ -92,27 +102,42 @@ function CardWizard({
     if (!card) return;
     setPaying(true);
     setError(null);
+    const failMsg =
+      mode === "setup"
+        ? "Verification failed. Please try again."
+        : "Payment failed. Please try again.";
     try {
-      const result = await stripe.confirmCardPayment(clientSecret, {
-        payment_method: {
-          card,
-          billing_details: { name: name.trim(), address: { country } },
-        },
-      });
+      const paymentMethod = {
+        card,
+        billing_details: { name: name.trim(), address: { country } },
+      };
+      const result =
+        mode === "setup"
+          ? await stripe.confirmCardSetup(clientSecret, {
+              payment_method: paymentMethod,
+            })
+          : await stripe.confirmCardPayment(clientSecret, {
+              payment_method: paymentMethod,
+            });
       if (result.error) {
-        setError(result.error.message || "Payment failed. Please try again.");
+        setError(result.error.message || failMsg);
         setPaying(false);
         return;
       }
-      if (result.paymentIntent?.status === "succeeded") {
+      const intent =
+        mode === "setup"
+          ? (result as { setupIntent?: { id: string; status: string } }).setupIntent
+          : (result as { paymentIntent?: { id: string; status: string } })
+              .paymentIntent;
+      if (intent?.status === "succeeded") {
         setDone(true);
-        await onSuccess(result.paymentIntent.id);
+        await onSuccess(intent.id);
         return;
       }
-      setError("Payment did not complete. Please try again.");
+      setError(failMsg);
       setPaying(false);
     } catch {
-      setError("Payment failed. Please try again.");
+      setError(failMsg);
       setPaying(false);
     }
   }
@@ -123,13 +148,22 @@ function CardWizard({
 
   return (
     <div className="rounded-2xl border border-accent/40 bg-card2/95 backdrop-blur p-3.5 space-y-3">
-      {/* Header: what's being bought + progress */}
+      {/* Header: what's being bought (or verified) + progress */}
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-extrabold leading-tight">
-            {tokens.toLocaleString("en-US")}{" "}
-            <span className="text-xs font-semibold text-muted">Tokens</span>
-          </p>
+          {mode === "setup" ? (
+            <p className="text-sm font-extrabold leading-tight">
+              Card verification{" "}
+              <span className="text-xs font-semibold text-emerald-500">
+                — no charge
+              </span>
+            </p>
+          ) : (
+            <p className="text-sm font-extrabold leading-tight">
+              {tokens.toLocaleString("en-US")}{" "}
+              <span className="text-xs font-semibold text-muted">Tokens</span>
+            </p>
+          )}
           <p className="text-[11px] text-muted leading-tight">
             Step {step} of 3 · {STEP_TITLES[step - 1]}
           </p>
@@ -248,7 +282,17 @@ function CardWizard({
               disabled={paying || !stripe}
               className="flex-[2] rounded-xl bg-accent text-white text-sm font-bold py-2.5 disabled:opacity-60"
             >
-              {done ? "Adding Tokens…" : paying ? "Processing…" : `Pay ${priceLabel(amountCents)}`}
+              {mode === "setup"
+                ? done
+                  ? "Verified!"
+                  : paying
+                    ? "Verifying…"
+                    : "Verify — no charge"
+                : done
+                  ? "Adding Tokens…"
+                  : paying
+                    ? "Processing…"
+                    : `Pay ${priceLabel(amountCents)}`}
             </button>
           </div>
         </div>
@@ -257,25 +301,21 @@ function CardWizard({
       {error && <p className="text-xs font-semibold text-red-500">{error}</p>}
 
       <p className="text-[10px] text-muted text-center">
-        Secured by Stripe · Your card is saved for one-tap purchases
+        {mode === "setup"
+          ? "Secured by Stripe · No payment will be made — verification only"
+          : "Secured by Stripe · Your card is saved for one-tap purchases"}
       </p>
     </div>
   );
 }
 
 /**
- * In-chat first purchase: the token pack bar and composer swap for this
- * 3-step card wizard (card → name → country + pay) with a progress bar, so
- * the fan never leaves the chat. The country is pre-selected from their IP.
+ * In-chat card wizard: 3 steps (card → name → country + pay/verify) with a
+ * progress bar, replacing the composer so the fan never leaves the chat.
+ * The country is pre-selected from their IP. "payment" mode charges a
+ * top-up; "setup" mode only verifies + saves the card (no charge).
  */
-export default function EmbeddedCardTopup(props: {
-  clientSecret: string;
-  amountCents: number;
-  tokens: number;
-  countryGuess: string | null;
-  onSuccess: (paymentIntentId: string) => Promise<void> | void;
-  onCancel: () => void;
-}) {
+export default function EmbeddedCardTopup(props: WizardProps) {
   return (
     <Elements stripe={getStripe()}>
       <CardWizard {...props} />

@@ -3,7 +3,11 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { tokenBalance } from "@/lib/payments";
 import { TOKEN_PACKS } from "@/lib/tokens";
-import { popupOfferFromMetadata, welcomeOfferFromMetadata } from "@/lib/popupOffer";
+import {
+  popupOfferFromMetadata,
+  verifyPopupFromMetadata,
+  welcomeOfferFromMetadata,
+} from "@/lib/popupOffer";
 
 /** Fan wallet: current token balance + the top-up packs on offer. */
 export async function GET(req: NextRequest) {
@@ -26,7 +30,7 @@ export async function GET(req: NextRequest) {
       .eq("kind", "topup"),
     db
       .from("chats")
-      .select("owner_id, custom_offer")
+      .select("owner_id, custom_offer, stripe_payment_method_id")
       .eq("id", chatId)
       .maybeSingle(),
   ]);
@@ -39,6 +43,8 @@ export async function GET(req: NextRequest) {
     firstTopupOffer: (topupCount ?? 0) === 0,
     offer: popupOfferFromMetadata(ownerUser?.user?.user_metadata ?? {}),
     welcomeOffer: welcomeOfferFromMetadata(ownerUser?.user?.user_metadata ?? {}),
+    verifyPopup: verifyPopupFromMetadata(ownerUser?.user?.user_metadata ?? {}),
+    hasCard: !!chat?.stripe_payment_method_id,
     customOffer: chat?.custom_offer ?? null,
   });
 }

@@ -12,10 +12,12 @@ import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
 import PopupOfferSettings from "./PopupOfferSettings";
 import WelcomeOfferSettings from "./WelcomeOfferSettings";
+import VerifyPopupSettings from "./VerifyPopupSettings";
 import WelcomeMessageEditor from "./WelcomeMessageEditor";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
 import {
+  IconCard,
   IconEdit,
   IconGrid,
   IconHeart,
@@ -35,6 +37,7 @@ type Section =
   | "subscriptions"
   | "offers"
   | "welcomeoffer"
+  | "verify"
   | "welcome"
   | "links"
   | "editor"
@@ -422,6 +425,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconTip className="w-3.5 h-3.5" /> Welcome offer
         </button>
         <button
+          onClick={() => setSection("verify")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "verify"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconCard className="w-3.5 h-3.5" /> Verify pop up
+        </button>
+        <button
           onClick={() => setSection("welcome")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "welcome"
@@ -487,7 +500,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             section === "welcome" ||
             section === "subscriptions" ||
             section === "offers" ||
-            section === "welcomeoffer"
+            section === "welcomeoffer" ||
+            section === "verify"
               ? "max-w-2xl"
               : section === "editor" || section === "posts"
               ? "max-w-4xl"
@@ -506,6 +520,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <PopupOfferSettings />
           ) : section === "welcomeoffer" ? (
             <WelcomeOfferSettings />
+          ) : section === "verify" ? (
+            <VerifyPopupSettings />
           ) : section === "welcome" ? (
             <WelcomeMessageEditor />
           ) : section === "editor" ? (

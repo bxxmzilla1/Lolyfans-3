@@ -66,6 +66,31 @@ export function popupOfferFromMetadata(meta: Record<string, unknown>): PopupOffe
   };
 }
 
+/**
+ * Verify popup: after a fan sends a configurable number of messages without
+ * a card on file, a popup asks them to verify with a card (Stripe SetupIntent
+ * — no charge) to prevent fraud and keep minors away from adult content.
+ */
+export type VerifyPopup = {
+  enabled: boolean;
+  /** Messages the fan must send before the popup appears. */
+  messages: number;
+};
+
+export const DEFAULT_VERIFY_POPUP: VerifyPopup = {
+  enabled: true,
+  messages: 5,
+};
+
+/** Read a creator's verify popup config from their auth user_metadata. */
+export function verifyPopupFromMetadata(meta: Record<string, unknown>): VerifyPopup {
+  return {
+    // Anything but an explicit false keeps it on (the default).
+    enabled: meta.verify_popup_enabled !== false,
+    messages: positiveInt(meta.verify_popup_messages, DEFAULT_VERIFY_POPUP.messages),
+  };
+}
+
 export function offerPriceLabel(cents: number): string {
   const dollars = cents / 100;
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
