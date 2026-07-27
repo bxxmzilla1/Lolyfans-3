@@ -19,6 +19,7 @@ import {
   TOKEN_PACKS,
   FIRST_TOPUP_OFFER_PACK_ID,
   formatTokens,
+  packPriceLabel,
   packTotalTokens,
   perTokenLabel,
 } from "@/lib/tokens";
@@ -1281,34 +1282,29 @@ export default function ChatView({
         {/* One-tap token packs sit above the input so the composer keeps its
             space; "Pack Price" opens the wallet sheet with the full cards. */}
         {role === "guest" && balance !== null && (
-          <div className="w-full mb-2 flex items-center gap-2 rounded-2xl bg-card2/90 border border-accent/30 px-2.5 py-2 backdrop-blur">
-            <div className="flex-1 grid grid-cols-4 gap-1.5">
-              {TOKEN_PACKS.map((pack) => {
-                const busy = toppingUp === pack.id;
-                return (
-                  <button
-                    key={pack.id}
-                    onClick={() => topUp(pack.id)}
-                    disabled={!!toppingUp}
-                    className="rounded-xl bg-card border border-line hover:border-accent px-1 py-1.5 text-center transition-colors disabled:opacity-60"
-                    aria-label={`Buy ${packTotalTokens(pack)} Tokens`}
-                  >
-                    <span className="block text-sm font-extrabold tabular-nums leading-tight">
-                      {busy ? "…" : packTotalTokens(pack).toLocaleString("en-US")}
-                    </span>
-                    <span className="block text-[9px] font-semibold text-muted leading-tight">
-                      Tokens
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              onClick={() => openWallet()}
-              className="shrink-0 rounded-full bg-accent text-white text-xs font-bold px-3 py-1.5"
-            >
-              Pack Price
-            </button>
+          <div className="w-full mb-2 grid grid-cols-4 gap-1.5 rounded-2xl bg-card2/90 border border-accent/30 px-2.5 py-2 backdrop-blur">
+            {TOKEN_PACKS.map((pack) => {
+              const busy = toppingUp === pack.id;
+              return (
+                <button
+                  key={pack.id}
+                  onClick={() => topUp(pack.id)}
+                  disabled={!!toppingUp}
+                  className="rounded-xl bg-card border border-line hover:border-accent px-1 py-1.5 text-center transition-colors disabled:opacity-60"
+                  aria-label={`Buy ${packTotalTokens(pack)} Tokens for ${packPriceLabel(pack)}`}
+                >
+                  <span className="block text-base font-extrabold tabular-nums leading-tight text-accent">
+                    {busy ? "…" : packTotalTokens(pack).toLocaleString("en-US")}
+                  </span>
+                  <span className="block text-[9px] font-semibold text-muted leading-tight">
+                    Tokens
+                  </span>
+                  <span className="block text-[10px] font-semibold text-muted tabular-nums leading-tight mt-0.5">
+                    {packPriceLabel(pack)}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
         {recording ? (
