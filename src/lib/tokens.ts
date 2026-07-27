@@ -64,6 +64,10 @@ export function packPriceLabel(pack: TokenPack): string {
  */
 export const AUTO_REFILL_THRESHOLD_TOKENS = 100;
 export const AUTO_REFILL_BONUS_PERCENT = 15;
+/** First refill after activating via an offer popup: 2X the pack's tokens. */
+export const AUTO_REFILL_FIRST_MULTIPLIER = 2;
+/** The pack auto refill uses when activated from the welcome offer ($9.99). */
+export const WELCOME_REFILL_PACK_ID = "starter";
 
 /** Extra tokens granted on top of the pack every time auto refill fires. */
 export function autoRefillBonusTokens(pack: TokenPack): number {

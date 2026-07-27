@@ -3,7 +3,9 @@ import { broadcast } from "@/lib/realtime";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
 import {
+  AUTO_REFILL_FIRST_MULTIPLIER,
   AUTO_REFILL_THRESHOLD_TOKENS,
+  WELCOME_REFILL_PACK_ID,
   autoRefillBonusTokens,
   formatTokens,
   packById,
@@ -103,10 +105,12 @@ export async function spendTokens(opts: {
 
 /**
  * Auto refill: if the fan enabled it and their balance just dropped below
- * the threshold, charge their chosen pack to the saved card (off-session)
- * and credit the tokens plus the loyalty bonus. Runs after a spend; any
- * failure (no card, declined, Stripe down) silently leaves the balance
- * as-is — the fan just tops up manually like before.
+ * the threshold, charge their refill pack (always the last pack they bought)
+ * to the saved card (off-session) and credit the tokens plus the loyalty
+ * bonus — or 2X the pack when the "first refill doubles" flag is set (the
+ * offer that got them to activate). Runs after a spend; any failure (no
+ * card, declined, Stripe down) silently leaves the balance as-is — the fan
+ * just tops up manually like before.
  *
  * Returns { balance, tokens } after a successful refill, null otherwise.
  */
@@ -120,7 +124,9 @@ export async function maybeAutoRefill(
   const db = supabaseAdmin();
   const { data: chat } = await db
     .from("chats")
-    .select("id, auto_refill_pack_id, stripe_customer_id, stripe_payment_method_id")
+    .select(
+      "id, auto_refill_pack_id, auto_refill_double_next, stripe_customer_id, stripe_payment_method_id"
+    )
     .eq("id", chatId)
     .maybeSingle();
   const pack = chat?.auto_refill_pack_id ? packById(chat.auto_refill_pack_id) : null;
@@ -128,7 +134,10 @@ export async function maybeAutoRefill(
     return null;
   }
 
-  const tokens = packTotalTokens(pack) + autoRefillBonusTokens(pack);
+  const doubleNext = !!chat.auto_refill_double_next;
+  const tokens = doubleNext
+    ? packTotalTokens(pack) * AUTO_REFILL_FIRST_MULTIPLIER
+    : packTotalTokens(pack) + autoRefillBonusTokens(pack);
   try {
     const pi = await stripe().paymentIntents.create({
       amount: pack.priceCents,
@@ -148,11 +157,46 @@ export async function maybeAutoRefill(
     });
     const balance = await creditTokens({ chatId, tokens, paymentIntentId: pi.id });
     if (balance === null) return null;
+    // The 2X boost only applies to the first refill after activation.
+    if (doubleNext) {
+      await db
+        .from("chats")
+        .update({ auto_refill_double_next: false })
+        .eq("id", chatId);
+    }
     return { balance, tokens };
   } catch {
     // Card declined / needs authentication — skip; the fan can top up manually.
     return null;
   }
+}
+
+/**
+ * After a pack purchase: remember it as the fan's last bought pack, and keep
+ * an active auto refill following it ("refills the last pack you bought").
+ * When the purchase claimed the welcome offer with the refill opt-in, this
+ * also activates auto refill with the $9.99 pack + the 2X first refill flag.
+ */
+export async function recordPackPurchase(opts: {
+  chatId: string;
+  packId: string;
+  activateWelcomeRefill?: boolean;
+}) {
+  const db = supabaseAdmin();
+  const patch: Record<string, unknown> = { last_topup_pack_id: opts.packId };
+  if (opts.activateWelcomeRefill) {
+    patch.auto_refill_pack_id = WELCOME_REFILL_PACK_ID;
+    patch.auto_refill_double_next = true;
+    await db.from("chats").update(patch).eq("id", opts.chatId);
+    return;
+  }
+  await db.from("chats").update(patch).eq("id", opts.chatId);
+  // Active refill follows the newest purchase (skip when just activated).
+  await db
+    .from("chats")
+    .update({ auto_refill_pack_id: opts.packId })
+    .eq("id", opts.chatId)
+    .not("auto_refill_pack_id", "is", null);
 }
 
 /** Current token balance of a fan chat. */
@@ -362,10 +406,18 @@ export async function fulfillCheckout(session: Stripe.Checkout.Session) {
       typeof session.payment_intent === "string"
         ? session.payment_intent
         : session.payment_intent?.id ?? null;
-    await creditTokens({ chatId, tokens, paymentIntentId });
+    const credited = await creditTokens({ chatId, tokens, paymentIntentId });
     // A claimed creator-sent offer is single-use: clear it once paid.
     if (session.metadata?.customOffer === "1") {
       await supabaseAdmin().from("chats").update({ custom_offer: null }).eq("id", chatId);
+    }
+    // Only on the first (crediting) call — confirm + webhook both land here.
+    if (credited !== null && session.metadata?.packId) {
+      await recordPackPurchase({
+        chatId,
+        packId: session.metadata.packId,
+        activateWelcomeRefill: session.metadata?.welcomeRefill === "1",
+      });
     }
     return { ok: true as const, kind: "topup" as const, messageId: null };
   }
