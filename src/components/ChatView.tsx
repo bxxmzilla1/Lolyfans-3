@@ -1674,6 +1674,12 @@ export default function ChatView({
                           perTokenLabel(pack.priceCents, total)
                         )}
                       </p>
+                      {!busy && (
+                        <p className="text-[10px] text-muted tabular-nums">
+                          {offerPriceLabel(isOffer ? offer.priceCents : pack.priceCents)}{" "}
+                          total
+                        </p>
+                      )}
                     </button>
                   );
                 })}
