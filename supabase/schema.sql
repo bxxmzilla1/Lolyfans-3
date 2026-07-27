@@ -443,16 +443,6 @@ alter table chats add column if not exists token_balance int not null default 0;
 -- cleared once claimed.
 alter table chats add column if not exists custom_offer jsonb;
 
--- Auto refill: the token pack charged automatically (to the saved card)
--- whenever the fan's balance drops below the threshold. Null = off.
-alter table chats add column if not exists auto_refill_pack_id text;
-
--- Auto refill v2: the refill always follows the fan's last purchased pack,
--- and the first refill after activating through an offer popup grants 2X
--- the pack's tokens (the flag clears once used).
-alter table chats add column if not exists last_topup_pack_id text;
-alter table chats add column if not exists auto_refill_double_next boolean not null default false;
-
 -- Per-chat "appear offline": the creator can hide their online status from
 -- one specific fan (fans see the creator as online by default).
 alter table chats add column if not exists owner_appears_offline boolean not null default false;

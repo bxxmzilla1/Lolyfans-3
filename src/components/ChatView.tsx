@@ -18,9 +18,7 @@ import {
   MIN_TIP_TOKENS,
   TOKEN_PACKS,
   FIRST_TOPUP_OFFER_PACK_ID,
-  WELCOME_REFILL_PACK_ID,
   formatTokens,
-  packById,
   packPriceLabel,
   packTotalTokens,
 } from "@/lib/tokens";
@@ -89,30 +87,6 @@ export default function ChatView({
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNote, setWalletNote] = useState<string | null>(null);
   const [toppingUp, setToppingUp] = useState<string | null>(null);
-  // Auto refill: the fan's LAST BOUGHT pack is charged automatically when
-  // the balance dips below the threshold. Bonus tokens on every refill make
-  // enabling it the smart deal.
-  const [autoRefillPackId, setAutoRefillPackId] = useState<string | null>(null);
-  const [lastPackId, setLastPackId] = useState<string | null>(null);
-  // Pre-purchase pitch: tapping a pack (pricier than the last bought one,
-  // refill off) first offers auto refill → 2X tokens on the first refill.
-  // Accept or decline, the tapped purchase continues right after.
-  const [refillOfferPopup, setRefillOfferPopup] = useState(false);
-  const [pendingTopUp, setPendingTopUp] = useState<{
-    packId: string;
-    claim?: "custom" | "welcome";
-  } | null>(null);
-  // Welcome offer popup: opt into auto refill with the $9.99 pack (2X first
-  // refill) in the same tap that claims the offer.
-  const [welcomeRefillOptIn, setWelcomeRefillOptIn] = useState(true);
-  const [autoRefillMeta, setAutoRefillMeta] = useState({
-    threshold: 100,
-    bonusPercent: 15,
-    hasCard: false,
-  });
-  const [savingAutoRefill, setSavingAutoRefill] = useState(false);
-  const [refillNote, setRefillNote] = useState<string | null>(null);
-  const refillNoteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // The message the fan tried to accept while short on tokens — it unlocks
   // automatically the moment their top-up lands.
   const pendingUnlockIdRef = useRef<string | null>(null);
@@ -339,21 +313,10 @@ export default function ChatView({
         if (data.offer) setOffer(data.offer);
         if (data.welcomeOffer) setWelcomeOffer(data.welcomeOffer);
         setCustomOffer(data.customOffer?.id ? data.customOffer : null);
-        if (data.autoRefill) {
-          setAutoRefillPackId(data.autoRefill.packId ?? null);
-          setLastPackId(data.autoRefill.lastPackId ?? null);
-          setAutoRefillMeta({
-            threshold: data.autoRefill.threshold ?? 100,
-            bonusPercent: data.autoRefill.bonusPercent ?? 15,
-            hasCard: !!data.autoRefill.hasCard,
-          });
-        }
-        return data;
       }
     } catch {
       // Balance pill just stays hidden until the next refresh.
     }
-    return null;
   }, [role, chatId]);
 
   useEffect(() => {
@@ -496,45 +459,6 @@ export default function ChatView({
     setReplyTo(null);
   }
 
-  /**
-   * Turn auto refill on/off. The refill pack is always the last one bought
-   * (the server picks it); `firstDouble` marks an activation through the
-   * post-purchase offer, granting 2X tokens on the first refill.
-   */
-  async function saveAutoRefill(enable: boolean, firstDouble = false) {
-    if (savingAutoRefill) return false;
-    const previous = autoRefillPackId;
-    setAutoRefillPackId(enable ? lastPackId || "plus" : null);
-    setSavingAutoRefill(true);
-    try {
-      const res = await fetch("/api/payments/wallet", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, enable, firstDouble }),
-      });
-      if (!res.ok) {
-        setAutoRefillPackId(previous);
-        setSavingAutoRefill(false);
-        return false;
-      }
-      const data = await res.json().catch(() => ({}));
-      setAutoRefillPackId(data.autoRefillPackId ?? null);
-      setSavingAutoRefill(false);
-      return true;
-    } catch {
-      setAutoRefillPackId(previous);
-      setSavingAutoRefill(false);
-      return false;
-    }
-  }
-
-  /** Brief "auto refilled" banner over the composer after a refill fires. */
-  function showRefillNote(tokens: number) {
-    setRefillNote(`Auto refill: +${formatTokens(tokens)} added to your wallet`);
-    if (refillNoteTimerRef.current) clearTimeout(refillNoteTimerRef.current);
-    refillNoteTimerRef.current = setTimeout(() => setRefillNote(null), 5000);
-  }
-
   /** Open the top-up sheet, optionally explaining why (e.g. short on tokens). */
   function openWallet(note?: string) {
     setWalletNote(note ?? null);
@@ -547,42 +471,15 @@ export default function ChatView({
     pendingUnlockIdRef.current = null;
   }
 
-  /**
-   * Tap on a token pack. The auto refill pitch comes BEFORE the purchase —
-   * and before Stripe's card form on first buys. It only shows when refill
-   * is off and this pack costs MORE than the last one bought (never for
-   * cheaper packs); the welcome offer is excluded — it has its own opt-in.
-   * Accept or decline, the purchase continues right after.
-   */
+  /** Buy a token pack: one tap with a saved card, Stripe Checkout otherwise. */
   async function topUp(packId: string, claim?: "custom" | "welcome") {
     if (toppingUp) return;
-    if (role === "guest" && claim !== "welcome" && !autoRefillPackId) {
-      const cur = packById(packId);
-      const prev = lastPackId ? packById(lastPackId) : null;
-      if (cur && (!prev || cur.priceCents > prev.priceCents)) {
-        setPendingTopUp({ packId, claim });
-        setRefillOfferPopup(true);
-        return;
-      }
-    }
-    await executeTopUp(packId, claim);
-  }
-
-  /** Buy a token pack: one tap with a saved card, Stripe Checkout otherwise. */
-  async function executeTopUp(packId: string, claim?: "custom" | "welcome") {
-    if (toppingUp) return;
     setToppingUp(packId);
-    const withWelcomeRefill = claim === "welcome" && welcomeRefillOptIn;
     try {
       const res = await fetch("/api/payments/topup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chatId,
-          packId,
-          claimOffer: claim,
-          welcomeRefill: withWelcomeRefill,
-        }),
+        body: JSON.stringify({ chatId, packId, claimOffer: claim }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.topped) {
@@ -595,13 +492,6 @@ export default function ChatView({
         if (claim === "custom") setCustomOffer(null);
         setCustomOfferPopup(false);
         setToppingUp(null);
-        // Refill follows the last bought pack; keep the local state in sync.
-        if (withWelcomeRefill) setAutoRefillPackId(WELCOME_REFILL_PACK_ID);
-        else if (autoRefillPackId) setAutoRefillPackId(packId);
-        setLastPackId(packId);
-        // Server is the source of truth for the refill pack (it may have
-        // just been activated through the pre-purchase pitch).
-        refreshWallet();
         // The fan was mid-accept when the balance ran short: finish that
         // accept right away with the fresh tokens.
         const pendingId = pendingUnlockIdRef.current;
@@ -713,7 +603,6 @@ export default function ChatView({
           prev.some((m) => m.id === data.message.id) ? prev : [...prev, data.message]
         );
         if (typeof data.balance === "number") setBalance(data.balance);
-        if (data.refilled > 0) showRefillNote(data.refilled);
         setText("");
         setTipTokens(null);
         setTipping(false);
@@ -955,7 +844,6 @@ export default function ChatView({
           prev.map((m) => (m.id === messageId ? { ...m, unlocked: true } : m))
         );
         if (typeof data.balance === "number") setBalance(data.balance);
-        if (data.refilled > 0) showRefillNote(data.refilled);
         pendingUnlockIdRef.current = null;
       } else if (res.status === 402) {
         if (typeof data.balance === "number") setBalance(data.balance);
@@ -1390,11 +1278,6 @@ export default function ChatView({
       )}
 
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {role === "guest" && refillNote && (
-          <div className="w-full mb-2 rounded-2xl bg-emerald-500/10 border border-emerald-500/40 text-emerald-500 text-xs font-semibold px-3.5 py-2 fade-up">
-            {refillNote}
-          </div>
-        )}
         {/* Token balance sits above the input so the composer keeps its space */}
         {role === "guest" && balance !== null && (
           <button
@@ -1414,11 +1297,6 @@ export default function ChatView({
                 {balance.toLocaleString("en-US")}
               </span>
             </span>
-            {autoRefillPackId && (
-              <span className="hidden sm:inline shrink-0 text-[10px] font-semibold text-emerald-500">
-                Auto refill on
-              </span>
-            )}
             <span className="shrink-0 rounded-full bg-accent text-white text-xs font-bold px-3 py-1.5">
               Top up
             </span>
@@ -1800,72 +1678,6 @@ export default function ChatView({
                   );
                 })}
               </div>
-              <div className="rounded-xl bg-card2 border border-line px-3.5 py-3 space-y-2.5">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-bold">
-                      Auto refill{" "}
-                      <span className="text-emerald-500 text-xs font-bold">
-                        +{autoRefillMeta.bonusPercent}% free every time
-                      </span>
-                    </p>
-                    <p className="text-[11px] text-muted mt-0.5 leading-snug">
-                      Never run dry — when you drop below{" "}
-                      {autoRefillMeta.threshold} Tokens, your last purchased
-                      pack refills automatically with bonus Tokens on top.
-                    </p>
-                  </div>
-                  <button
-                    role="switch"
-                    aria-checked={!!autoRefillPackId}
-                    disabled={savingAutoRefill}
-                    onClick={() => saveAutoRefill(!autoRefillPackId)}
-                    className={`relative w-11 h-6 rounded-full shrink-0 transition-colors disabled:opacity-60 ${
-                      autoRefillPackId ? "bg-emerald-500" : "bg-line"
-                    }`}
-                    aria-label="Toggle auto refill"
-                  >
-                    <span
-                      className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                        autoRefillPackId ? "translate-x-[22px]" : "translate-x-0.5"
-                      }`}
-                    />
-                  </button>
-                </div>
-                {autoRefillPackId &&
-                  (() => {
-                    const pack = packById(autoRefillPackId);
-                    if (!pack) return null;
-                    const total = packTotalTokens(pack);
-                    const bonus = Math.round(
-                      (total * autoRefillMeta.bonusPercent) / 100
-                    );
-                    return (
-                      <>
-                        <p className="text-[11px] text-muted">
-                          Refills with your last purchase:{" "}
-                          <span className="font-bold text-fg tabular-nums">
-                            {(total + bonus).toLocaleString("en-US")} Tokens
-                          </span>{" "}
-                          <span className="text-emerald-500 font-semibold">
-                            (incl. +{bonus.toLocaleString("en-US")} bonus)
-                          </span>{" "}
-                          for{" "}
-                          <span className="font-bold text-fg">
-                            {packPriceLabel(pack)}
-                          </span>
-                          . Buying a different pack switches the refill to it.
-                        </p>
-                        {!autoRefillMeta.hasCard && (
-                          <p className="text-[11px] text-muted">
-                            Starts working after your first top-up (that saves
-                            your card).
-                          </p>
-                        )}
-                      </>
-                    );
-                  })()}
-              </div>
               <p className="text-[11px] text-muted text-center">
                 One-tap with your saved card · secured by Stripe
               </p>
@@ -1959,49 +1771,6 @@ export default function ChatView({
                         ? "Unlocked just for you — this one won't come back."
                         : "Only on your very first top-up — once it's gone, it's gone."}
                   </p>
-                  {isWelcome &&
-                    (() => {
-                      const refillPack = packById(WELCOME_REFILL_PACK_ID)!;
-                      const refillTokens = packTotalTokens(refillPack);
-                      return (
-                        <button
-                          type="button"
-                          onClick={() => setWelcomeRefillOptIn((v) => !v)}
-                          className={`relative w-full text-left rounded-2xl border px-3.5 py-3 flex items-start gap-2.5 transition-colors ${
-                            welcomeRefillOptIn
-                              ? "border-emerald-500/50 bg-emerald-500/10"
-                              : "border-line bg-card2"
-                          }`}
-                        >
-                          <span
-                            className={`mt-0.5 w-4.5 h-4.5 shrink-0 rounded-md border flex items-center justify-center text-[10px] font-bold ${
-                              welcomeRefillOptIn
-                                ? "bg-emerald-500 border-emerald-500 text-white"
-                                : "border-line text-transparent"
-                            }`}
-                          >
-                            ✓
-                          </span>
-                          <span className="text-[11px] leading-snug">
-                            <span className="font-bold">
-                              Add auto refill —{" "}
-                              <span className="text-emerald-500">
-                                2X Tokens on your first refill
-                              </span>
-                            </span>
-                            <span className="text-muted">
-                              {" "}
-                              When you drop below {autoRefillMeta.threshold}{" "}
-                              Tokens, the {packPriceLabel(refillPack)} pack tops
-                              up automatically ({(refillTokens * 2).toLocaleString(
-                                "en-US"
-                              )}{" "}
-                              Tokens the first time). Turn off anytime.
-                            </span>
-                          </span>
-                        </button>
-                      );
-                    })()}
                   <button
                     onClick={() =>
                       topUp(
@@ -2019,81 +1788,6 @@ export default function ChatView({
                   <p className="relative text-[10px] text-muted/80">
                     Secured by Stripe · All Token purchases are final and
                     non-refundable.
-                  </p>
-                </div>
-              </div>
-            </Portal>
-          );
-        })()}
-
-      {refillOfferPopup &&
-        pendingTopUp &&
-        (() => {
-          // Pre-purchase pitch: the fan just tapped this pack. Accept turns
-          // auto refill on (2X tokens on the FIRST refill); either way the
-          // tapped purchase continues right after — one tap with a saved
-          // card, or Stripe's card form on a first buy.
-          const pack = packById(pendingTopUp.packId) ?? packById("plus")!;
-          const total = packTotalTokens(pack);
-          const proceed = () => {
-            const pending = pendingTopUp;
-            setRefillOfferPopup(false);
-            setPendingTopUp(null);
-            if (pending) executeTopUp(pending.packId, pending.claim);
-          };
-          return (
-            <Portal>
-              <div
-                className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4"
-                onClick={proceed}
-              >
-                <div
-                  className="relative bg-card border border-emerald-500/40 rounded-3xl p-6 pt-8 w-full max-w-sm text-center space-y-2.5 fade-up overflow-hidden"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-72 h-44 rounded-full bg-emerald-500/25 blur-3xl pointer-events-none" />
-                  <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-500">
-                    Auto refill offer
-                  </p>
-                  <p className="relative text-2xl font-extrabold leading-tight">
-                    2X Tokens on your first refill
-                  </p>
-                  <p className="relative text-xs text-muted leading-relaxed">
-                    Add auto refill to this purchase and never run dry: when
-                    your balance drops below {autoRefillMeta.threshold} Tokens,
-                    your last purchased pack tops up automatically.
-                  </p>
-                  <div className="relative rounded-2xl bg-emerald-500/10 border border-emerald-500/30 px-4 py-3">
-                    <p className="text-sm font-extrabold tabular-nums">
-                      First refill:{" "}
-                      <span className="text-emerald-500">
-                        {(total * 2).toLocaleString("en-US")} Tokens
-                      </span>{" "}
-                      <span className="text-xs font-semibold text-muted line-through">
-                        {total.toLocaleString("en-US")}
-                      </span>{" "}
-                      for {packPriceLabel(pack)}
-                    </p>
-                  </div>
-                  <button
-                    onClick={async () => {
-                      const ok = await saveAutoRefill(true, true);
-                      if (ok) proceed();
-                    }}
-                    disabled={savingAutoRefill}
-                    className="relative w-full rounded-full bg-emerald-500 glow-accent text-white text-sm font-bold py-3 disabled:opacity-60"
-                  >
-                    {savingAutoRefill ? "Activating…" : "Accept — activate auto refill"}
-                  </button>
-                  <button
-                    onClick={proceed}
-                    className="relative w-full rounded-full border border-line text-muted text-sm font-semibold py-2.5"
-                  >
-                    No thanks, just this purchase
-                  </button>
-                  <p className="relative text-[10px] text-muted/80">
-                    Refills charge your saved card via Stripe · turn it off
-                    anytime in your wallet.
                   </p>
                 </div>
               </div>

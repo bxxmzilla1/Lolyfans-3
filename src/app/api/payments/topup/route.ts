@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
-import {
-  creditTokens,
-  ensureStripeCustomer,
-  recordPackPurchase,
-  tokenBalance,
-} from "@/lib/payments";
+import { creditTokens, ensureStripeCustomer, tokenBalance } from "@/lib/payments";
 import {
   packById,
   packTotalTokens,
@@ -28,7 +23,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
   }
 
-  const { chatId, packId, returnTo, claimOffer, welcomeRefill } = await req.json();
+  const { chatId, packId, returnTo, claimOffer } = await req.json();
   if (!chatId || !packId) {
     return NextResponse.json({ error: "chatId and packId required" }, { status: 400 });
   }
@@ -147,11 +142,6 @@ export async function POST(req: NextRequest) {
       if (customOffer) {
         await db.from("chats").update({ custom_offer: null }).eq("id", chatId);
       }
-      await recordPackPurchase({
-        chatId,
-        packId: pack.id,
-        activateWelcomeRefill: !!welcomeOffer && !!welcomeRefill,
-      });
       return NextResponse.json({
         ok: true,
         topped: true,
@@ -202,7 +192,6 @@ export async function POST(req: NextRequest) {
         tokens: String(tokens),
         packId: pack.id,
         ...(customOffer ? { customOffer: "1" } : {}),
-        ...(welcomeOffer && welcomeRefill ? { welcomeRefill: "1" } : {}),
       },
     },
     metadata: {
@@ -211,7 +200,6 @@ export async function POST(req: NextRequest) {
       tokens: String(tokens),
       packId: pack.id,
       ...(customOffer ? { customOffer: "1" } : {}),
-      ...(welcomeOffer && welcomeRefill ? { welcomeRefill: "1" } : {}),
     },
     success_url: `${origin}${returnPath}?topup=1&session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}${returnPath}`,

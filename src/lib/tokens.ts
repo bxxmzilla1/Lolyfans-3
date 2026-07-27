@@ -57,23 +57,6 @@ export function packPriceLabel(pack: TokenPack): string {
   return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
 }
 
-/**
- * Auto refill: when a fan's balance dips below the threshold, their chosen
- * pack is charged to the saved card automatically — with extra bonus tokens
- * on every refill, so switching it on reads as the smart deal.
- */
-export const AUTO_REFILL_THRESHOLD_TOKENS = 100;
-export const AUTO_REFILL_BONUS_PERCENT = 15;
-/** First refill after activating via an offer popup: 2X the pack's tokens. */
-export const AUTO_REFILL_FIRST_MULTIPLIER = 2;
-/** The pack auto refill uses when activated from the welcome offer ($9.99). */
-export const WELCOME_REFILL_PACK_ID = "starter";
-
-/** Extra tokens granted on top of the pack every time auto refill fires. */
-export function autoRefillBonusTokens(pack: TokenPack): number {
-  return Math.round((packTotalTokens(pack) * AUTO_REFILL_BONUS_PERCENT) / 100);
-}
-
 /** Tip amounts shown in the picker (tokens). */
 export const TIP_TOKEN_PRESETS = [50, 100, 200, 500, 1000];
 export const MIN_TIP_TOKENS = 10;
