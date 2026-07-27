@@ -381,25 +381,28 @@ export default function ChatView({
     !!verifyCfg?.mediaTrigger &&
     elementsEnabled();
 
-  // Verify popup: fires once the fan has sent the creator-configured number
-  // of messages — or, with the media trigger on, the moment the creator's
-  // photo/video arrives — while they have no card on file. Verification is
+  // Verify popup for fans with no card on file. Two exclusive trigger modes:
+  // with the media trigger ON it fires the moment the creator's photo/video
+  // arrives (the message counter is ignored); otherwise it fires once the
+  // fan has sent the creator-configured number of messages. Verification is
   // a Stripe SetupIntent — the card is saved but nothing is charged.
   // Dismissing it snoozes it for the session; it returns until they verify.
   useEffect(() => {
     if (role !== "guest" || hasCard || !verifyCfg?.enabled) return;
     if (cardTopup || cardVerify || !elementsEnabled()) return;
-    const sent = messages.filter((m) => m.sender === "guest").length;
-    const mediaArrived =
-      verifyCfg.mediaTrigger &&
-      messages.some(
+    if (verifyCfg.mediaTrigger) {
+      const mediaArrived = messages.some(
         (m) =>
           m.sender === "owner" &&
           mediaItemsFromMessage(m).some(
             (i) => i.type === "image" || i.type === "video"
           )
       );
-    if (sent < verifyCfg.messages && !mediaArrived) return;
+      if (!mediaArrived) return;
+    } else {
+      const sent = messages.filter((m) => m.sender === "guest").length;
+      if (sent < verifyCfg.messages) return;
+    }
     try {
       if (sessionStorage.getItem(`lf-verify-dismissed:${chatId}`)) return;
     } catch {}

@@ -29,7 +29,8 @@ export default function VerifyPopupSettings() {
   }, []);
 
   const messagesNum = Math.round(Number(messages));
-  const valid = messagesNum > 0;
+  // The counter is unused while the media trigger is on, so don't block saving.
+  const valid = onMedia || messagesNum > 0;
 
   async function save() {
     if (!valid || saving) return;
@@ -38,7 +39,8 @@ export default function VerifyPopupSettings() {
       await supabaseBrowser().auth.updateUser({
         data: {
           verify_popup_enabled: enabled,
-          verify_popup_messages: messagesNum,
+          verify_popup_messages:
+            messagesNum > 0 ? messagesNum : DEFAULT_VERIFY_POPUP.messages,
           verify_popup_on_media: onMedia,
         },
       });
@@ -96,7 +98,7 @@ export default function VerifyPopupSettings() {
           <p className="text-[11px] text-muted mt-0.5 leading-relaxed">
             When you send an image or video, unverified fans see it locked and
             the verification popup appears immediately. It unlocks the moment
-            they verify.
+            they verify. This replaces the message counter below.
           </p>
         </div>
         <button
@@ -117,7 +119,9 @@ export default function VerifyPopupSettings() {
         </button>
       </div>
 
-      <div className={`space-y-1.5 ${enabled ? "" : "opacity-40"}`}>
+      {/* The media trigger replaces the message counter, so it's disabled
+          while that switch is on. */}
+      <div className={`space-y-1.5 ${enabled && !onMedia ? "" : "opacity-40"}`}>
         <label className="text-xs font-semibold text-muted uppercase tracking-wide">
           Messages before the popup
         </label>
@@ -126,10 +130,13 @@ export default function VerifyPopupSettings() {
           onChange={(e) => setMessages(e.target.value.replace(/[^\d]/g, ""))}
           inputMode="numeric"
           placeholder="5"
-          className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+          disabled={onMedia}
+          className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none disabled:cursor-not-allowed"
         />
         <p className="text-[11px] text-muted">
-          The popup appears once the fan has sent this many messages.
+          {onMedia
+            ? "Off while “Trigger on photos & videos” is on — the popup appears with your media instead."
+            : "The popup appears once the fan has sent this many messages."}
         </p>
       </div>
 
@@ -154,9 +161,11 @@ export default function VerifyPopupSettings() {
             No payment will be made — verification is free.
           </p>
           <p className="relative text-[11px] text-muted">
-            Appears after {valid ? messagesNum : 0}{" "}
-            {messagesNum === 1 ? "message" : "messages"}
-            {onMedia ? " · and instantly on your photos & videos" : ""}
+            {onMedia
+              ? "Appears instantly when you send a photo or video"
+              : `Appears after ${valid ? messagesNum : 0} ${
+                  messagesNum === 1 ? "message" : "messages"
+                }`}
             {enabled ? "" : " · currently off"}
           </p>
         </div>
