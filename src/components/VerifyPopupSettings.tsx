@@ -2,17 +2,16 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { DEFAULT_VERIFY_POPUP } from "@/lib/popupOffer";
+import { IconLock } from "./Icons";
 
 /**
- * Verify pop up tab: the creator sets how many messages a fan can send
- * before a popup asks them to verify with a card (Stripe SetupIntent — no
- * charge). Fans with a card on file never see it.
+ * Card Verify tab: while a fan has no card on file, every photo/video the
+ * creator sends renders blurred with a "Verify to view" button that opens
+ * the embedded Stripe card inputs (SetupIntent — no charge). Everything
+ * unlocks the moment they verify.
  */
 export default function VerifyPopupSettings() {
-  const [enabled, setEnabled] = useState(DEFAULT_VERIFY_POPUP.enabled);
-  const [messages, setMessages] = useState(String(DEFAULT_VERIFY_POPUP.messages));
-  const [onMedia, setOnMedia] = useState(DEFAULT_VERIFY_POPUP.mediaTrigger);
+  const [enabled, setEnabled] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -22,27 +21,15 @@ export default function VerifyPopupSettings() {
       .then(({ data }) => {
         const meta = data.user?.user_metadata ?? {};
         setEnabled(meta.verify_popup_enabled !== false);
-        if (Number(meta.verify_popup_messages) > 0)
-          setMessages(String(meta.verify_popup_messages));
-        setOnMedia(meta.verify_popup_on_media === true);
       });
   }, []);
 
-  const messagesNum = Math.round(Number(messages));
-  // The counter is unused while the media trigger is on, so don't block saving.
-  const valid = onMedia || messagesNum > 0;
-
   async function save() {
-    if (!valid || saving) return;
+    if (saving) return;
     setSaving(true);
     try {
       await supabaseBrowser().auth.updateUser({
-        data: {
-          verify_popup_enabled: enabled,
-          verify_popup_messages:
-            messagesNum > 0 ? messagesNum : DEFAULT_VERIFY_POPUP.messages,
-          verify_popup_on_media: onMedia,
-        },
+        data: { verify_popup_enabled: enabled },
       });
       setSaved(true);
       setTimeout(() => setSaved(false), 1500);
@@ -54,21 +41,22 @@ export default function VerifyPopupSettings() {
   return (
     <div className="space-y-6 max-w-lg">
       <div>
-        <p className="font-semibold">Verification popup</p>
+        <p className="font-semibold">Card verification</p>
         <p className="text-xs text-muted mt-1 leading-relaxed">
-          After a fan sends the number of messages below without a card on
-          file, they see a popup asking them to verify with a card — to
-          prevent fraud and keep underage users away from adult content. The
-          card is saved through Stripe with <b>no charge</b>, and also enables
-          one-tap purchases afterwards.
+          While a fan has no card on file, every photo and video you send shows
+          blurred with a <b>Verify to view</b> button. Pressing it opens the
+          Stripe card inputs right in the chat — to prevent fraud and keep
+          underage users away from adult content. The card is saved with{" "}
+          <b>no charge</b>, everything unblurs instantly, and one-tap purchases
+          are enabled afterwards.
         </p>
       </div>
 
       <div className="flex items-center justify-between gap-4 rounded-xl bg-card2 border border-line px-4 py-3">
         <div>
-          <p className="text-sm font-semibold">Show verification popup</p>
+          <p className="text-sm font-semibold">Require card verification</p>
           <p className="text-[11px] text-muted mt-0.5 leading-relaxed">
-            When off, fans are never asked to verify.
+            When off, fans see your photos and videos without verifying.
           </p>
         </div>
         <button
@@ -78,7 +66,7 @@ export default function VerifyPopupSettings() {
           className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
             enabled ? "bg-accent" : "bg-line"
           }`}
-          aria-label="Toggle the verification popup"
+          aria-label="Toggle card verification"
         >
           <span
             className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
@@ -88,99 +76,44 @@ export default function VerifyPopupSettings() {
         </button>
       </div>
 
-      <div
-        className={`flex items-center justify-between gap-4 rounded-xl bg-card2 border border-line px-4 py-3 ${
-          enabled ? "" : "opacity-40"
-        }`}
-      >
-        <div>
-          <p className="text-sm font-semibold">Trigger on photos & videos</p>
-          <p className="text-[11px] text-muted mt-0.5 leading-relaxed">
-            When you send an image or video, unverified fans see it locked and
-            the verification popup appears immediately. It unlocks the moment
-            they verify. This replaces the message counter below.
-          </p>
-        </div>
-        <button
-          role="switch"
-          aria-checked={onMedia}
-          onClick={() => setOnMedia((v) => !v)}
-          disabled={!enabled}
-          className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
-            onMedia && enabled ? "bg-accent" : "bg-line"
-          }`}
-          aria-label="Toggle verification on photos and videos"
-        >
-          <span
-            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-              onMedia && enabled ? "translate-x-[22px]" : "translate-x-0.5"
-            }`}
-          />
-        </button>
-      </div>
-
-      {/* The media trigger replaces the message counter, so it's disabled
-          while that switch is on. */}
-      <div className={`space-y-1.5 ${enabled && !onMedia ? "" : "opacity-40"}`}>
-        <label className="text-xs font-semibold text-muted uppercase tracking-wide">
-          Messages before the popup
-        </label>
-        <input
-          value={messages}
-          onChange={(e) => setMessages(e.target.value.replace(/[^\d]/g, ""))}
-          inputMode="numeric"
-          placeholder="5"
-          disabled={onMedia}
-          className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none disabled:cursor-not-allowed"
-        />
-        <p className="text-[11px] text-muted">
-          {onMedia
-            ? "Off while “Trigger on photos & videos” is on — the popup appears with your media instead."
-            : "The popup appears once the fan has sent this many messages."}
-        </p>
-      </div>
-
-      {/* Live preview of the fan's popup */}
+      {/* Preview: what an unverified fan sees on your media */}
       <div className="space-y-2">
         <p className="text-xs font-semibold text-muted uppercase tracking-wide">
           Preview
         </p>
-        <div className="relative bg-card border border-accent/40 rounded-3xl p-6 text-center space-y-2.5 overflow-hidden">
-          <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-36 rounded-full bg-accent/25 blur-3xl pointer-events-none" />
-          <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
-            Verification required
-          </p>
-          <p className="relative text-lg font-extrabold leading-snug">
-            Verify your account
-          </p>
-          <p className="relative text-xs text-muted leading-relaxed">
-            To protect against fraud and keep anyone under 18 away from adult
-            content, we ask you to verify your identity with a card.
-          </p>
-          <p className="relative text-xs font-bold text-emerald-500">
-            No payment will be made — verification is free.
-          </p>
-          <p className="relative text-[11px] text-muted">
-            {onMedia
-              ? "Appears instantly when you send a photo or video"
-              : `Appears after ${valid ? messagesNum : 0} ${
-                  messagesNum === 1 ? "message" : "messages"
-                }`}
-            {enabled ? "" : " · currently off"}
-          </p>
+        <div className="relative w-64 h-44 rounded-3xl overflow-hidden bg-gradient-to-br from-accent/40 via-card2 to-accent/20 border border-line">
+          <div className="absolute inset-0 backdrop-blur-2xl" />
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
+            <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
+              <IconLock className="w-5 h-5 text-white" />
+            </span>
+            <span className="text-white text-xs font-semibold drop-shadow">
+              Locked
+            </span>
+            <span className="mt-1 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
+              Verify to view
+            </span>
+            <span className="text-white text-[11px] font-semibold drop-shadow">
+              Free · no charge
+            </span>
+          </div>
         </div>
+        <p className="text-[11px] text-muted">
+          Shown on every photo and video until the fan verifies
+          {enabled ? "" : " · currently off"}.
+        </p>
       </div>
 
       <button
         onClick={save}
-        disabled={saving || !valid}
+        disabled={saving}
         className="w-full bg-accent text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
       >
         {saved ? "Saved!" : saving ? "Saving…" : "Save"}
       </button>
       <p className="text-[11px] text-muted -mt-3">
-        Fans who already registered a card (verified or topped up) never see
-        the popup.
+        Fans who already registered a card (verified or topped up) always see
+        your media normally.
       </p>
     </div>
   );

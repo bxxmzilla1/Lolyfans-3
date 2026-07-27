@@ -67,36 +67,24 @@ export function popupOfferFromMetadata(meta: Record<string, unknown>): PopupOffe
 }
 
 /**
- * Verify popup: after a fan sends a configurable number of messages without
- * a card on file, a popup asks them to verify with a card (Stripe SetupIntent
- * — no charge) to prevent fraud and keep minors away from adult content.
+ * Card Verify: while a fan has no card on file, every photo/video from the
+ * creator renders blurred with a "Verify to view" button that opens the
+ * embedded Stripe card inputs (SetupIntent — no charge). Prevents fraud and
+ * keeps minors away from adult content.
  */
 export type VerifyPopup = {
   enabled: boolean;
-  /** Messages the fan must send before the popup appears. */
-  messages: number;
-  /**
-   * Also trigger on the creator's photos/videos: unverified fans see the
-   * media locked and the verification popup appears immediately. Media
-   * unlocks the moment they verify.
-   */
-  mediaTrigger: boolean;
 };
 
 export const DEFAULT_VERIFY_POPUP: VerifyPopup = {
   enabled: true,
-  messages: 5,
-  mediaTrigger: false,
 };
 
-/** Read a creator's verify popup config from their auth user_metadata. */
+/** Read a creator's Card Verify config from their auth user_metadata. */
 export function verifyPopupFromMetadata(meta: Record<string, unknown>): VerifyPopup {
   return {
     // Anything but an explicit false keeps it on (the default).
     enabled: meta.verify_popup_enabled !== false,
-    messages: positiveInt(meta.verify_popup_messages, DEFAULT_VERIFY_POPUP.messages),
-    // Off unless the creator explicitly turned it on.
-    mediaTrigger: meta.verify_popup_on_media === true,
   };
 }
 

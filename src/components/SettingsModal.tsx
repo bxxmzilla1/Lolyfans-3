@@ -432,7 +432,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               : "bg-card2 border border-line text-muted hover:text-fg"
           }`}
         >
-          <IconCard className="w-3.5 h-3.5" /> Verify pop up
+          <IconCard className="w-3.5 h-3.5" /> Card Verify
         </button>
         <button
           onClick={() => setSection("welcome")}

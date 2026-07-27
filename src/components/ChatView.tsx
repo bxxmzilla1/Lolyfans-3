@@ -103,12 +103,11 @@ export default function ChatView({
   // The message the fan tried to accept while short on tokens — it unlocks
   // automatically the moment their top-up lands.
   const pendingUnlockIdRef = useRef<string | null>(null);
-  // Verify popup: after N fan messages without a card on file (creator sets
-  // N in the "Verify pop up" tab), ask them to verify with a card — a
-  // SetupIntent, so nothing is charged.
+  // Card Verify: while there's no card on file, the creator's photos/videos
+  // render locked with a "Verify to view" button that opens the embedded
+  // card wizard — a SetupIntent, so nothing is charged.
   const [hasCard, setHasCard] = useState(true);
   const [verifyCfg, setVerifyCfg] = useState<VerifyPopup | null>(null);
-  const [verifyPopupOpen, setVerifyPopupOpen] = useState(false);
   const [startingVerify, setStartingVerify] = useState(false);
   const [cardVerify, setCardVerify] = useState<{
     clientSecret: string;
@@ -372,49 +371,11 @@ export default function ChatView({
     return () => clearTimeout(t);
   }, [role, firstOffer, messages, chatId, offer.delaySeconds, offer.popupEnabled]);
 
-  // Verify media trigger: while this is on and the fan is unverified, the
-  // creator's photos/videos render locked ("Verify to view").
+  // Card Verify: while the fan has no card on file, every photo/video from
+  // the creator renders locked ("Verify to view"). Tapping one opens the
+  // embedded card wizard directly (SetupIntent — no charge, no popup).
   const verifyLockActive =
-    role === "guest" &&
-    !hasCard &&
-    !!verifyCfg?.enabled &&
-    !!verifyCfg?.mediaTrigger &&
-    elementsEnabled();
-
-  // Verify popup for fans with no card on file. Two exclusive trigger modes:
-  // with the media trigger ON it fires the moment the creator's photo/video
-  // arrives (the message counter is ignored); otherwise it fires once the
-  // fan has sent the creator-configured number of messages. Verification is
-  // a Stripe SetupIntent — the card is saved but nothing is charged.
-  // Dismissing it snoozes it for the session; it returns until they verify.
-  useEffect(() => {
-    if (role !== "guest" || hasCard || !verifyCfg?.enabled) return;
-    if (cardTopup || cardVerify || !elementsEnabled()) return;
-    if (verifyCfg.mediaTrigger) {
-      const mediaArrived = messages.some(
-        (m) =>
-          m.sender === "owner" &&
-          mediaItemsFromMessage(m).some(
-            (i) => i.type === "image" || i.type === "video"
-          )
-      );
-      if (!mediaArrived) return;
-    } else {
-      const sent = messages.filter((m) => m.sender === "guest").length;
-      if (sent < verifyCfg.messages) return;
-    }
-    try {
-      if (sessionStorage.getItem(`lf-verify-dismissed:${chatId}`)) return;
-    } catch {}
-    setVerifyPopupOpen(true);
-  }, [role, hasCard, verifyCfg, messages, chatId, cardTopup, cardVerify]);
-
-  function dismissVerifyPopup() {
-    try {
-      sessionStorage.setItem(`lf-verify-dismissed:${chatId}`, "1");
-    } catch {}
-    setVerifyPopupOpen(false);
-  }
+    role === "guest" && !hasCard && !!verifyCfg?.enabled && elementsEnabled();
 
   // Welcome offer: greets the fan the first time they open the chat after
   // signing up. Shown once per chat, and only while they've never topped up.
@@ -637,9 +598,8 @@ export default function ChatView({
       // The webhook still credits the payment; the balance catches up.
     }
     setCardTopup(null);
-    // Paying also saved the card — the verify popup is satisfied.
+    // Paying also saved the card — Card Verify is satisfied.
     setHasCard(true);
-    setVerifyPopupOpen(false);
     if (typeof data.balance === "number") setBalance(data.balance);
     // Any successful top-up ends the first-purchase offers.
     setFirstOffer(false);
@@ -656,7 +616,7 @@ export default function ChatView({
     setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
   }
 
-  /** "Verify now": start a SetupIntent and open the card wizard (no charge). */
+  /** "Verify to view": start a SetupIntent and open the card wizard (no charge). */
   async function startVerify() {
     if (startingVerify) return;
     setStartingVerify(true);
@@ -668,7 +628,6 @@ export default function ChatView({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.clientSecret) {
-        setVerifyPopupOpen(false);
         setCardVerify({
           clientSecret: data.clientSecret,
           country: data.country ?? null,
@@ -1245,7 +1204,7 @@ export default function ChatView({
             selected={selectedMsgs.has(m.id)}
             onSelectToggle={toggleMsgSelected}
             verifyLock={verifyLockActive}
-            onVerifyRequest={() => setVerifyPopupOpen(true)}
+            onVerifyRequest={startVerify}
           />
         ))}
         {peerTyping && (
@@ -1477,10 +1436,7 @@ export default function ChatView({
             mode="setup"
             countryGuess={cardVerify.country}
             onSuccess={completeVerify}
-            onCancel={() => {
-              dismissVerifyPopup();
-              setCardVerify(null);
-            }}
+            onCancel={() => setCardVerify(null)}
           />
         ) : (
         <>
@@ -1888,44 +1844,6 @@ export default function ChatView({
               <p className="text-[11px] text-muted/80 text-center -mt-2">
                 All Token purchases are final and non-refundable.
               </p>
-            </div>
-          </div>
-        </Portal>
-      )}
-
-      {/* Verify popup: card verification (no charge) after N fan messages */}
-      {verifyPopupOpen && (
-        <Portal>
-          <div className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-5">
-            <div className="relative w-full max-w-sm bg-card border border-accent/40 rounded-3xl p-6 text-center space-y-3 overflow-hidden fade-up">
-              <div className="absolute -top-20 left-1/2 -translate-x-1/2 w-64 h-36 rounded-full bg-accent/25 blur-3xl pointer-events-none" />
-              <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
-                Verification required
-              </p>
-              <p className="relative text-xl font-extrabold leading-snug">
-                Verify your account
-              </p>
-              <p className="relative text-sm text-muted leading-relaxed">
-                To protect against fraud and keep anyone under 18 away from
-                adult content, we ask you to verify your identity with a card.
-              </p>
-              <p className="relative text-sm font-bold text-emerald-500">
-                No payment will be made — verification is free.
-              </p>
-              <button
-                onClick={startVerify}
-                disabled={startingVerify}
-                className="relative w-full bg-accent text-white font-bold rounded-xl py-3 text-sm disabled:opacity-60 active:opacity-80 transition-opacity"
-              >
-                {startingVerify ? "One moment…" : "Verify now"}
-              </button>
-              <button
-                onClick={dismissVerifyPopup}
-                disabled={startingVerify}
-                className="relative w-full text-xs font-semibold text-muted py-1 disabled:opacity-50"
-              >
-                Not now
-              </button>
             </div>
           </div>
         </Portal>
