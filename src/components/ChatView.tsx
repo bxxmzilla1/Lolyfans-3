@@ -1629,9 +1629,6 @@ export default function ChatView({
                     offer.packEnabled &&
                     pack.id === FIRST_TOPUP_OFFER_PACK_ID;
                   const total = isOffer ? offer.tokens : packTotalTokens(pack);
-                  const bonus = isOffer
-                    ? Math.max(0, offer.tokens - pack.tokens)
-                    : pack.bonusTokens;
                   const highlight =
                     isOffer ||
                     (pack.tag === "Most popular" && !(firstOffer && offer.packEnabled));
@@ -1651,28 +1648,17 @@ export default function ChatView({
                           {isOffer ? "One-time offer" : pack.tag}
                         </span>
                       )}
-                      <p className="text-base font-extrabold tabular-nums">
+                      <p className="text-2xl font-extrabold leading-tight tabular-nums">
                         {total.toLocaleString("en-US")}
                         <span className="text-xs font-semibold text-muted"> Tokens</span>
                       </p>
-                      {bonus > 0 && (
-                        <p className="text-[11px] font-semibold text-emerald-500">
-                          incl. +{bonus.toLocaleString("en-US")} free
-                        </p>
-                      )}
                       <p className="mt-1 text-sm font-bold text-accent">
-                        {busy ? (
-                          "Processing…"
-                        ) : isOffer ? (
-                          <>
-                            {perTokenLabel(offer.priceCents, offer.tokens)}{" "}
-                            <span className="text-[11px] font-semibold text-muted line-through">
-                              {perTokenLabel(offer.originalCents, offer.tokens)}
-                            </span>
-                          </>
-                        ) : (
-                          perTokenLabel(pack.priceCents, total)
-                        )}
+                        {busy
+                          ? "Processing…"
+                          : perTokenLabel(
+                              isOffer ? offer.priceCents : pack.priceCents,
+                              total
+                            )}
                       </p>
                       {!busy && (
                         <p className="text-[10px] text-muted tabular-nums">
