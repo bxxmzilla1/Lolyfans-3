@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Portal from "./Portal";
 import { mediaUrl } from "@/lib/utils";
+import { useVideoContentBox } from "@/lib/useVideoContentBox";
 import {
   blurDrainPriceLabel,
   type BlurDrainerConfig,
@@ -13,6 +14,11 @@ type Rect = { x: number; y: number; w: number; h: number };
 /**
  * Creator UI: place a freestyle square blur over a video preview, set layers
  * and price-per-tap, then confirm the BlurDrainer config for send.
+ *
+ * Coordinates are normalized to the VIDEO FRAME itself (not the preview box),
+ * so the blur lands on the exact same spot in the fan's fullscreen player
+ * regardless of letterboxing. The frame edges are outlined and the square is
+ * clamped inside them.
  */
 export default function BlurDrainerEditor({
   videoPath,
@@ -25,7 +31,9 @@ export default function BlurDrainerEditor({
   onSave: (cfg: BlurDrainerConfig) => void;
   onCancel: () => void;
 }) {
-  const boxRef = useRef<HTMLDivElement>(null);
+  const [containerEl, setContainerEl] = useState<HTMLDivElement | null>(null);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const frame = useVideoContentBox(containerEl, videoEl);
   const [rect, setRect] = useState<Rect>(
     initial
       ? { x: initial.x, y: initial.y, w: initial.w, h: initial.h }
@@ -56,11 +64,10 @@ export default function BlurDrainerEditor({
 
   function onPointerMove(e: React.PointerEvent) {
     const d = dragRef.current;
-    const el = boxRef.current;
-    if (!d || !el) return;
-    const box = el.getBoundingClientRect();
-    const dx = (e.clientX - d.startX) / box.width;
-    const dy = (e.clientY - d.startY) / box.height;
+    if (!d || !frame) return;
+    // Deltas relative to the video frame, so the square tracks the finger 1:1.
+    const dx = (e.clientX - d.startX) / frame.width;
+    const dy = (e.clientY - d.startY) / frame.height;
     if (d.mode === "move") {
       setRect({
         ...d.origin,
@@ -70,9 +77,7 @@ export default function BlurDrainerEditor({
     } else {
       const w = Math.min(1 - d.origin.x, Math.max(0.08, d.origin.w + dx));
       const h = Math.min(1 - d.origin.y, Math.max(0.08, d.origin.h + dy));
-      // Keep it roughly square (freestyle but square-biased).
-      const side = Math.min(w, h);
-      setRect({ ...d.origin, w: side, h: side });
+      setRect({ ...d.origin, w, h });
     }
   }
 
@@ -117,13 +122,15 @@ export default function BlurDrainerEditor({
 
           <div className="p-3 space-y-3">
             <p className="text-xs text-muted">
-              Drag the square to cover the area fans will unblur tap by tap.
+              Drag the square to cover the area fans will unblur tap by tap. It
+              stays inside the video edges.
             </p>
             <div
-              ref={boxRef}
+              ref={setContainerEl}
               className="relative w-full aspect-[9/16] max-h-[50vh] mx-auto rounded-xl overflow-hidden bg-black touch-none"
             >
               <video
+                ref={setVideoEl}
                 src={mediaUrl(videoPath)}
                 muted
                 playsInline
@@ -131,26 +138,41 @@ export default function BlurDrainerEditor({
                 autoPlay
                 className="absolute inset-0 w-full h-full object-contain"
               />
-              <div
-                className="absolute border-2 border-accent bg-accent/25 backdrop-blur-md cursor-move"
-                style={{
-                  left: `${rect.x * 100}%`,
-                  top: `${rect.y * 100}%`,
-                  width: `${rect.w * 100}%`,
-                  height: `${rect.h * 100}%`,
-                }}
-                onPointerDown={(e) => onPointerDown("move", e)}
-              >
-                <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white drop-shadow pointer-events-none">
-                  BLUR
-                </span>
-                <button
-                  type="button"
-                  aria-label="Resize"
-                  className="absolute -right-1.5 -bottom-1.5 w-4 h-4 rounded-full bg-accent border-2 border-white"
-                  onPointerDown={(e) => onPointerDown("resize", e)}
-                />
-              </div>
+              {frame && (
+                <>
+                  {/* Video frame edges — the blur can't leave this area */}
+                  <div
+                    aria-hidden
+                    className="absolute border border-white/40 pointer-events-none"
+                    style={{
+                      left: frame.left,
+                      top: frame.top,
+                      width: frame.width,
+                      height: frame.height,
+                    }}
+                  />
+                  <div
+                    className="absolute border-2 border-accent bg-accent/25 backdrop-blur-md cursor-move"
+                    style={{
+                      left: frame.left + rect.x * frame.width,
+                      top: frame.top + rect.y * frame.height,
+                      width: rect.w * frame.width,
+                      height: rect.h * frame.height,
+                    }}
+                    onPointerDown={(e) => onPointerDown("move", e)}
+                  >
+                    <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-white drop-shadow pointer-events-none">
+                      BLUR
+                    </span>
+                    <button
+                      type="button"
+                      aria-label="Resize"
+                      className="absolute -right-1.5 -bottom-1.5 w-4 h-4 rounded-full bg-accent border-2 border-white"
+                      onPointerDown={(e) => onPointerDown("resize", e)}
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">

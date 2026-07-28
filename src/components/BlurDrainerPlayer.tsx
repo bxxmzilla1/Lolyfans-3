@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Portal from "./Portal";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { mediaUrl } from "@/lib/utils";
+import { useVideoContentBox } from "@/lib/useVideoContentBox";
 import { elementsEnabled } from "@/lib/stripeClient";
 import {
   blurDrainPriceLabel,
@@ -39,6 +40,11 @@ export default function BlurDrainerPlayer({
     country: string | null;
   } | null>(null);
   const prevCleared = useRef(initialCleared);
+  // Blur coordinates are relative to the VIDEO FRAME (set in the editor), so
+  // map them onto the frame's real on-screen rect, excluding letterbox bars.
+  const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
+  const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
+  const frame = useVideoContentBox(containerEl, videoEl);
 
   const remaining = Math.max(0, config.layers - cleared);
   const progress = config.layers > 0 ? cleared / config.layers : 1;
@@ -161,12 +167,14 @@ export default function BlurDrainerPlayer({
 
         <button
           type="button"
+          ref={setContainerEl}
           onClick={tap}
           disabled={busy || remaining <= 0 || !!card}
           className="relative flex-1 w-full min-h-0 disabled:cursor-default"
           aria-label="Tap to unblur one layer"
         >
           <video
+            ref={setVideoEl}
             src={mediaUrl(videoPath)}
             autoPlay
             playsInline
@@ -183,15 +191,15 @@ export default function BlurDrainerPlayer({
             className="absolute inset-0 w-full h-full object-contain bg-black"
           />
           {/* Progressive fog: each paid layer drops blur + frost so more video shows */}
-          {remaining > 0 && (
+          {frame && remaining > 0 && (
             <span
               aria-hidden
               className="absolute pointer-events-none border border-white/20 overflow-hidden transition-[backdrop-filter,background-color,opacity] duration-500 ease-out"
               style={{
-                left: `${config.x * 100}%`,
-                top: `${config.y * 100}%`,
-                width: `${config.w * 100}%`,
-                height: `${config.h * 100}%`,
+                left: frame.left + config.x * frame.width,
+                top: frame.top + config.y * frame.height,
+                width: config.w * frame.width,
+                height: config.h * frame.height,
                 backdropFilter: `blur(${blurPx}px)`,
                 WebkitBackdropFilter: `blur(${blurPx}px)`,
                 backgroundColor: `rgba(8, 12, 20, ${frost})`,
@@ -219,15 +227,15 @@ export default function BlurDrainerPlayer({
               </span>
             </span>
           )}
-          {peelFlash && (
+          {frame && peelFlash && (
             <span
               aria-hidden
               className="absolute pointer-events-none animate-pulse"
               style={{
-                left: `${config.x * 100}%`,
-                top: `${config.y * 100}%`,
-                width: `${config.w * 100}%`,
-                height: `${config.h * 100}%`,
+                left: frame.left + config.x * frame.width,
+                top: frame.top + config.y * frame.height,
+                width: config.w * frame.width,
+                height: config.h * frame.height,
                 boxShadow: "inset 0 0 40px rgba(0,175,240,0.45)",
                 background: "rgba(0,175,240,0.12)",
               }}
