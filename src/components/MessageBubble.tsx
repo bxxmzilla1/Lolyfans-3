@@ -11,7 +11,10 @@ import {
   mediaItemsFromMessage,
   type MediaItem,
 } from "@/lib/utils";
-import { formatTokens, tokensForCents } from "@/lib/tokens";
+/** "$4.99" / "$5" — dollar label for an unlock price in cents. */
+function unlockPriceLabel(cents: number): string {
+  return `$${(cents / 100).toFixed(2).replace(/\.00$/, "")}`;
+}
 import {
   IconBack,
   IconCheck,
@@ -207,7 +210,7 @@ export default function MessageBubble({
   const linkPrice = message.content ? linkPriceIn(message.content) : null;
   const myPriceLabel = mine
     ? price > 0
-      ? formatTokens(tokensForCents(price))
+      ? unlockPriceLabel(price)
       : linkPrice
         ? `$${linkPrice}`
         : null
@@ -253,7 +256,7 @@ export default function MessageBubble({
   );
 
   // Blurred locked media: lock badge, "Locked" label, and — when priced —
-  // the Unlock pill; tapping the card pays with tokens (one tap).
+  // the Unlock pill; tapping the card charges the saved card (one tap).
   const lockedOverlay = blurred && (
     <>
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 pointer-events-none">
@@ -277,10 +280,7 @@ export default function MessageBubble({
                   Unlock
                 </span>
                 <span className="text-white text-sm font-bold drop-shadow">
-                  {formatTokens(tokensForCents(price))}
-                </span>
-                <span className="text-white/50 text-[10px] font-medium drop-shadow -mt-1">
-                  $0.10 per token
+                  {unlockPriceLabel(price)}
                 </span>
               </>
             ) : (
@@ -291,14 +291,14 @@ export default function MessageBubble({
           </>
         )}
       </div>
-      {/* Priced media → one-tap token unlock (wallet top-up if short) */}
+      {/* Priced media → one-tap card purchase */}
       {payToUnlock && !unlocking ? (
         <button
           onClick={(e) => {
             e.stopPropagation();
             onUnlock?.(message);
           }}
-          aria-label={`Unlock for ${formatTokens(tokensForCents(price))}`}
+          aria-label={`Unlock for ${unlockPriceLabel(price)}`}
           className="absolute inset-0 z-[15] cursor-pointer"
         />
       ) : unlocking ? (

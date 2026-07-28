@@ -14,23 +14,7 @@ import MessageBubble, { Message } from "./MessageBubble";
 import Portal from "./Portal";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { elementsEnabled } from "@/lib/stripeClient";
-import {
-  CENTS_PER_TOKEN,
-  TIP_TOKEN_PRESETS,
-  MIN_TIP_TOKENS,
-  TOKEN_PACKS,
-  FIRST_TOPUP_OFFER_PACK_ID,
-  formatTokens,
-  packTotalTokens,
-  perTokenLabel,
-} from "@/lib/tokens";
-import {
-  DEFAULT_POPUP_OFFER,
-  offerPriceLabel,
-  type PopupOffer,
-  type VerifyPopup,
-  type WelcomeOffer,
-} from "@/lib/popupOffer";
+import { type VerifyPopup } from "@/lib/popupOffer";
 import {
   IconBack,
   IconChat,
@@ -43,13 +27,10 @@ import {
   IconMic,
   IconPlus,
   IconSend,
-  IconTip,
   IconUnlock,
 } from "./Icons";
 
 const MAX_ATTACHMENTS = 12;
-
-const OFFER_PACK = TOKEN_PACKS.find((p) => p.id === FIRST_TOPUP_OFFER_PACK_ID)!;
 
 export default function ChatView({
   chatId,
@@ -89,27 +70,15 @@ export default function ChatView({
   const [sendLocked, setSendLocked] = useState(false);
   const [lockPrice, setLockPrice] = useState("");
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
-  const [tipTokens, setTipTokens] = useState<number | null>(null);
-  const [tipPickerOpen, setTipPickerOpen] = useState(false);
-  const [tipCustom, setTipCustom] = useState("");
-  const [tipping, setTipping] = useState(false);
-  // Token wallet (guest side): balance, the top-up sheet, and why it opened.
-  const [balance, setBalance] = useState<number | null>(null);
-  const [walletOpen, setWalletOpen] = useState(false);
-  const [walletNote, setWalletNote] = useState<string | null>(null);
-  const [toppingUp, setToppingUp] = useState<string | null>(null);
-  // First purchase: the composer area swaps for the embedded 3-step card
-  // wizard instead of redirecting to Stripe Checkout.
-  const [cardTopup, setCardTopup] = useState<{
+  // First unlock: the composer area swaps for the embedded 3-step card
+  // wizard instead of redirecting to Stripe Checkout. The card is saved so
+  // every later unlock is one tap.
+  const [cardUnlock, setCardUnlock] = useState<{
     clientSecret: string;
     amountCents: number;
-    tokens: number;
+    messageId: string;
     country: string | null;
-    claim?: "custom" | "welcome";
   } | null>(null);
-  // The message the fan tried to accept while short on tokens — it unlocks
-  // automatically the moment their top-up lands.
-  const pendingUnlockIdRef = useRef<string | null>(null);
   // Card Verify: while there's no card on file, the creator's photos/videos
   // render locked with a "Verify to view" button that opens the embedded
   // card wizard — a SetupIntent, so nothing is charged. Both start from the
@@ -123,41 +92,6 @@ export default function ChatView({
     clientSecret: string;
     country: string | null;
   } | null>(null);
-  // One-time offer for fans who never topped up: shown highlighted in the
-  // sheet, and as a popup after their first locked media. Tokens, prices and
-  // the popup delay come from the creator's Pop up Offers settings.
-  const [firstOffer, setFirstOffer] = useState(false);
-  const [offerPopup, setOfferPopup] = useState(false);
-  const [offer, setOffer] = useState<PopupOffer>(DEFAULT_POPUP_OFFER);
-  // Welcome offer: greets the fan right after signup, explains that photos
-  // and videos unlock with Tokens, and offers a discounted starter pack.
-  const [welcomeOffer, setWelcomeOffer] = useState<WelcomeOffer | null>(null);
-  const [welcomeOfferPopup, setWelcomeOfferPopup] = useState(false);
-  // Creator-sent custom offer for this specific fan. It surfaces as a
-  // platform popup (never as a message from the creator), one time only.
-  const [customOffer, setCustomOffer] = useState<{
-    id: string;
-    tokens: number;
-    priceCents: number;
-    originalCents: number;
-  } | null>(null);
-  const [customOfferPopup, setCustomOfferPopup] = useState(false);
-  // Owner side: the "send a custom offer" composer dialog.
-  const [offerDialog, setOfferDialog] = useState<{
-    tokens: string;
-    price: string;
-    original: string;
-  } | null>(null);
-  const [sendingOffer, setSendingOffer] = useState(false);
-  // Owner side: custom Stripe payment link (any tokens & price) — lets the
-  // fan pay with a different card than the one saved for one-tap.
-  const [payLinkDialog, setPayLinkDialog] = useState<{
-    tokens: string;
-    price: string;
-    url: string | null;
-  } | null>(null);
-  const [creatingLink, setCreatingLink] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
   // Voice notes: recording state + the moment between stop and message sent.
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -311,17 +245,6 @@ export default function ChatView({
         if (typingHideRef.current) clearTimeout(typingHideRef.current);
         typingHideRef.current = setTimeout(() => setPeerTyping(false), 3000);
       })
-      .on("broadcast", { event: "custom-offer" }, ({ payload }) => {
-        // Creator just sent this fan a personal offer — popup appears live.
-        if (role !== "guest") return;
-        const o = payload as {
-          id: string;
-          tokens: number;
-          priceCents: number;
-          originalCents: number;
-        };
-        if (o?.id) setCustomOffer(o);
-      })
       .subscribe();
     channelRef.current = channel;
 
@@ -335,22 +258,19 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, load]);
 
+  // Card Verify config + saved-card status (the wallet economy is gone; this
+  // endpoint now only reports the card state and the creator's verify switch).
   const refreshWallet = useCallback(async () => {
     if (role !== "guest") return;
     try {
       const res = await fetch(`/api/payments/wallet?chatId=${chatId}`);
       if (res.ok) {
         const data = await res.json();
-        if (typeof data.balance === "number") setBalance(data.balance);
-        setFirstOffer(!!data.firstTopupOffer);
-        if (data.offer) setOffer(data.offer);
-        if (data.welcomeOffer) setWelcomeOffer(data.welcomeOffer);
         if (data.verifyPopup) setVerifyCfg(data.verifyPopup);
         if (typeof data.hasCard === "boolean") setHasCard(data.hasCard);
-        setCustomOffer(data.customOffer?.id ? data.customOffer : null);
       }
     } catch {
-      // Balance pill just stays hidden until the next refresh.
+      // The server-rendered values stay until the next refresh.
     }
   }, [role, chatId]);
 
@@ -358,84 +278,21 @@ export default function ChatView({
     refreshWallet();
   }, [refreshWallet]);
 
-  // First locked media in the chat + never topped up → the one-time offer
-  // pops up once, after the creator's configured delay.
-  useEffect(() => {
-    // Creator can switch the automatic popup off; the wallet highlight stays.
-    if (role !== "guest" || !firstOffer || !offer.popupEnabled) return;
-    const hasLocked = messages.some(
-      (m) =>
-        m.sender === "owner" && m.locked && (m.price_cents ?? 0) > 0 && !m.unlocked
-    );
-    if (!hasLocked) return;
-    const seenKey = `lf-offer-seen:${chatId}`;
-    try {
-      if (localStorage.getItem(seenKey)) return;
-    } catch {}
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(seenKey, "1");
-      } catch {}
-      setOfferPopup(true);
-    }, offer.delaySeconds * 1000);
-    return () => clearTimeout(t);
-  }, [role, firstOffer, messages, chatId, offer.delaySeconds, offer.popupEnabled]);
-
   // Card Verify: while the fan has no card on file, every photo/video from
   // the creator renders locked ("Verify to view"). Tapping one opens the
   // embedded card wizard directly (SetupIntent — no charge, no popup).
   const verifyLockActive =
     role === "guest" && !hasCard && !!verifyCfg?.enabled && elementsEnabled();
 
-  // Welcome offer: greets the fan the first time they open the chat after
-  // signing up. Shown once per chat, and only while they've never topped up.
-  useEffect(() => {
-    if (role !== "guest" || !firstOffer || !welcomeOffer?.enabled) return;
-    const seenKey = `lf-welcome-offer-seen:${chatId}`;
-    try {
-      if (localStorage.getItem(seenKey)) return;
-    } catch {}
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(seenKey, "1");
-      } catch {}
-      setWelcomeOfferPopup(true);
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [role, firstOffer, welcomeOffer, chatId]);
-
-  // A creator-sent custom offer pops up once per offer — whether it just
-  // arrived over realtime or was waiting when the fan opened the chat.
-  useEffect(() => {
-    if (role !== "guest" || !customOffer) return;
-    const seenKey = `lf-custom-offer-seen:${customOffer.id}`;
-    try {
-      if (localStorage.getItem(seenKey)) return;
-    } catch {}
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(seenKey, "1");
-      } catch {}
-      setCustomOfferPopup(true);
-    }, 800);
-    return () => clearTimeout(t);
-  }, [role, customOffer]);
-
-  // After Stripe Checkout (token top-up): confirm the session (covers webhook
-  // 308 failures), refresh the wallet and the thread, then finish a pending
-  // accept — the message the fan was receiving when the balance ran short.
+  // Back from a hosted-Checkout unlock (the fallback when the embedded card
+  // wizard can't run): confirm the session so the unlock is recorded even if
+  // the webhook missed, then reload the thread.
   useEffect(() => {
     if (role !== "guest") return;
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
-    const paid = params.get("paid") || params.get("tipped") || params.get("topup");
-    if (!sessionId && !paid) {
-      // Checkout was cancelled or never happened — drop any stale pending accept.
-      try {
-        sessionStorage.removeItem("lf-pending-unlock");
-      } catch {}
-      return;
-    }
+    const paid = params.get("paid") || params.get("topup");
+    if (!sessionId && !paid) return;
     window.history.replaceState({}, "", "/chat");
     (async () => {
       if (sessionId) {
@@ -446,12 +303,6 @@ export default function ChatView({
         }).catch(() => {});
       }
       await Promise.all([load(), refreshWallet()]);
-      let pendingId: string | null = null;
-      try {
-        pendingId = sessionStorage.getItem("lf-pending-unlock");
-        sessionStorage.removeItem("lf-pending-unlock");
-      } catch {}
-      if (sessionId && pendingId) unlockById(pendingId);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, load, refreshWallet]);
@@ -491,139 +342,30 @@ export default function ChatView({
     });
   }
 
-  function pickTipAmount(tokens: number) {
-    setTipTokens(tokens);
-    setTipPickerOpen(false);
-    setTipCustom("");
-    setAttachments([]);
-    setLinkAttachment(null);
-    setReplyTo(null);
-  }
-
-  /** Open the top-up sheet, optionally explaining why (e.g. short on tokens). */
-  function openWallet(note?: string) {
-    setWalletNote(note ?? null);
-    setWalletOpen(true);
-  }
-
-  /** Dismissing the sheet without paying forgets the pending auto-accept. */
-  function closeWallet() {
-    setWalletOpen(false);
-    pendingUnlockIdRef.current = null;
-  }
-
   /**
-   * Buy a token pack: one tap with a saved card; first purchase opens the
-   * in-chat 3-step card wizard (falling back to Stripe Checkout when the
-   * publishable key isn't configured).
+   * The embedded card wizard confirmed an unlock payment: record the unlock
+   * (and the newly saved card) server-side, then reveal the media.
    */
-  async function topUp(packId: string, claim?: "custom" | "welcome") {
-    if (toppingUp) return;
-    setToppingUp(packId);
+  async function completeCardUnlock(paymentIntentId: string) {
+    const messageId = cardUnlock?.messageId;
     try {
-      const res = await fetch("/api/payments/topup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chatId,
-          packId,
-          claimOffer: claim,
-          embedded: elementsEnabled(),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.topped) {
-        if (typeof data.balance === "number") setBalance(data.balance);
-        // Any successful top-up ends the first-purchase offer.
-        setFirstOffer(false);
-        setOfferPopup(false);
-        setWelcomeOfferPopup(false);
-        // A claimed custom offer is single-use — it's gone now.
-        if (claim === "custom") setCustomOffer(null);
-        setCustomOfferPopup(false);
-        setToppingUp(null);
-        // The fan was mid-accept when the balance ran short: finish that
-        // accept right away with the fresh tokens.
-        const pendingId = pendingUnlockIdRef.current;
-        if (pendingId) {
-          pendingUnlockIdRef.current = null;
-          setWalletOpen(false);
-          unlockById(pendingId);
-          return;
-        }
-        setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
-        return;
-      }
-      if (res.ok && data.clientSecret) {
-        // First purchase: show the embedded 3-step card wizard in place of
-        // the composer. The pending unlock ref survives since we stay here.
-        setWalletOpen(false);
-        setOfferPopup(false);
-        setWelcomeOfferPopup(false);
-        setCustomOfferPopup(false);
-        setCardTopup({
-          clientSecret: data.clientSecret,
-          amountCents: Number(data.amountCents ?? 0),
-          tokens: Number(data.tokens ?? 0),
-          country: data.country ?? null,
-          claim,
-        });
-        setToppingUp(null);
-        return;
-      }
-      if (res.ok && data.checkoutUrl) {
-        // First purchase: Stripe saves the card so next top-ups are one tap.
-        // Remember the message being accepted — it auto-accepts on return.
-        if (pendingUnlockIdRef.current) {
-          try {
-            sessionStorage.setItem("lf-pending-unlock", pendingUnlockIdRef.current);
-          } catch {}
-        }
-        window.location.href = data.checkoutUrl;
-        return;
-      }
-      alert(data.error || "Could not top up");
-    } catch {
-      alert("Could not top up");
-    }
-    setToppingUp(null);
-  }
-
-  /**
-   * The embedded card wizard confirmed the payment: credit the tokens (and
-   * the newly saved card) server-side, then resume whatever the fan was
-   * doing — e.g. finish a pending locked-media accept.
-   */
-  async function completeCardTopup(paymentIntentId: string) {
-    const claim = cardTopup?.claim;
-    let data: { balance?: number; tokens?: number } = {};
-    try {
-      const res = await fetch("/api/payments/topup/complete", {
+      await fetch("/api/payments/unlock/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chatId, paymentIntentId }),
       });
-      if (res.ok) data = await res.json().catch(() => ({}));
     } catch {
-      // The webhook still credits the payment; the balance catches up.
+      // The webhook still records the unlock; the broadcast reveals it.
     }
-    setCardTopup(null);
-    // Paying also saved the card — Card Verify is satisfied.
+    setCardUnlock(null);
+    // Paying also saved the card — Card Verify is satisfied and every later
+    // unlock is one tap.
     setHasCard(true);
-    if (typeof data.balance === "number") setBalance(data.balance);
-    // Any successful top-up ends the first-purchase offers.
-    setFirstOffer(false);
-    setOfferPopup(false);
-    setWelcomeOfferPopup(false);
-    if (claim === "custom") setCustomOffer(null);
-    setCustomOfferPopup(false);
-    const pendingId = pendingUnlockIdRef.current;
-    if (pendingId) {
-      pendingUnlockIdRef.current = null;
-      unlockById(pendingId);
-      return;
+    if (messageId) {
+      setMessages((prev) =>
+        prev.map((m) => (m.id === messageId ? { ...m, unlocked: true } : m))
+      );
     }
-    setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
   }
 
   /** "Verify to view": start a SetupIntent and open the card wizard (no charge). */
@@ -667,112 +409,7 @@ export default function ChatView({
     setHasCard(true);
   }
 
-  /**
-   * Owner: send this fan a personal one-time offer. It reaches them as a
-   * platform popup (never as a chat message from the creator).
-   */
-  async function sendCustomOffer() {
-    if (!offerDialog || sendingOffer) return;
-    const tokens = Math.round(parseFloat(offerDialog.tokens));
-    const priceCents = Math.round(parseFloat(offerDialog.price) * 100);
-    const originalCents = Math.round(parseFloat(offerDialog.original) * 100);
-    if (!(tokens > 0) || !(priceCents > 0) || !(originalCents > 0)) {
-      alert("Enter the tokens, price and original price.");
-      return;
-    }
-    setSendingOffer(true);
-    try {
-      const res = await fetch("/api/chats/offer", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, tokens, priceCents, originalCents }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setOfferDialog(null);
-      } else {
-        alert(data.error || "Could not send the offer");
-      }
-    } catch {
-      alert("Could not send the offer");
-    }
-    setSendingOffer(false);
-  }
-
-  /**
-   * Owner: create a hosted Stripe Checkout link for a custom token amount
-   * and price, to paste into the chat. Checkout accepts any card, so fans
-   * can pay with a different one than their saved card.
-   */
-  async function createPayLink() {
-    if (!payLinkDialog || creatingLink) return;
-    const tokens = Math.round(parseFloat(payLinkDialog.tokens));
-    const priceCents = Math.round(parseFloat(payLinkDialog.price) * 100);
-    if (!(tokens > 0) || !(priceCents >= 50)) {
-      alert("Enter the tokens and a price of at least $0.50.");
-      return;
-    }
-    setCreatingLink(true);
-    try {
-      const res = await fetch("/api/chats/paylink", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, tokens, priceCents }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.url) {
-        setLinkCopied(false);
-        setPayLinkDialog({ ...payLinkDialog, url: data.url });
-      } else {
-        alert(data.error || "Could not create the link");
-      }
-    } catch {
-      alert("Could not create the link");
-    }
-    setCreatingLink(false);
-  }
-
-  async function sendTip() {
-    if (role !== "guest" || !tipTokens || tipping) return;
-    const caption = text.trim();
-    setTipping(true);
-    try {
-      const res = await fetch("/api/payments/tip", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, tokens: tipTokens, caption }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.tipped && data.message) {
-        setMessages((prev) =>
-          prev.some((m) => m.id === data.message.id) ? prev : [...prev, data.message]
-        );
-        if (typeof data.balance === "number") setBalance(data.balance);
-        setText("");
-        setTipTokens(null);
-        setTipping(false);
-        return;
-      }
-      if (res.status === 402) {
-        if (typeof data.balance === "number") setBalance(data.balance);
-        openWallet(
-          `You need ${formatTokens(data.needTokens ?? tipTokens)} for this tip — top up to send it.`
-        );
-        setTipping(false);
-        return;
-      }
-      alert(data.error || "Could not send tip");
-    } catch {
-      alert("Could not send tip");
-    }
-    setTipping(false);
-  }
-
   async function send() {
-    if (tipTokens) {
-      await sendTip();
-      return;
-    }
     const mediaItems = attachments.map((a) => ({ path: a.path, type: a.type }));
     const usedAttachments = attachments;
     const usedLink = linkAttachment;
@@ -785,14 +422,12 @@ export default function ChatView({
       : "";
     const content = [caption, linkPart].filter(Boolean).join("\n");
     if (!content && mediaItems.length === 0) return;
-    // Owner-set unlock price in Tokens (only on media). A price implies the
-    // media is locked so the fan pays to reveal it. Stored as cents (1 Token
-    // = 10¢) so revenue records stay in real money.
-    const lockTokens =
+    // Owner-set unlock price in dollars (only on media). A price implies the
+    // media is locked so the fan pays once to reveal it.
+    const priceCents =
       role === "owner" && mediaItems.length > 0
-        ? Math.round(parseFloat(lockPrice.replace(/[^\d]/g, ""))) || 0
+        ? Math.round((parseFloat(lockPrice.replace(/[^\d.]/g, "")) || 0) * 100)
         : 0;
-    const priceCents = lockTokens * CENTS_PER_TOKEN;
     const locked = (sendLocked || priceCents > 0) && mediaItems.length > 0;
 
     // Optimistic: show the message immediately, reconcile with the server response.
@@ -971,9 +606,9 @@ export default function ChatView({
     setSendingVoice(false);
   }
 
-  // Instant token unlock: spends from the wallet; when the balance is short
-  // the top-up sheet opens instead (one-tap purchase with a saved card) and
-  // the message is remembered so it auto-accepts right after the top-up.
+  // One-tap unlock: charges the saved card directly. First purchase swaps
+  // the composer for the embedded 3-step card wizard (which saves the card
+  // so every later unlock is truly one tap).
   async function unlockById(messageId: string) {
     if (unlockingId) return;
     setUnlockingId(messageId);
@@ -981,23 +616,25 @@ export default function ChatView({
       const res = await fetch("/api/payments/unlock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId }),
+        body: JSON.stringify({ messageId, embedded: elementsEnabled() }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.unlocked) {
         setMessages((prev) =>
           prev.map((m) => (m.id === messageId ? { ...m, unlocked: true } : m))
         );
-        if (typeof data.balance === "number") setBalance(data.balance);
-        pendingUnlockIdRef.current = null;
-      } else if (res.status === 402) {
-        if (typeof data.balance === "number") setBalance(data.balance);
-        pendingUnlockIdRef.current = messageId;
-        openWallet(
-          data.needTokens
-            ? `Accepting this costs ${formatTokens(data.needTokens)} — top up to receive it.`
-            : "Top up your wallet to receive this."
-        );
+        setHasCard(true);
+      } else if (res.ok && data.clientSecret) {
+        // No saved card yet (or it was declined): collect one in-chat.
+        setCardUnlock({
+          clientSecret: data.clientSecret,
+          amountCents: Number(data.amountCents ?? 0),
+          messageId,
+          country: data.country ?? null,
+        });
+      } else if (res.ok && data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+        return;
       } else if (!res.ok) {
         alert(data.error || "Could not unlock");
       }
@@ -1089,7 +726,6 @@ export default function ChatView({
     try {
       const { path, type } = JSON.parse(data);
       if (path && (type === "image" || type === "video")) {
-        setTipTokens(null);
         setAttachments((prev) => {
           if (prev.some((a) => a.path === path)) return prev;
           if (prev.length >= MAX_ATTACHMENTS) return prev;
@@ -1106,7 +742,6 @@ export default function ChatView({
       .filter((f) => !!fileKind(f))
       .slice(0, MAX_ATTACHMENTS);
     if (list.length === 0) return;
-    setTipTokens(null);
     setUploading(true);
     const uploaded: { path: string; type: MediaKind }[] = [];
     let lastError: string | null = null;
@@ -1319,35 +954,6 @@ export default function ChatView({
         </div>
       )}
 
-      {tipTokens != null && (
-        <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line flex items-center gap-3 fade-up">
-          <span className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center shrink-0">
-            <IconTip className="w-4 h-4" />
-          </span>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-accent">
-              Tip {formatTokens(tipTokens)}
-            </p>
-            <p className="text-xs text-muted">
-              Add an optional note below, then send
-            </p>
-          </div>
-          <button
-            onClick={() => setTipPickerOpen(true)}
-            className="text-xs font-semibold text-accent px-1"
-          >
-            Edit
-          </button>
-          <button
-            onClick={() => setTipTokens(null)}
-            className="text-muted text-sm px-1"
-            aria-label="Cancel tip"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
       {attachments.length > 0 && (
         <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line space-y-2 fade-up">
           <div className="flex items-center gap-2">
@@ -1403,17 +1009,16 @@ export default function ChatView({
           {role === "owner" ? (
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-xs text-muted">Unlock price</span>
-              <IconTip className="w-3.5 h-3.5 text-accent" />
+              <span className="text-xs font-bold text-accent">$</span>
               <input
                 value={lockPrice}
-                onChange={(e) => setLockPrice(e.target.value.replace(/[^\d]/g, ""))}
-                inputMode="numeric"
-                placeholder="0"
+                onChange={(e) => setLockPrice(e.target.value.replace(/[^\d.]/g, ""))}
+                inputMode="decimal"
+                placeholder="0.00"
                 className="w-16 bg-bg border border-line rounded-lg px-2 py-1 text-xs focus:border-accent"
               />
-              <span className="text-xs text-muted">Tokens</span>
               <span className="text-[11px] text-muted">
-                {parseInt(lockPrice, 10) > 0
+                {parseFloat(lockPrice) > 0
                   ? "fan pays once to unlock all"
                   : "free / manual lock"}
               </span>
@@ -1425,19 +1030,16 @@ export default function ChatView({
       )}
 
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {cardTopup ? (
-          // First purchase: the packs + composer area becomes the embedded
-          // 3-step card wizard so the fan never leaves the chat.
+        {cardUnlock ? (
+          // First unlock: the composer area becomes the embedded 3-step card
+          // wizard so the fan never leaves the chat.
           <EmbeddedCardTopup
-            clientSecret={cardTopup.clientSecret}
-            amountCents={cardTopup.amountCents}
-            tokens={cardTopup.tokens}
-            countryGuess={cardTopup.country}
-            onSuccess={completeCardTopup}
-            onCancel={() => {
-              pendingUnlockIdRef.current = null;
-              setCardTopup(null);
-            }}
+            clientSecret={cardUnlock.clientSecret}
+            amountCents={cardUnlock.amountCents}
+            label="Unlock content"
+            countryGuess={cardUnlock.country}
+            onSuccess={completeCardUnlock}
+            onCancel={() => setCardUnlock(null)}
           />
         ) : cardVerify ? (
           // Card verification (SetupIntent): same wizard, no charge.
@@ -1476,11 +1078,8 @@ export default function ChatView({
         ) : (
         <div className="flex items-end gap-2 bg-card2/80 border border-line2 rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
-            onClick={() => {
-              setTipTokens(null);
-              fileRef.current?.click();
-            }}
-            disabled={uploading || tipping}
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-50 flex items-center justify-center active:opacity-80 transition-opacity"
             aria-label="Attach media"
           >
@@ -1554,43 +1153,9 @@ export default function ChatView({
               {sendLocked ? <IconLock className="w-4.5 h-4.5" /> : <IconUnlock className="w-4.5 h-4.5" />}
             </button>
           )}
-          {role === "owner" && (
-            <button
-              onClick={() =>
-                setOfferDialog({
-                  tokens: String(DEFAULT_POPUP_OFFER.tokens),
-                  price: (DEFAULT_POPUP_OFFER.priceCents / 100).toString(),
-                  original: (DEFAULT_POPUP_OFFER.originalCents / 100).toString(),
-                })
-              }
-              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold transition-colors ${
-                offerDialog
-                  ? "bg-accent text-white glow-accent"
-                  : "bg-transparent border border-line text-muted hover:text-fg"
-              }`}
-              aria-label="Send a one-time offer"
-              title="Send this fan a custom one-time offer popup"
-            >
-              %
-            </button>
-          )}
-          {role === "owner" && (
-            <button
-              onClick={() => setPayLinkDialog({ tokens: "", price: "", url: null })}
-              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold transition-colors ${
-                payLinkDialog
-                  ? "bg-accent text-white glow-accent"
-                  : "bg-transparent border border-line text-muted hover:text-fg"
-              }`}
-              aria-label="Create a payment link"
-              title="Create a Stripe payment link (custom tokens & price, any card)"
-            >
-              $
-            </button>
-          )}
           <button
             onClick={startRecording}
-            disabled={uploading || tipping || sendingVoice}
+            disabled={uploading || sendingVoice}
             className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-transparent border border-line text-muted hover:text-fg transition-colors disabled:opacity-50"
             aria-label="Record a voice note"
             title="Record a voice note"
@@ -1605,571 +1170,34 @@ export default function ChatView({
             value={text}
             onChange={(e) => {
               setText(e.target.value);
-              if (e.target.value && tipTokens == null) notifyTyping();
+              if (e.target.value) notifyTyping();
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (tipTokens != null) sendTip();
-                else send();
+                send();
               }
             }}
-            placeholder={tipTokens != null ? "Add a note (optional)…" : "Message…"}
+            placeholder="Message…"
             rows={1}
-            disabled={tipping}
-            className="flex-1 bg-transparent resize-none max-h-32 py-2 text-[15px] placeholder:text-muted disabled:opacity-60"
+            className="flex-1 bg-transparent resize-none max-h-32 py-2 text-[15px] placeholder:text-muted"
           />
           <button
-            onClick={() => (tipTokens != null ? sendTip() : send())}
+            onClick={send}
             disabled={
-              tipping ||
               uploading ||
-              (tipTokens == null &&
-                !text.trim() &&
-                attachments.length === 0 &&
-                !linkAttachment)
+              (!text.trim() && attachments.length === 0 && !linkAttachment)
             }
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-40 flex items-center justify-center active:opacity-80 transition-opacity"
-            aria-label={tipTokens != null ? "Send tip" : "Send"}
+            aria-label="Send"
           >
-            {tipping ? (
-              <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-            ) : (
-              <IconSend className="w-4.5 h-4.5" />
-            )}
+            <IconSend className="w-4.5 h-4.5" />
           </button>
         </div>
         )}
         </>
         )}
       </div>
-
-      {tipPickerOpen && (
-        <Portal>
-          <div
-            className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
-            onClick={() => setTipPickerOpen(false)}
-          >
-            <div
-              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-4 fade-up"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-bold">Send a tip</p>
-                <button
-                  onClick={() => setTipPickerOpen(false)}
-                  className="text-muted text-sm px-1"
-                  aria-label="Close"
-                >
-                  ✕
-                </button>
-              </div>
-              <p className="text-sm text-muted -mt-2">
-                Pick an amount in Tokens. You can add a note in the chat box before sending.
-              </p>
-              <div className="grid grid-cols-3 gap-2">
-                {TIP_TOKEN_PRESETS.map((tokens) => (
-                  <button
-                    key={tokens}
-                    onClick={() => pickTipAmount(tokens)}
-                    className={`rounded-xl border px-3 py-3 text-sm font-semibold transition-colors ${
-                      tipTokens === tokens
-                        ? "bg-accent text-white border-accent"
-                        : "bg-card2 border-line hover:border-accent"
-                    }`}
-                  >
-                    {tokens.toLocaleString("en-US")}
-                  </button>
-                ))}
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted">Custom amount</label>
-                <div className="flex items-center gap-2">
-                  <IconTip className="w-4 h-4 text-accent shrink-0" />
-                  <input
-                    value={tipCustom}
-                    onChange={(e) => setTipCustom(e.target.value.replace(/[^\d]/g, ""))}
-                    onKeyDown={(e) => {
-                      if (e.key !== "Enter") return;
-                      const tokens = Math.round(parseFloat(tipCustom));
-                      if (tokens >= MIN_TIP_TOKENS) pickTipAmount(tokens);
-                    }}
-                    inputMode="numeric"
-                    placeholder="250"
-                    className="flex-1 bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
-                  />
-                  <button
-                    onClick={() => {
-                      const tokens = Math.round(parseFloat(tipCustom));
-                      if (tokens >= MIN_TIP_TOKENS) pickTipAmount(tokens);
-                    }}
-                    disabled={!(Math.round(parseFloat(tipCustom)) >= MIN_TIP_TOKENS)}
-                    className="rounded-xl bg-accent text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
-                  >
-                    Use
-                  </button>
-                </div>
-                <p className="text-[11px] text-muted">Minimum {MIN_TIP_TOKENS} Tokens</p>
-              </div>
-              {balance !== null && (
-                <div className="flex items-center justify-between rounded-xl bg-card2 border border-line px-3 py-2.5">
-                  <p className="text-xs text-muted">
-                    Wallet:{" "}
-                    <span className="font-bold text-fg">{formatTokens(balance)}</span>
-                  </p>
-                  <button
-                    onClick={() => {
-                      setTipPickerOpen(false);
-                      openWallet();
-                    }}
-                    className="text-xs font-semibold text-accent"
-                  >
-                    Top up
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </Portal>
-      )}
-
-      {walletOpen && (
-        <Portal>
-          <div
-            className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
-            onClick={closeWallet}
-          >
-            <div
-              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-4 fade-up"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <p className="font-bold">Your wallet</p>
-                <button
-                  onClick={closeWallet}
-                  className="text-muted text-sm px-1"
-                  aria-label="Close"
-                >
-                  ✕
-                </button>
-              </div>
-              <div className="flex items-center gap-2.5 rounded-xl bg-card2 border border-line px-4 py-3">
-                <span className="w-9 h-9 rounded-full bg-accent/15 text-accent flex items-center justify-center shrink-0">
-                  <IconTip className="w-5 h-5" />
-                </span>
-                <div>
-                  <p className="text-lg font-extrabold leading-tight tabular-nums">
-                    {(balance ?? 0).toLocaleString("en-US")}{" "}
-                    <span className="text-sm font-semibold text-muted">Tokens</span>
-                  </p>
-                  <p className="text-[11px] text-muted">Spend on unlocks & tips</p>
-                </div>
-              </div>
-              {walletNote && (
-                <p className="text-sm text-accent font-semibold -mt-1">{walletNote}</p>
-              )}
-              <div className="grid grid-cols-2 gap-2">
-                {TOKEN_PACKS.map((pack) => {
-                  const busy = toppingUp === pack.id;
-                  // First-purchase offer: the VIP pack takes the highlight
-                  // (and a pulse) away from "Most popular", showing the
-                  // creator's configured tokens and prices.
-                  const isOffer =
-                    firstOffer &&
-                    offer.packEnabled &&
-                    pack.id === FIRST_TOPUP_OFFER_PACK_ID;
-                  const total = isOffer ? offer.tokens : packTotalTokens(pack);
-                  const highlight =
-                    isOffer ||
-                    (pack.tag === "Most popular" && !(firstOffer && offer.packEnabled));
-                  return (
-                    <button
-                      key={pack.id}
-                      onClick={() => topUp(pack.id)}
-                      disabled={!!toppingUp}
-                      className={`relative rounded-xl border px-3 py-3 text-left transition-colors disabled:opacity-60 ${
-                        highlight
-                          ? "border-accent bg-accent/10"
-                          : "bg-card2 border-line hover:border-accent"
-                      } ${isOffer ? "offer-pulse" : ""}`}
-                    >
-                      {(isOffer || pack.tag) && (
-                        <span className="absolute -top-2 right-2 rounded-full bg-accent text-white text-[10px] font-bold px-2 py-0.5">
-                          {isOffer ? "One-time offer" : pack.tag}
-                        </span>
-                      )}
-                      <p className="text-2xl font-extrabold leading-tight tabular-nums">
-                        {total.toLocaleString("en-US")}
-                        <span className="text-xs font-semibold text-muted"> Tokens</span>
-                      </p>
-                      <p className="mt-1 text-sm font-bold text-accent">
-                        {busy
-                          ? "Processing…"
-                          : perTokenLabel(
-                              isOffer ? offer.priceCents : pack.priceCents,
-                              total
-                            )}
-                      </p>
-                      {!busy && (
-                        <p className="text-[10px] text-muted tabular-nums">
-                          {offerPriceLabel(isOffer ? offer.priceCents : pack.priceCents)}{" "}
-                          total
-                        </p>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-[11px] text-muted text-center">
-                One-tap with your saved card · secured by Stripe
-              </p>
-              <p className="text-[11px] text-muted/80 text-center -mt-2">
-                All Token purchases are final and non-refundable.
-              </p>
-            </div>
-          </div>
-        </Portal>
-      )}
-
-      {(offerPopup ||
-        (customOfferPopup && customOffer) ||
-        (welcomeOfferPopup && welcomeOffer)) &&
-        (() => {
-          // Same platform popup for all three flavors: the post-signup
-          // welcome offer, the automatic first-top-up offer, and a custom
-          // one the creator sent to this fan.
-          const isWelcome = welcomeOfferPopup && !!welcomeOffer;
-          const isCustom = !isWelcome && customOfferPopup && !!customOffer;
-          const po = isWelcome ? welcomeOffer! : isCustom ? customOffer! : offer;
-          const close = () => {
-            setOfferPopup(false);
-            setCustomOfferPopup(false);
-            setWelcomeOfferPopup(false);
-          };
-          return (
-            <Portal>
-              <div
-                className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4"
-                onClick={close}
-              >
-                <div
-                  className="relative bg-card border border-accent/40 rounded-3xl p-6 pt-8 w-full max-w-sm text-center space-y-2.5 fade-up overflow-hidden"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  {/* Soft accent glow behind the headline */}
-                  <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-72 h-44 rounded-full bg-accent/25 blur-3xl pointer-events-none" />
-                  <button
-                    onClick={close}
-                    className="absolute top-3 right-3 text-muted text-sm px-1"
-                    aria-label="Close"
-                  >
-                    ✕
-                  </button>
-                  <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
-                    {isWelcome
-                      ? "Welcome offer"
-                      : isCustom
-                        ? "Exclusive one-time offer"
-                        : "One-time offer"}
-                  </p>
-                  {isWelcome && (
-                    <>
-                      <p className="relative text-lg font-bold">
-                        Welcome! So happy you&apos;re here 🎉
-                      </p>
-                      {/* The one thing the fan must not miss: content costs Tokens */}
-                      <div className="relative rounded-2xl bg-accent/15 border border-accent/40 px-4 py-3">
-                        <p className="text-[15px] font-extrabold leading-snug">
-                          All photos &amp; videos here unlock with{" "}
-                          <span className="text-accent">Tokens</span> 🔓
-                        </p>
-                      </div>
-                      <p className="relative text-xs text-muted leading-relaxed">
-                        Start with a full wallet:
-                      </p>
-                    </>
-                  )}
-                  <p className="relative text-4xl font-extrabold tabular-nums leading-none">
-                    {po.tokens.toLocaleString("en-US")}
-                    <span className="text-lg font-semibold text-muted"> Tokens</span>
-                  </p>
-                  {!isCustom && !isWelcome && offer.tokens > OFFER_PACK.tokens && (
-                    <p className="relative text-xs font-semibold text-emerald-500">
-                      incl. +{(offer.tokens - OFFER_PACK.tokens).toLocaleString("en-US")} free
-                    </p>
-                  )}
-                  <p className="relative">
-                    <span className="text-3xl font-extrabold text-accent tabular-nums">
-                      {offerPriceLabel(po.priceCents)}
-                    </span>{" "}
-                    <span className="text-base font-semibold text-muted line-through tabular-nums">
-                      {offerPriceLabel(po.originalCents)}
-                    </span>
-                  </p>
-                  <p className="relative text-[11px] text-muted leading-snug">
-                    {isWelcome
-                      ? "A one-time deal for new members — it won't be shown again."
-                      : isCustom
-                        ? "Unlocked just for you — this one won't come back."
-                        : "Only on your very first top-up — once it's gone, it's gone."}
-                  </p>
-                  <button
-                    onClick={() =>
-                      topUp(
-                        OFFER_PACK.id,
-                        isWelcome ? "welcome" : isCustom ? "custom" : undefined
-                      )
-                    }
-                    disabled={!!toppingUp}
-                    className="relative w-full rounded-full ig-gradient glow-accent offer-pulse text-white text-sm font-bold py-3 disabled:opacity-60"
-                  >
-                    {toppingUp
-                      ? "Processing…"
-                      : `Claim ${po.tokens.toLocaleString("en-US")} Tokens for ${offerPriceLabel(po.priceCents)}`}
-                  </button>
-                  <p className="relative text-[10px] text-muted/80">
-                    Secured by Stripe · All Token purchases are final and
-                    non-refundable.
-                  </p>
-                </div>
-              </div>
-            </Portal>
-          );
-        })()}
-
-      {offerDialog && (
-        <Portal>
-          <div
-            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
-            onClick={() => setOfferDialog(null)}
-          >
-            <div
-              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div>
-                <p className="font-bold">Send a one-time offer</p>
-                <p className="text-xs text-muted mt-0.5">
-                  This fan gets a personal popup, shown once, presented as a
-                  platform offer — not as a message from you.
-                </p>
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-semibold text-muted">Tokens</label>
-                <input
-                  autoFocus
-                  inputMode="numeric"
-                  value={offerDialog.tokens}
-                  onChange={(e) =>
-                    setOfferDialog({
-                      ...offerDialog,
-                      tokens: e.target.value.replace(/[^\d]/g, ""),
-                    })
-                  }
-                  placeholder="e.g. 1300"
-                  className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted">Price ($)</label>
-                  <input
-                    inputMode="decimal"
-                    value={offerDialog.price}
-                    onChange={(e) =>
-                      setOfferDialog({
-                        ...offerDialog,
-                        price: e.target.value.replace(/[^\d.]/g, ""),
-                      })
-                    }
-                    placeholder="4.99"
-                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-xs font-semibold text-muted">
-                    Original price ($)
-                  </label>
-                  <input
-                    inputMode="decimal"
-                    value={offerDialog.original}
-                    onChange={(e) =>
-                      setOfferDialog({
-                        ...offerDialog,
-                        original: e.target.value.replace(/[^\d.]/g, ""),
-                      })
-                    }
-                    placeholder="12.99"
-                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
-                  />
-                </div>
-              </div>
-              {(() => {
-                const t = Math.round(parseFloat(offerDialog.tokens)) || 0;
-                const p = Math.round(parseFloat(offerDialog.price) * 100) || 0;
-                const o = Math.round(parseFloat(offerDialog.original) * 100) || 0;
-                if (!t || !p || !o) return null;
-                return (
-                  <p className="text-xs text-muted">
-                    They&apos;ll see:{" "}
-                    <span className="font-semibold text-fg">
-                      {t.toLocaleString("en-US")} Tokens for {offerPriceLabel(p)}
-                    </span>{" "}
-                    <span className="line-through">{offerPriceLabel(o)}</span>
-                  </p>
-                );
-              })()}
-              <div className="flex gap-2 pt-1">
-                <button
-                  onClick={() => setOfferDialog(null)}
-                  className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={sendCustomOffer}
-                  disabled={sendingOffer}
-                  className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
-                >
-                  {sendingOffer ? "Sending…" : "Send offer"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </Portal>
-      )}
-
-      {payLinkDialog && (
-        <Portal>
-          <div
-            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
-            onClick={() => setPayLinkDialog(null)}
-          >
-            <div
-              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div>
-                <p className="font-bold">Create a payment link</p>
-                <p className="text-xs text-muted mt-0.5">
-                  A Stripe checkout page for a custom token amount and price.
-                  Works with any card — handy when the fan wants to pay with a
-                  different one. The link is valid for 24 hours.
-                </p>
-              </div>
-
-              {!payLinkDialog.url ? (
-                <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted">Tokens</label>
-                      <input
-                        autoFocus
-                        inputMode="numeric"
-                        value={payLinkDialog.tokens}
-                        onChange={(e) =>
-                          setPayLinkDialog({
-                            ...payLinkDialog,
-                            tokens: e.target.value.replace(/[^\d]/g, ""),
-                          })
-                        }
-                        placeholder="e.g. 500"
-                        className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted">Price ($)</label>
-                      <input
-                        inputMode="decimal"
-                        value={payLinkDialog.price}
-                        onChange={(e) =>
-                          setPayLinkDialog({
-                            ...payLinkDialog,
-                            price: e.target.value.replace(/[^\d.]/g, ""),
-                          })
-                        }
-                        placeholder="9.99"
-                        className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
-                      />
-                    </div>
-                  </div>
-                  {(() => {
-                    const t = Math.round(parseFloat(payLinkDialog.tokens)) || 0;
-                    const p = Math.round(parseFloat(payLinkDialog.price) * 100) || 0;
-                    if (!t || !p) return null;
-                    return (
-                      <p className="text-xs text-muted">
-                        They&apos;ll pay{" "}
-                        <span className="font-semibold text-fg">
-                          ${(p / 100).toFixed(2)}
-                        </span>{" "}
-                        and receive{" "}
-                        <span className="font-semibold text-fg">
-                          {formatTokens(t)}
-                        </span>
-                        .
-                      </p>
-                    );
-                  })()}
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={() => setPayLinkDialog(null)}
-                      className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={createPayLink}
-                      disabled={creatingLink || !payLinkDialog.tokens || !payLinkDialog.price}
-                      className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
-                    >
-                      {creatingLink ? "Creating…" : "Create link"}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <input
-                    readOnly
-                    value={payLinkDialog.url}
-                    onFocus={(e) => e.currentTarget.select()}
-                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-xs font-mono text-muted"
-                  />
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(payLinkDialog.url!);
-                          setLinkCopied(true);
-                          setTimeout(() => setLinkCopied(false), 1500);
-                        } catch {
-                          // Clipboard blocked — the field above is selectable.
-                        }
-                      }}
-                      className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
-                    >
-                      {linkCopied ? "Copied!" : "Copy link"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setText((prev) =>
-                          prev.trim()
-                            ? `${prev.trim()} ${payLinkDialog.url}`
-                            : payLinkDialog.url!
-                        );
-                        setPayLinkDialog(null);
-                      }}
-                      className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5"
-                    >
-                      Add to message
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </Portal>
-      )}
 
       {labelDialog && (
         <Portal>

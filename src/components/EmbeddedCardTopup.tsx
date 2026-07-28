@@ -26,13 +26,14 @@ function priceLabel(cents: number): string {
 type WizardProps = {
   clientSecret: string;
   /**
-   * "payment": confirms a PaymentIntent and charges the card (top-up).
+   * "payment": confirms a PaymentIntent and charges the card.
    * "setup": confirms a SetupIntent — saves the card with NO charge (the
-   * verification popup flow).
+   * verification flow).
    */
   mode?: "payment" | "setup";
   amountCents?: number;
-  tokens?: number;
+  /** What the payment is for, shown in the header (e.g. "Unlock content"). */
+  label?: string;
   countryGuess: string | null;
   /** Receives the PaymentIntent id ("payment") or SetupIntent id ("setup"). */
   onSuccess: (intentId: string) => Promise<void> | void;
@@ -43,7 +44,7 @@ function CardWizard({
   clientSecret,
   mode = "payment",
   amountCents = 0,
-  tokens = 0,
+  label = "Purchase",
   countryGuess,
   onSuccess,
   onCancel,
@@ -160,8 +161,10 @@ function CardWizard({
             </p>
           ) : (
             <p className="text-sm font-extrabold leading-tight">
-              {tokens.toLocaleString("en-US")}{" "}
-              <span className="text-xs font-semibold text-muted">Tokens</span>
+              {label}{" "}
+              <span className="text-xs font-semibold text-muted">
+                {priceLabel(amountCents)}
+              </span>
             </p>
           )}
           <p className="text-[11px] text-muted leading-tight">
@@ -289,7 +292,7 @@ function CardWizard({
                     ? "Verifying…"
                     : "Verify — no charge"
                 : done
-                  ? "Adding Tokens…"
+                  ? "Done!"
                   : paying
                     ? "Processing…"
                     : `Pay ${priceLabel(amountCents)}`}

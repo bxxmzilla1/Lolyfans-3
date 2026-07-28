@@ -1,27 +1,23 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { IconCard, IconTip } from "./Icons";
+import { IconCard } from "./Icons";
 
 /**
  * Creator's chat header, live: a card icon to the left of the fan's name
- * once they've registered a card, and their token balance to the right.
- * Polls every second (while the tab is visible) so a top-up or card
- * registration shows without a refresh. The fan's name is passed as
- * children so it renders between the two indicators.
+ * once they've registered a card. Polls every second (while the tab is
+ * visible) so a card registration shows without a refresh. The fan's name
+ * is passed as children so it renders next to the indicator.
  */
 export default function FanWalletStatus({
   chatId,
-  initialBalance,
   initialHasCard,
   children,
 }: {
   chatId: string;
-  initialBalance: number;
   initialHasCard: boolean;
   children: React.ReactNode;
 }) {
-  const [balance, setBalance] = useState(initialBalance);
   const [hasCard, setHasCard] = useState(initialHasCard);
 
   useEffect(() => {
@@ -31,9 +27,8 @@ export default function FanWalletStatus({
       try {
         const res = await fetch(`/api/chats/fanstate?chatId=${chatId}`);
         if (!res.ok) return;
-        const data = (await res.json()) as { balance?: number; hasCard?: boolean };
+        const data = (await res.json()) as { hasCard?: boolean };
         if (stopped) return;
-        if (typeof data.balance === "number") setBalance(data.balance);
         if (typeof data.hasCard === "boolean") setHasCard(data.hasCard);
       } catch {
         // offline blip — next tick retries
@@ -54,14 +49,6 @@ export default function FanWalletStatus({
         </span>
       )}
       {children}
-      {/* Fan's token balance — how much they can spend right now */}
-      <span
-        className="inline-flex items-center gap-1 rounded-full bg-accent/10 text-accent text-[11px] font-bold px-2 py-0.5 shrink-0"
-        title="Fan's token balance"
-      >
-        <IconTip className="w-3 h-3" />
-        {balance.toLocaleString("en-US")}
-      </span>
     </>
   );
 }

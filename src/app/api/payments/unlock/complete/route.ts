@@ -1,18 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
-import {
-  creditTokens,
-  saveStripePaymentMethod,
-  tokenBalance,
-} from "@/lib/payments";
+import { recordUnlock, saveStripePaymentMethod } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 
 /**
- * Called right after the embedded card wizard confirms a top-up
- * PaymentIntent, so the fan sees their tokens instantly instead of waiting
- * for the webhook. creditTokens is idempotent per payment intent, so double
- * delivery with the webhook is safe.
+ * Called right after the embedded card wizard confirms an unlock
+ * PaymentIntent: saves the card (one-tap from now on) and records the
+ * unlock so the media reveals instantly. recordUnlock is idempotent, so
+ * double delivery with the webhook is safe.
  */
 export async function POST(req: NextRequest) {
   if (!stripeConfigured()) {
@@ -31,17 +26,14 @@ export async function POST(req: NextRequest) {
   }
 
   const pi = await stripe().paymentIntents.retrieve(paymentIntentId);
+  const messageId = pi.metadata?.messageId;
   if (
     pi.metadata?.chatId !== chatId ||
-    pi.metadata?.kind !== "topup" ||
+    pi.metadata?.kind !== "unlock" ||
+    !messageId ||
     pi.status !== "succeeded"
   ) {
     return NextResponse.json({ error: "Payment not completed" }, { status: 402 });
-  }
-
-  const tokens = Math.max(0, Math.round(Number(pi.metadata.tokens || 0)));
-  if (!tokens) {
-    return NextResponse.json({ error: "Nothing to credit" }, { status: 400 });
   }
 
   // Save the card for one-tap purchases from now on.
@@ -52,16 +44,7 @@ export async function POST(req: NextRequest) {
   const customerId = typeof pi.customer === "string" ? pi.customer : null;
   await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
 
-  const balance = await creditTokens({ chatId, tokens, paymentIntentId: pi.id });
+  await recordUnlock({ messageId, chatId, priceCents: pi.amount });
 
-  // A claimed creator-sent offer is single-use: clear it once paid.
-  if (pi.metadata?.customOffer === "1") {
-    await supabaseAdmin().from("chats").update({ custom_offer: null }).eq("id", chatId);
-  }
-
-  return NextResponse.json({
-    ok: true,
-    tokens,
-    balance: balance ?? (await tokenBalance(chatId)),
-  });
+  return NextResponse.json({ ok: true, unlocked: true, messageId });
 }

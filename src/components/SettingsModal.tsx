@@ -10,8 +10,6 @@ import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
-import PopupOfferSettings from "./PopupOfferSettings";
-import WelcomeOfferSettings from "./WelcomeOfferSettings";
 import VerifyPopupSettings from "./VerifyPopupSettings";
 import WelcomeMessageEditor from "./WelcomeMessageEditor";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
@@ -26,7 +24,6 @@ import {
   IconLogout,
   IconSend,
   IconTip,
-  IconUnlock,
   IconUser,
 } from "./Icons";
 
@@ -35,8 +32,6 @@ type Section =
   | "posts"
   | "social"
   | "subscriptions"
-  | "offers"
-  | "welcomeoffer"
   | "verify"
   | "welcome"
   | "links"
@@ -405,26 +400,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconTip className="w-3.5 h-3.5" /> Subscriptions
         </button>
         <button
-          onClick={() => setSection("offers")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-            section === "offers"
-              ? "bg-accent text-white"
-              : "bg-card2 border border-line text-muted hover:text-fg"
-          }`}
-        >
-          <IconUnlock className="w-3.5 h-3.5" /> Pop up Offers
-        </button>
-        <button
-          onClick={() => setSection("welcomeoffer")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-            section === "welcomeoffer"
-              ? "bg-accent text-white"
-              : "bg-card2 border border-line text-muted hover:text-fg"
-          }`}
-        >
-          <IconTip className="w-3.5 h-3.5" /> Welcome offer
-        </button>
-        <button
           onClick={() => setSection("verify")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "verify"
@@ -499,8 +474,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             section === "profile" ||
             section === "welcome" ||
             section === "subscriptions" ||
-            section === "offers" ||
-            section === "welcomeoffer" ||
             section === "verify"
               ? "max-w-2xl"
               : section === "editor" || section === "posts"
@@ -516,10 +489,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <SocialProofManager />
           ) : section === "subscriptions" ? (
             <SubscriptionSettings />
-          ) : section === "offers" ? (
-            <PopupOfferSettings />
-          ) : section === "welcomeoffer" ? (
-            <WelcomeOfferSettings />
           ) : section === "verify" ? (
             <VerifyPopupSettings />
           ) : section === "welcome" ? (

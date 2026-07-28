@@ -1,7 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
 import { elevenLabsTts, personalizeScript } from "@/lib/elevenlabs";
-import { CENTS_PER_TOKEN } from "@/lib/tokens";
 
 /**
  * If the creator configured a welcome message (Settings → Welcome), drop it
@@ -24,6 +23,8 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
     welcome_media_path?: string;
     welcome_media_type?: string;
     welcome_media_locked?: boolean;
+    welcome_media_price_cents?: number;
+    /** Legacy (token era): 1 token = 10¢. */
     welcome_media_price_tokens?: number;
     welcome_voice_path?: string;
     welcome_voice_mode?: string;
@@ -84,9 +85,12 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
   if (!text && !mediaPath && !voicePath) return;
 
   // Creator can price the welcome media: it arrives blurred + pay-to-unlock,
-  // exactly like locked content sent from the chat composer.
-  const priceTokens = Math.round(Number(meta.welcome_media_price_tokens)) || 0;
-  const locked = !!mediaPath && !!meta.welcome_media_locked && priceTokens > 0;
+  // exactly like locked content sent from the chat composer. Prices set in
+  // the token era (tokens × 10¢) still resolve to the same dollar amount.
+  const priceCents =
+    Math.round(Number(meta.welcome_media_price_cents)) ||
+    (Math.round(Number(meta.welcome_media_price_tokens)) || 0) * 10;
+  const locked = !!mediaPath && !!meta.welcome_media_locked && priceCents > 0;
 
   // Up to two bubbles: the text/media message, then the voice note — so the
   // voice can stand in for a written caption while media rides along.
@@ -111,7 +115,7 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
           : "image"
         : null,
       locked,
-      price_cents: locked ? priceTokens * CENTS_PER_TOKEN : 0,
+      price_cents: locked ? priceCents : 0,
     });
   }
   // The voice note bubble is never locked — it's the greeting itself.

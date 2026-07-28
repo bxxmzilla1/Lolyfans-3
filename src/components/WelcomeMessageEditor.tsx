@@ -20,9 +20,9 @@ export default function WelcomeMessageEditor() {
   const [mediaPath, setMediaPath] = useState<string | null>(null);
   const [mediaType, setMediaType] = useState<"image" | "video" | "audio" | null>(null);
   const [file, setFile] = useState<File | null>(null);
-  // Locked media: the fan sees it blurred and pays tokens to unlock.
+  // Locked media: the fan sees it blurred and pays once to unlock.
   const [mediaLocked, setMediaLocked] = useState(false);
-  const [priceTokens, setPriceTokens] = useState("");
+  const [priceUsd, setPriceUsd] = useState("");
   // Voice note: its own slot, so it can ride along with an image/video.
   // "upload" sends the same audio to everyone; "tts" generates a unique
   // ElevenLabs (v3) voice note per fan with FIRSTNAME swapped in.
@@ -50,8 +50,11 @@ export default function WelcomeMessageEditor() {
         setMediaPath((meta.welcome_media_path as string) || null);
         setMediaType((meta.welcome_media_type as "image" | "video") || null);
         setMediaLocked(!!meta.welcome_media_locked);
-        const tokens = Number(meta.welcome_media_price_tokens);
-        setPriceTokens(tokens > 0 ? String(tokens) : "");
+        // Dollars; prices saved in the token era (1 token = 10¢) carry over.
+        const cents =
+          Math.round(Number(meta.welcome_media_price_cents)) ||
+          (Math.round(Number(meta.welcome_media_price_tokens)) || 0) * 10;
+        setPriceUsd(cents > 0 ? (cents / 100).toFixed(2).replace(/\.00$/, "") : "");
         setVoicePath((meta.welcome_voice_path as string) || null);
         setVoiceMode(meta.welcome_voice_mode === "tts" ? "tts" : "upload");
         setVoiceText((meta.welcome_voice_text as string) ?? "");
@@ -88,9 +91,9 @@ export default function WelcomeMessageEditor() {
 
   async function save() {
     if (saving) return;
-    const tokens = Math.round(Number(priceTokens)) || 0;
-    if (mediaLocked && (file || mediaPath) && tokens < 1) {
-      setError("Set an unlock price (at least 1 token) or turn the lock off.");
+    const cents = Math.round((parseFloat(priceUsd) || 0) * 100);
+    if (mediaLocked && (file || mediaPath) && cents < 1) {
+      setError("Set an unlock price or turn the lock off.");
       return;
     }
     setSaving(true);
@@ -130,8 +133,10 @@ export default function WelcomeMessageEditor() {
           welcome_text: text.trim().slice(0, 1000),
           welcome_media_path: path || "",
           welcome_media_type: path ? type || "" : "",
-          welcome_media_locked: !!path && mediaLocked && tokens > 0,
-          welcome_media_price_tokens: path && mediaLocked ? tokens : 0,
+          welcome_media_locked: !!path && mediaLocked && cents > 0,
+          welcome_media_price_cents: path && mediaLocked ? cents : 0,
+          // Clear the legacy token-era price so it can't shadow the new one.
+          welcome_media_price_tokens: 0,
           welcome_voice_path: vPath || "",
           welcome_voice_mode: voiceMode,
           welcome_voice_text: voiceText.trim().slice(0, 1000),
@@ -259,7 +264,7 @@ export default function WelcomeMessageEditor() {
               <div>
                 <p className="text-sm font-semibold">Send as locked content</p>
                 <p className="text-xs text-muted">
-                  New fans see it blurred and pay tokens to unlock it.
+                  New fans see it blurred and pay once to unlock it.
                 </p>
               </div>
               <button
@@ -278,15 +283,15 @@ export default function WelcomeMessageEditor() {
             {mediaLocked && (
               <div className="space-y-1">
                 <label className="text-xs font-semibold text-muted">
-                  Unlock price (Tokens)
+                  Unlock price ($)
                 </label>
                 <input
-                  inputMode="numeric"
-                  value={priceTokens}
+                  inputMode="decimal"
+                  value={priceUsd}
                   onChange={(e) =>
-                    setPriceTokens(e.target.value.replace(/[^\d]/g, ""))
+                    setPriceUsd(e.target.value.replace(/[^\d.]/g, ""))
                   }
-                  placeholder="e.g. 50"
+                  placeholder="e.g. 4.99"
                   className="w-full bg-bg border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
                 />
               </div>

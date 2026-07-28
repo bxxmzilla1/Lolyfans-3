@@ -73,10 +73,9 @@ export default async function OwnerChatPage({
       </div>
       <div className="min-w-0">
         <p className="font-semibold text-[15px] truncate flex items-center gap-1.5">
-          {/* Card icon (once registered) + name + live token balance */}
+          {/* Card icon (once registered) + name */}
           <FanWalletStatus
             chatId={chatId}
-            initialBalance={(chat.token_balance as number | null) ?? 0}
             initialHasCard={!!chat.stripe_payment_method_id}
           >
             <span className="truncate">

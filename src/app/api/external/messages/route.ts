@@ -21,7 +21,7 @@ export function OPTIONS() {
  *
  * Supports media packages: `mediaItems: [{ path, type }, ...]` plus an
  * optional `priceCents` — a positive price sends it locked (pay-to-unlock
- * with tokens), mirroring the owner inbox composer.
+ * with a one-tap card charge), mirroring the owner inbox composer.
  */
 export async function POST(req: NextRequest) {
   const ownerId = await ownerFromApiKey(req);
