@@ -266,9 +266,13 @@ export default function MessageBubble({
           </>
         ) : (
           <>
+            <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
+              <IconLock className="w-5 h-5 text-white" />
+            </span>
+            <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
             {payToUnlock ? (
               <>
-                <span className="inline-flex items-center gap-1.5 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
+                <span className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
                   <IconEye className="w-4 h-4" />
                   Watch
                 </span>
