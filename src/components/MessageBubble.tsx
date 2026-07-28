@@ -274,10 +274,13 @@ export default function MessageBubble({
               <>
                 <span className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
                   <IconEye className="w-4 h-4" />
-                  Watch
+                  Unlock
                 </span>
                 <span className="text-white text-sm font-bold drop-shadow">
                   {formatTokens(tokensForCents(price))}
+                </span>
+                <span className="text-white/50 text-[10px] font-medium drop-shadow -mt-1">
+                  $0.10 per token
                 </span>
               </>
             ) : (
@@ -295,7 +298,7 @@ export default function MessageBubble({
             e.stopPropagation();
             onUnlock?.(message);
           }}
-          aria-label={`Watch for ${formatTokens(tokensForCents(price))}`}
+          aria-label={`Unlock for ${formatTokens(tokensForCents(price))}`}
           className="absolute inset-0 z-[15] cursor-pointer"
         />
       ) : unlocking ? (

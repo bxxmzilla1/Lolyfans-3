@@ -21,7 +21,6 @@ import {
   TOKEN_PACKS,
   FIRST_TOPUP_OFFER_PACK_ID,
   formatTokens,
-  packPriceLabel,
   packTotalTokens,
   perTokenLabel,
 } from "@/lib/tokens";
@@ -1451,34 +1450,6 @@ export default function ChatView({
           />
         ) : (
         <>
-        {/* One-tap token packs sit above the input so the composer keeps its
-            space; "Pack Price" opens the wallet sheet with the full cards. */}
-        {role === "guest" && balance !== null && (
-          <div className="w-full mb-2 grid grid-cols-4 gap-1.5 rounded-2xl bg-card2/90 border border-accent/30 px-2.5 py-2 backdrop-blur">
-            {TOKEN_PACKS.map((pack) => {
-              const busy = toppingUp === pack.id;
-              return (
-                <button
-                  key={pack.id}
-                  onClick={() => topUp(pack.id)}
-                  disabled={!!toppingUp}
-                  className="rounded-xl bg-card border-2 border-accent/60 hover:border-accent px-1 py-1.5 text-center transition-colors disabled:opacity-60"
-                  aria-label={`Buy ${packTotalTokens(pack)} Tokens for ${packPriceLabel(pack)}`}
-                >
-                  <span className="token-pulse block text-base font-extrabold tabular-nums leading-tight text-accent">
-                    {busy ? "…" : packTotalTokens(pack).toLocaleString("en-US")}
-                  </span>
-                  <span className="block text-[9px] font-semibold text-muted leading-tight">
-                    Tokens
-                  </span>
-                  <span className="block text-[9px] font-medium text-muted/50 tabular-nums leading-tight mt-0.5">
-                    {packPriceLabel(pack)}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        )}
         {recording ? (
           <div className="flex items-center gap-3 bg-card2/80 border border-line2 rounded-2xl px-3 py-2 backdrop-blur">
             <span className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse shrink-0" />
