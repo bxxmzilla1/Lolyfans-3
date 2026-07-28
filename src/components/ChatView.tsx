@@ -272,6 +272,55 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, load]);
 
+  // Creator: poll accept/decline/unlock every second so Declined badges and
+  // paid bubbles appear even if a realtime broadcast was missed.
+  useEffect(() => {
+    if (role !== "owner") return;
+    let stopped = false;
+    async function tick() {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch(`/api/chats/fanstate?chatId=${chatId}`);
+        if (!res.ok || stopped) return;
+        const data = (await res.json()) as {
+          media?: {
+            id: string;
+            fan_decision: "accepted" | "rejected" | null;
+            unlocked: boolean;
+          }[];
+        };
+        const media = data.media ?? [];
+        if (!media.length) return;
+        const byId = new Map(media.map((m) => [m.id, m]));
+        setMessages((prev) => {
+          let changed = false;
+          const next = prev.map((m) => {
+            const d = byId.get(m.id);
+            if (!d) return m;
+            if (m.fan_decision === d.fan_decision && !!m.unlocked === d.unlocked) {
+              return m;
+            }
+            changed = true;
+            return {
+              ...m,
+              fan_decision: d.fan_decision,
+              unlocked: d.unlocked,
+            };
+          });
+          return changed ? next : prev;
+        });
+      } catch {
+        // offline blip — next tick retries
+      }
+    }
+    const timer = setInterval(tick, 1000);
+    tick();
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+    };
+  }, [role, chatId]);
+
   // Card Verify config + saved-card status (the wallet economy is gone; this
   // endpoint now only reports the card state and the creator's verify switch).
   const refreshWallet = useCallback(async () => {

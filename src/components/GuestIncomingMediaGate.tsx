@@ -79,6 +79,15 @@ export default function GuestIncomingMediaGate({
   // Creator sent media in any of this fan's chats — pull the gate immediately.
   useInboxSignals(pairs, loadPending);
 
+  // Keep the Home gate in sync every second (accept/decline from chat, timer
+  // expiry in another tab, etc.) while this tab is visible.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") loadPending();
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [loadPending]);
+
   const message = pending?.message ?? null;
   const gatePaused =
     deciding ||
