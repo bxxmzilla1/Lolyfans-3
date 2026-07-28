@@ -78,16 +78,6 @@ export default function IncomingMediaGate({
           </div>
         ) : (
           <>
-            <p className="absolute top-[max(1.4rem,env(safe-area-inset-top))] left-4 right-24 text-white/60 text-xs font-medium truncate drop-shadow">
-              {peerName || "They"} sent you a {first.type === "video" ? "video" : "photo"}
-              {items.length > 1 ? ` +${items.length - 1} more` : ""}
-              {price > 0 && (
-                <span className="ml-1.5 text-white/85 font-semibold tabular-nums">
-                  {priceLabel(price)}
-                </span>
-              )}
-            </p>
-
             <button
               type="button"
               onClick={onReject}
@@ -98,6 +88,11 @@ export default function IncomingMediaGate({
             </button>
 
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6">
+              <p className="mb-4 text-white text-2xl font-extrabold text-center leading-snug drop-shadow-lg">
+                {peerName || "They"} sent you a{" "}
+                {first.type === "video" ? "video" : "photo"}
+                {items.length > 1 ? ` +${items.length - 1} more` : ""}
+              </p>
               {/* Incoming-call effect: expanding ripple rings + a breathing button */}
               <div className="relative">
                 {!busy && (
