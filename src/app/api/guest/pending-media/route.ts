@@ -44,11 +44,18 @@ export async function GET(req: NextRequest) {
     ? profiles.get(chat.owner_id)?.name || "Lolyfans"
     : "Lolyfans";
 
+  const { data: cardChat } = await db
+    .from("chats")
+    .select("stripe_payment_method_id")
+    .eq("id", message.chat_id)
+    .maybeSingle();
+
   return NextResponse.json({
     pending: {
       message: { ...message, unlocked: false },
       peerName,
       chatId: message.chat_id as string,
+      hasCard: !!cardChat?.stripe_payment_method_id,
     },
   });
 }

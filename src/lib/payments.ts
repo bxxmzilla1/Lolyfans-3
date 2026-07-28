@@ -4,6 +4,52 @@ import { stripe } from "@/lib/stripe";
 import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
 import type Stripe from "stripe";
 
+/** Advance one BlurDrainer layer for this fan (idempotent per PaymentIntent). */
+export async function recordBlurDrainTap(opts: {
+  messageId: string;
+  chatId: string;
+  layers: number;
+  paymentIntentId: string;
+}): Promise<number> {
+  const db = supabaseAdmin();
+  const { error: ledgerErr } = await db.from("message_blur_taps").insert({
+    message_id: opts.messageId,
+    chat_id: opts.chatId,
+    stripe_payment_intent_id: opts.paymentIntentId,
+  });
+  if (ledgerErr) {
+    const { data } = await db
+      .from("message_blur_progress")
+      .select("layers_cleared")
+      .eq("message_id", opts.messageId)
+      .eq("chat_id", opts.chatId)
+      .maybeSingle();
+    return data?.layers_cleared ?? 0;
+  }
+
+  const { data: prev } = await db
+    .from("message_blur_progress")
+    .select("layers_cleared")
+    .eq("message_id", opts.messageId)
+    .eq("chat_id", opts.chatId)
+    .maybeSingle();
+  const next = Math.min(opts.layers, (prev?.layers_cleared ?? 0) + 1);
+  await db.from("message_blur_progress").upsert(
+    {
+      message_id: opts.messageId,
+      chat_id: opts.chatId,
+      layers_cleared: next,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "message_id,chat_id" }
+  );
+  await broadcast(`chat:${opts.chatId}`, "blur-drain-progress", {
+    messageId: opts.messageId,
+    layersCleared: next,
+  });
+  return next;
+}
+
 /** Record that a fan unlocked a message (idempotent) and notify the chat. */
 export async function recordUnlock(opts: {
   messageId: string;

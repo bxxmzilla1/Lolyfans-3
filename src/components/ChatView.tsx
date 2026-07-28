@@ -14,7 +14,10 @@ import MessageBubble, { Message } from "./MessageBubble";
 import Portal from "./Portal";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import IncomingMediaGate from "./IncomingMediaGate";
+import BlurDrainerEditor from "./BlurDrainerEditor";
+import BlurDrainerPlayer from "./BlurDrainerPlayer";
 import { elementsEnabled } from "@/lib/stripeClient";
+import { parseBlurDrainer, type BlurDrainerConfig } from "@/lib/blurDrainer";
 import { type VerifyPopup } from "@/lib/popupOffer";
 import {
   IconBack,
@@ -72,6 +75,16 @@ export default function ChatView({
   const [lockPrice, setLockPrice] = useState("");
   // Optional decision countdown (seconds) for the incoming-media gate.
   const [decideTimer, setDecideTimer] = useState("");
+  // BlurDrainer: config attached to the next video send + editor / player UI.
+  const [blurDrainer, setBlurDrainer] = useState<BlurDrainerConfig | null>(null);
+  const [blurEditorOpen, setBlurEditorOpen] = useState(false);
+  const [drainPlayer, setDrainPlayer] = useState<Message | null>(null);
+  // BlurDrainer gate: card SetupIntent required before Accept can proceed.
+  const [gateCardSetup, setGateCardSetup] = useState<{
+    clientSecret: string;
+    country: string | null;
+    messageId: string;
+  } | null>(null);
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   // Incoming-media gate (guest side): accept/reject in flight + the
   // countdown remaining for the media currently on screen.
@@ -180,6 +193,10 @@ export default function ChatView({
     setLinkAttachment(null);
     setLockPrice("");
     setDecideTimer("");
+    setBlurDrainer(null);
+    setBlurEditorOpen(false);
+    setDrainPlayer(null);
+    setGateCardSetup(null);
     setMsgSelectMode(false);
     setSelectedMsgs(new Set());
     // Wait a frame so the list has laid out its content
@@ -372,12 +389,13 @@ export default function ChatView({
   const gatePaused =
     deciding ||
     unlockingId === pendingGate?.id ||
-    (!!cardUnlock && cardUnlock.messageId === pendingGate?.id);
+    (!!cardUnlock && cardUnlock.messageId === pendingGate?.id) ||
+    (!!gateCardSetup && gateCardSetup.messageId === pendingGate?.id);
 
   /** Accept or reject the media currently on the gate (free/manual-lock). */
   const decideGate = useCallback(
     async (message: Message, decision: "accept" | "reject") => {
-      if (deciding) return;
+      if (deciding) return false;
       setDeciding(true);
       try {
         const res = await fetch("/api/messages/decide", {
@@ -393,21 +411,78 @@ export default function ChatView({
           try {
             localStorage.removeItem(`lf-decide-left:${message.id}`);
           } catch {}
-        } else {
-          const data = await res.json().catch(() => ({}));
-          alert(data.error || "Something went wrong — try again");
+          if (decision === "reject") setGateCardSetup(null);
+          setDeciding(false);
+          return true;
         }
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Something went wrong — try again");
       } catch {
         alert("Something went wrong — try again");
       }
       setDeciding(false);
+      return false;
     },
     [deciding]
   );
 
-  /** Accept: priced locked media pays first (one tap / card wizard); the
-   *  payment itself records the acceptance. Free media accepts directly. */
-  function acceptGate(message: Message) {
+  /** BlurDrainer Accept without a card: SetupIntent wizard (no charge). */
+  async function startGateCardSetup(messageId: string) {
+    if (startingVerify || gateCardSetup) return;
+    setStartingVerify(true);
+    try {
+      const res = await fetch("/api/payments/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.clientSecret) {
+        setGateCardSetup({
+          clientSecret: data.clientSecret,
+          country: data.country ?? null,
+          messageId,
+        });
+      } else {
+        alert(data.error || "Could not start card setup");
+      }
+    } catch {
+      alert("Could not start card setup");
+    }
+    setStartingVerify(false);
+  }
+
+  async function completeGateCardSetup(setupIntentId: string) {
+    try {
+      await fetch("/api/payments/verify/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, setupIntentId }),
+      });
+    } catch {
+      // Card is already on Stripe; refresh catches up.
+    }
+    const messageId = gateCardSetup?.messageId;
+    setGateCardSetup(null);
+    setHasCard(true);
+    const msg = messages.find((m) => m.id === messageId) ?? pendingGate;
+    if (msg && parseBlurDrainer(msg.blur_drainer)) {
+      const ok = await decideGate(msg, "accept");
+      if (ok) setDrainPlayer(msg);
+    }
+  }
+
+  /** Accept: BlurDrainer needs a card first; priced media pays; free accepts. */
+  async function acceptGate(message: Message) {
+    if (parseBlurDrainer(message.blur_drainer)) {
+      if (!hasCard) {
+        startGateCardSetup(message.id);
+        return;
+      }
+      const ok = await decideGate(message, "accept");
+      if (ok) setDrainPlayer(message);
+      return;
+    }
     if ((message.price_cents ?? 0) > 0 && message.locked && !message.unlocked) {
       unlockById(message.id);
     } else {
@@ -614,6 +689,8 @@ export default function ChatView({
       role === "owner" && mediaItems.some((i) => i.type === "image" || i.type === "video")
         ? Math.max(0, Math.round(parseFloat(decideTimer.replace(/[^\d]/g, ""))) || 0)
         : 0;
+    const drainCfg =
+      role === "owner" && mediaItems.some((i) => i.type === "video") ? blurDrainer : null;
 
     // Optimistic: show the message immediately, reconcile with the server response.
     const tempId = `temp-${Date.now()}`;
@@ -629,6 +706,7 @@ export default function ChatView({
       reply_to_id: replyToId,
       locked,
       price_cents: priceCents,
+      blur_drainer: drainCfg,
       created_at: new Date().toISOString(),
     };
     setMessages((prev) => [...prev, temp]);
@@ -639,6 +717,7 @@ export default function ChatView({
     if (locked) setSendLocked(false);
     if (priceCents > 0) setLockPrice("");
     if (decideSeconds > 0) setDecideTimer("");
+    if (drainCfg) setBlurDrainer(null);
 
     try {
       const res = await fetch("/api/messages", {
@@ -654,6 +733,7 @@ export default function ChatView({
           locked,
           priceCents,
           decideSeconds,
+          blurDrainer: drainCfg,
         }),
       });
       if (res.ok) {
@@ -1043,6 +1123,9 @@ export default function ChatView({
             onSelectToggle={toggleMsgSelected}
             verifyLock={verifyLockActive}
             onVerifyRequest={startVerify}
+            onOpenBlurDrainer={
+              role === "guest" ? (m) => setDrainPlayer(m) : undefined
+            }
           />
         ))}
         {peerTyping && (
@@ -1233,6 +1316,41 @@ export default function ChatView({
                       ? "auto-rejects if they don't accept in time"
                       : "no time limit to accept"}
                   </span>
+                </div>
+              )}
+              {attachments.some((a) => a.type === "video") && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setBlurEditorOpen(true)}
+                    className={`text-xs font-bold px-2.5 py-1 rounded-lg border ${
+                      blurDrainer
+                        ? "bg-accent text-white border-accent"
+                        : "bg-bg border-line text-fg"
+                    }`}
+                  >
+                    BlurDrainer
+                  </button>
+                  {blurDrainer ? (
+                    <>
+                      <span className="text-[11px] text-muted">
+                        {blurDrainer.layers} layers · $
+                        {(blurDrainer.priceCents / 100).toFixed(2).replace(/\.00$/, "")}
+                        /tap
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setBlurDrainer(null)}
+                        className="text-[11px] text-red-400 font-semibold"
+                      >
+                        Clear
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-muted">
+                      square blur · pay per tap to peel layers
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -1536,14 +1654,45 @@ export default function ChatView({
         </Portal>
       )}
 
+      {blurEditorOpen &&
+        (() => {
+          const vid = attachments.find((a) => a.type === "video");
+          if (!vid) return null;
+          return (
+            <BlurDrainerEditor
+              videoPath={vid.path}
+              initial={blurDrainer}
+              onSave={(cfg) => {
+                setBlurDrainer(cfg);
+                setBlurEditorOpen(false);
+              }}
+              onCancel={() => setBlurEditorOpen(false)}
+            />
+          );
+        })()}
+
       {pendingGate && (
         <IncomingMediaGate
           message={pendingGate}
           peerName={peerName}
           secondsLeft={gateLeft}
-          busy={deciding || unlockingId === pendingGate.id}
+          busy={
+            deciding ||
+            unlockingId === pendingGate.id ||
+            startingVerify ||
+            gateCardSetup?.messageId === pendingGate.id
+          }
           wizard={
-            cardUnlock && cardUnlock.messageId === pendingGate.id ? (
+            gateCardSetup && gateCardSetup.messageId === pendingGate.id ? (
+              <EmbeddedCardTopup
+                clientSecret={gateCardSetup.clientSecret}
+                mode="setup"
+                countryGuess={gateCardSetup.country}
+                onSuccess={completeGateCardSetup}
+                // Backing out: timer resumes; they must Reject or try Accept again.
+                onCancel={() => setGateCardSetup(null)}
+              />
+            ) : cardUnlock && cardUnlock.messageId === pendingGate.id ? (
               <EmbeddedCardTopup
                 clientSecret={cardUnlock.clientSecret}
                 amountCents={cardUnlock.amountCents}
@@ -1559,6 +1708,29 @@ export default function ChatView({
           onReject={() => decideGate(pendingGate, "reject")}
         />
       )}
+
+      {drainPlayer &&
+        (() => {
+          const cfg = parseBlurDrainer(drainPlayer.blur_drainer);
+          const video = mediaItemsFromMessage(drainPlayer).find((i) => i.type === "video");
+          if (!cfg || !video) return null;
+          return (
+            <BlurDrainerPlayer
+              videoPath={video.path}
+              config={cfg}
+              messageId={drainPlayer.id}
+              initialCleared={drainPlayer.blur_layers_cleared ?? 0}
+              onClose={() => setDrainPlayer(null)}
+              onProgress={(n) =>
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.id === drainPlayer.id ? { ...m, blur_layers_cleared: n } : m
+                  )
+                )
+              }
+            />
+          );
+        })()}
 
       {lightbox && (() => {
         const items = mediaItemsFromMessage(lightbox.message);

@@ -3,11 +3,13 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   creditTokens,
   fulfillCheckout,
+  recordBlurDrainTap,
   recordLifetimeSubscription,
   recordUnlock,
   saveStripePaymentMethod,
   syncSubscription,
 } from "@/lib/payments";
+import { parseBlurDrainer } from "@/lib/blurDrainer";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 
@@ -74,6 +76,22 @@ export async function POST(req: NextRequest) {
         chatId,
         priceCents: pi.amount ?? 0,
       });
+    } else if (pi.metadata?.kind === "blur-drain" && pi.metadata.messageId) {
+      await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+      const { data: msg } = await supabaseAdmin()
+        .from("messages")
+        .select("blur_drainer")
+        .eq("id", pi.metadata.messageId)
+        .maybeSingle();
+      const cfg = parseBlurDrainer(msg?.blur_drainer);
+      if (cfg) {
+        await recordBlurDrainTap({
+          messageId: pi.metadata.messageId,
+          chatId,
+          layers: cfg.layers,
+          paymentIntentId: pi.id,
+        });
+      }
     } else if (
       pi.metadata?.kind === "subscription" &&
       pi.metadata?.interval === "lifetime" &&

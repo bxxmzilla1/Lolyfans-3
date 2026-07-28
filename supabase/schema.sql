@@ -533,6 +533,32 @@ end $$;
 -- 0 = no time limit; when it runs out the media auto-rejects.
 alter table messages add column if not exists decide_seconds int not null default 0;
 
+-- BlurDrainer: creator-shaped square blur over a video. Fans pay once per
+-- tap to peel off a layer. Shape is normalized 0–1 relative to the video box:
+-- { x, y, w, h, layers, priceCents }.
+alter table messages add column if not exists blur_drainer jsonb;
+
+-- Per-fan progress through a BlurDrainer message (how many layers they've paid off).
+create table if not exists message_blur_progress (
+  message_id uuid not null references messages(id) on delete cascade,
+  chat_id uuid not null references chats(id) on delete cascade,
+  layers_cleared int not null default 0,
+  updated_at timestamptz not null default now(),
+  primary key (message_id, chat_id)
+);
+alter table message_blur_progress enable row level security;
+create index if not exists message_blur_progress_chat_idx
+  on message_blur_progress (chat_id);
+
+-- Idempotent ledger: one Stripe PaymentIntent = one BlurDrainer tap.
+create table if not exists message_blur_taps (
+  stripe_payment_intent_id text primary key,
+  message_id uuid not null references messages(id) on delete cascade,
+  chat_id uuid not null references chats(id) on delete cascade,
+  created_at timestamptz not null default now()
+);
+alter table message_blur_taps enable row level security;
+
 -- Public storage bucket for chat media and vault files.
 -- file_size_limit null = no per-bucket cap (project global Storage limit applies).
 insert into storage.buckets (id, name, public, file_size_limit)

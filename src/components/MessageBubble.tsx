@@ -58,6 +58,10 @@ export type Message = {
   fan_decision?: "accepted" | "rejected" | null;
   /** Decision countdown in seconds (0/absent = no time limit). */
   decide_seconds?: number;
+  /** BlurDrainer: square multi-layer tap-to-unblur config on videos. */
+  blur_drainer?: import("@/lib/blurDrainer").BlurDrainerConfig | null;
+  /** Fan-side layers already paid off (filled by the client). */
+  blur_layers_cleared?: number;
   created_at: string;
 };
 
@@ -149,6 +153,7 @@ export default function MessageBubble({
   onSelectToggle,
   verifyLock = false,
   onVerifyRequest,
+  onOpenBlurDrainer,
 }: {
   message: Message;
   mine: boolean;
@@ -172,6 +177,8 @@ export default function MessageBubble({
    */
   verifyLock?: boolean;
   onVerifyRequest?: () => void;
+  /** Fan: reopen the BlurDrainer player to keep unblurring. */
+  onOpenBlurDrainer?: (m: Message) => void;
 }) {
   const mediaItems = mediaItemsFromMessage(message);
   const hasMedia = mediaItems.length > 0;
@@ -199,11 +206,15 @@ export default function MessageBubble({
   // Incoming-media gate labels for the creator (fans never see rejected media).
   const declinedByFan = mine && message.fan_decision === "rejected";
   // Free photos/videos the fan accepted — paid unlocks already use the green bubble.
+  // BlurDrainer has its own badge below.
+  const drainCfg = message.blur_drainer ?? null;
   const acceptedFreeByFan =
     mine &&
     message.fan_decision === "accepted" &&
     price <= 0 &&
+    !drainCfg &&
     mediaItems.some((i) => i.type === "image" || i.type === "video");
+  const drainCleared = message.blur_layers_cleared ?? 0;
   // Receiver of a locked message: blurred, unless they've paid to unlock it.
   const blurred = locked && !mine && !paidUnlocked;
   // Verify media trigger: incoming photos/videos stay locked until the fan
@@ -451,6 +462,14 @@ export default function MessageBubble({
             </span>
           </div>
         )}
+        {mine && drainCfg && (
+          <div className="px-3 pt-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-accent/90 text-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+              BlurDrainer · {drainCfg.layers} layers · $
+              {(drainCfg.priceCents / 100).toFixed(2).replace(/\.00$/, "")}/tap
+            </span>
+          </div>
+        )}
         {selectMode && (
           <button
             onClick={() => onSelectToggle?.(message)}
@@ -492,6 +511,36 @@ export default function MessageBubble({
             {renderSlide(active)}
             {lockedOverlay}
             {verifyOverlay}
+            {!mine &&
+              drainCfg &&
+              message.fan_decision === "accepted" &&
+              onOpenBlurDrainer && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenBlurDrainer(message);
+                  }}
+                  className="absolute inset-x-0 bottom-0 z-20 px-3 py-2.5 bg-gradient-to-t from-black/80 to-transparent text-left"
+                >
+                  <p className="text-white text-[11px] font-bold">
+                    $
+                    {(drainCfg.priceCents / 100).toFixed(2).replace(/\.00$/, "")}
+                    /tap · Tap to unblur
+                  </p>
+                  <div className="mt-1 relative h-1.5 rounded-full bg-white/20">
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-accent"
+                      style={{
+                        width: `${(drainCleared / drainCfg.layers) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="text-white/70 text-[10px] mt-0.5 tabular-nums">
+                    {drainCleared}/{drainCfg.layers} cleared
+                  </p>
+                </button>
+              )}
             {lockToggle}
             {mediaItems.length > 1 && (
               <>

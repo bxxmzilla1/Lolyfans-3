@@ -2,6 +2,7 @@
 
 import Portal from "./Portal";
 import { mediaUrl, mediaItemsFromMessage } from "@/lib/utils";
+import { parseBlurDrainer, blurDrainPriceLabel } from "@/lib/blurDrainer";
 import type { Message } from "./MessageBubble";
 
 function priceLabel(cents: number): string {
@@ -40,8 +41,10 @@ export default function IncomingMediaGate({
   const first = items[0];
   if (!first) return null;
 
+  const drain = parseBlurDrainer(message.blur_drainer);
   const price =
-    message.locked && (message.price_cents ?? 0) > 0 ? message.price_cents! : 0;
+    drain?.priceCents ??
+    (message.locked && (message.price_cents ?? 0) > 0 ? message.price_cents! : 0);
   const timer =
     secondsLeft === null
       ? null
@@ -128,7 +131,14 @@ export default function IncomingMediaGate({
               {/* Price: very thin and faded, but still readable */}
               {price > 0 && (
                 <p className="text-white/45 font-thin text-2xl tracking-widest tabular-nums drop-shadow">
-                  {priceLabel(price)}
+                  {drain
+                    ? `${blurDrainPriceLabel(drain.priceCents)} / tap`
+                    : priceLabel(price)}
+                </p>
+              )}
+              {drain && (
+                <p className="text-white/55 text-xs font-medium text-center">
+                  {drain.layers} blur layers · tap to unblur after you accept
                 </p>
               )}
             </div>

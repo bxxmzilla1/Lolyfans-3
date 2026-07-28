@@ -4,6 +4,7 @@ import { getOwnerId, getGuestChatId } from "@/lib/session";
 import { broadcast } from "@/lib/realtime";
 import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
+import { parseBlurDrainer } from "@/lib/blurDrainer";
 
 type ChatAuth = { role: "owner" | "guest"; chatOwnerId: string };
 
@@ -75,12 +76,27 @@ export async function GET(req: NextRequest) {
     // gone for them for good.
     messages = messages.filter((m) => !m.hidden && m.fan_decision !== "rejected");
   }
-  const { data: unlocks } = await supabaseAdmin()
-    .from("message_unlocks")
-    .select("message_id")
-    .eq("chat_id", chatId);
+  const [{ data: unlocks }, { data: drains }] = await Promise.all([
+    supabaseAdmin()
+      .from("message_unlocks")
+      .select("message_id")
+      .eq("chat_id", chatId),
+    auth.role === "guest"
+      ? supabaseAdmin()
+          .from("message_blur_progress")
+          .select("message_id, layers_cleared")
+          .eq("chat_id", chatId)
+      : Promise.resolve({ data: [] as { message_id: string; layers_cleared: number }[] }),
+  ]);
   const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id));
-  messages = messages.map((m) => ({ ...m, unlocked: unlockedIds.has(m.id) }));
+  const drainMap = new Map(
+    (drains ?? []).map((d) => [d.message_id as string, d.layers_cleared as number])
+  );
+  messages = messages.map((m) => ({
+    ...m,
+    unlocked: unlockedIds.has(m.id),
+    ...(drainMap.has(m.id) ? { blur_layers_cleared: drainMap.get(m.id) } : {}),
+  }));
   return NextResponse.json({ messages, role: auth.role });
 }
 
@@ -111,7 +127,8 @@ function normalizeMediaItems(body: {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { chatId, content, replyToId, locked, priceCents, decideSeconds } = body;
+  const { chatId, content, replyToId, locked, priceCents, decideSeconds, blurDrainer } =
+    body;
   const mediaItems = normalizeMediaItems(body);
   const mediaPath = mediaItems[0]?.path ?? null;
   const mediaType = mediaItems[0]?.type ?? null;
@@ -138,10 +155,14 @@ export async function POST(req: NextRequest) {
   // meaningful on photos/videos). Clamped to 1 hour; 0 = no time limit. The
   // key is only included when set, so sends keep working pre-migration.
   const hasVisualMedia = mediaItems.some((i) => i.type === "image" || i.type === "video");
+  const hasVideo = mediaItems.some((i) => i.type === "video");
   const decide =
     auth.role === "owner" && hasVisualMedia
       ? Math.max(0, Math.min(3600, Math.round(Number(decideSeconds)) || 0))
       : 0;
+  // BlurDrainer only on owner-sent videos.
+  const drain =
+    auth.role === "owner" && hasVideo ? parseBlurDrainer(blurDrainer) : null;
 
   const db = supabaseAdmin();
   const { data: message, error } = await db
@@ -161,6 +182,7 @@ export async function POST(req: NextRequest) {
           ? Math.max(0, Math.round(Number(priceCents)))
           : 0,
       ...(decide > 0 ? { decide_seconds: decide } : {}),
+      ...(drain ? { blur_drainer: drain } : {}),
     })
     .select()
     .single();

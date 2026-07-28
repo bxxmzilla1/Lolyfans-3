@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import IncomingMediaGate from "./IncomingMediaGate";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { elementsEnabled } from "@/lib/stripeClient";
+import { parseBlurDrainer } from "@/lib/blurDrainer";
 import { useInboxSignals, type ChatOwnerPair } from "@/lib/useInboxSignals";
 import type { Message } from "./MessageBubble";
 
@@ -12,6 +13,7 @@ type Pending = {
   message: Message;
   peerName: string;
   chatId: string;
+  hasCard: boolean;
 };
 
 /**
@@ -29,6 +31,7 @@ export default function GuestIncomingMediaGate({
   const [pending, setPending] = useState<Pending | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
+  const [startingSetup, setStartingSetup] = useState(false);
   const [gateLeft, setGateLeft] = useState<number | null>(null);
   const [cardUnlock, setCardUnlock] = useState<{
     clientSecret: string;
@@ -36,6 +39,12 @@ export default function GuestIncomingMediaGate({
     messageId: string;
     chatId: string;
     country: string | null;
+  } | null>(null);
+  const [gateCardSetup, setGateCardSetup] = useState<{
+    clientSecret: string;
+    country: string | null;
+    messageId: string;
+    chatId: string;
   } | null>(null);
   const gateIdRef = useRef<string | null>(null);
   const fetchingRef = useRef(false);
@@ -76,11 +85,8 @@ export default function GuestIncomingMediaGate({
     loadPending();
   }, [loadPending]);
 
-  // Creator sent media in any of this fan's chats — pull the gate immediately.
   useInboxSignals(pairs, loadPending);
 
-  // Keep the Home gate in sync every second (accept/decline from chat, timer
-  // expiry in another tab, etc.) while this tab is visible.
   useEffect(() => {
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") loadPending();
@@ -91,12 +97,14 @@ export default function GuestIncomingMediaGate({
   const message = pending?.message ?? null;
   const gatePaused =
     deciding ||
+    startingSetup ||
     unlockingId === message?.id ||
-    (!!cardUnlock && cardUnlock.messageId === message?.id);
+    (!!cardUnlock && cardUnlock.messageId === message?.id) ||
+    (!!gateCardSetup && gateCardSetup.messageId === message?.id);
 
   const decideGate = useCallback(
     async (msg: Message, decision: "accept" | "reject", chatId?: string) => {
-      if (deciding) return;
+      if (deciding) return false;
       setDeciding(true);
       try {
         const res = await fetch("/api/messages/decide", {
@@ -109,20 +117,22 @@ export default function GuestIncomingMediaGate({
             localStorage.removeItem(`lf-decide-left:${msg.id}`);
           } catch {}
           setPending(null);
+          setGateCardSetup(null);
           if (decision === "accept" && chatId) {
             await goToChat(chatId);
           } else {
-            // Reject stays on Home; next undecided media (if any) takes over.
             await loadPending();
           }
-        } else {
-          const data = await res.json().catch(() => ({}));
-          alert(data.error || "Something went wrong — try again");
+          setDeciding(false);
+          return true;
         }
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || "Something went wrong — try again");
       } catch {
         alert("Something went wrong — try again");
       }
       setDeciding(false);
+      return false;
     },
     [deciding, loadPending, goToChat]
   );
@@ -163,7 +173,60 @@ export default function GuestIncomingMediaGate({
     setUnlockingId(null);
   }
 
+  async function startGateCardSetup(messageId: string, chatId: string) {
+    if (startingSetup || gateCardSetup) return;
+    setStartingSetup(true);
+    try {
+      const res = await fetch("/api/payments/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.clientSecret) {
+        setGateCardSetup({
+          clientSecret: data.clientSecret,
+          country: data.country ?? null,
+          messageId,
+          chatId,
+        });
+      } else {
+        alert(data.error || "Could not start card setup");
+      }
+    } catch {
+      alert("Could not start card setup");
+    }
+    setStartingSetup(false);
+  }
+
+  async function completeGateCardSetup(setupIntentId: string) {
+    const chatId = gateCardSetup?.chatId;
+    const messageId = gateCardSetup?.messageId;
+    try {
+      await fetch("/api/payments/verify/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, setupIntentId }),
+      });
+    } catch {
+      // Card already saved on Stripe.
+    }
+    setGateCardSetup(null);
+    const msg = pending?.message;
+    if (msg && messageId === msg.id && chatId) {
+      await decideGate(msg, "accept", chatId);
+    }
+  }
+
   function acceptGate(msg: Message, chatId: string) {
+    if (parseBlurDrainer(msg.blur_drainer)) {
+      if (!pending?.hasCard) {
+        startGateCardSetup(msg.id, chatId);
+        return;
+      }
+      decideGate(msg, "accept", chatId);
+      return;
+    }
     if ((msg.price_cents ?? 0) > 0 && msg.locked && !msg.unlocked) {
       unlockById(msg.id, chatId);
     } else {
@@ -193,7 +256,6 @@ export default function GuestIncomingMediaGate({
     if (chatId) await goToChat(chatId);
   }
 
-  // Restore / start the creator-set countdown for the current gate message.
   useEffect(() => {
     const id = message?.id ?? null;
     if (gateIdRef.current === id) return;
@@ -241,9 +303,22 @@ export default function GuestIncomingMediaGate({
       message={pending.message}
       peerName={pending.peerName}
       secondsLeft={gateLeft}
-      busy={deciding || unlockingId === pending.message.id}
+      busy={
+        deciding ||
+        startingSetup ||
+        unlockingId === pending.message.id ||
+        !!gateCardSetup
+      }
       wizard={
-        cardUnlock && cardUnlock.messageId === pending.message.id ? (
+        gateCardSetup && gateCardSetup.messageId === pending.message.id ? (
+          <EmbeddedCardTopup
+            clientSecret={gateCardSetup.clientSecret}
+            mode="setup"
+            countryGuess={gateCardSetup.country}
+            onSuccess={completeGateCardSetup}
+            onCancel={() => setGateCardSetup(null)}
+          />
+        ) : cardUnlock && cardUnlock.messageId === pending.message.id ? (
           <EmbeddedCardTopup
             clientSecret={cardUnlock.clientSecret}
             amountCents={cardUnlock.amountCents}
