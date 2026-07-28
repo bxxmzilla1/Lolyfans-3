@@ -133,6 +133,9 @@ export default function ChatView({
   const typingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const typingSentAtRef = useRef(0);
   const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Blocks double Enter / double-tap from posting the same message twice.
+  const sendingRef = useRef(false);
+  const [sending, setSending] = useState(false);
 
   // Saved link-label presets live in the creator's profile metadata so they
   // follow them across devices.
@@ -222,18 +225,24 @@ export default function ChatView({
           // Our own message echoed back: replace the optimistic temp bubble
           // instead of appending, so it never shows twice.
           if (msg.sender === role) {
-            const tempIdx = prev.findIndex(
-              (m) =>
-                m.id.startsWith("temp-") &&
-                m.content === msg.content &&
-                m.media_path === msg.media_path &&
-                (m.media_items?.length ?? 0) === (msg.media_items?.length ?? 0)
-            );
+            const tempIdx = prev.findIndex((m) => {
+              if (!m.id.startsWith("temp-")) return false;
+              // Same media path is enough (BlurDrainer / lock fields can differ
+              // slightly between optimistic and server payloads).
+              if (msg.media_path && m.media_path === msg.media_path) return true;
+              const sameContent =
+                (m.content ?? null) === (msg.content ?? null);
+              const sameMedia =
+                (m.media_path ?? null) === (msg.media_path ?? null);
+              return sameContent && sameMedia;
+            });
             if (tempIdx !== -1) {
               const copy = [...prev];
               copy[tempIdx] = msg;
               return copy;
             }
+            // No temp left (POST already reconciled) — id check above prevents
+            // a true duplicate. Still append so external/API sends show live.
           } else if (role === "owner") {
             // Reading the incoming message right now: mark the chat as read
             // so the sidebar badge doesn't stick around.
@@ -665,6 +674,9 @@ export default function ChatView({
   }
 
   async function send() {
+    // Ref guard must run before any await — React state hasn't cleared yet on
+    // a double Enter / double-tap, so both calls would otherwise POST.
+    if (sendingRef.current || uploading) return;
     const mediaItems = attachments.map((a) => ({ path: a.path, type: a.type }));
     const usedAttachments = attachments;
     const usedLink = linkAttachment;
@@ -677,6 +689,8 @@ export default function ChatView({
       : "";
     const content = [caption, linkPart].filter(Boolean).join("\n");
     if (!content && mediaItems.length === 0) return;
+    sendingRef.current = true;
+    setSending(true);
     // Owner-set unlock price in dollars (only on media). A price implies the
     // media is locked so the fan pays once to reveal it.
     const priceCents =
@@ -755,6 +769,9 @@ export default function ChatView({
       setText(caption);
       setAttachments(usedAttachments);
       if (usedLink) setLinkAttachment(usedLink);
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
     }
   }
 
@@ -1507,7 +1524,7 @@ export default function ChatView({
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                send();
+                if (!sendingRef.current) send();
               }
             }}
             placeholder="Message…"
@@ -1518,6 +1535,7 @@ export default function ChatView({
             onClick={send}
             disabled={
               uploading ||
+              sending ||
               (!text.trim() && attachments.length === 0 && !linkAttachment)
             }
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-40 flex items-center justify-center active:opacity-80 transition-opacity"
