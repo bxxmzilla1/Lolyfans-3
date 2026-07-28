@@ -128,6 +128,15 @@ export default function ChatView({
   const listRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  /** Focus the composer so the next keystroke / Enter goes straight in. */
+  function focusComposer() {
+    // Wait a frame so reply/attachment UI has mounted above the input.
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  }
   const channelRef = useRef<RealtimeChannel | null>(null);
   const inboxTypingRef = useRef<RealtimeChannel | null>(null);
   const typingHideRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1021,6 +1030,7 @@ export default function ChatView({
           if (prev.length >= MAX_ATTACHMENTS) return prev;
           return [...prev, { path, type }];
         });
+        focusComposer();
       }
     } catch {
       // Not a vault item, ignore
@@ -1071,11 +1081,17 @@ export default function ChatView({
           }
           return next;
         });
+        focusComposer();
       }
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
     }
+  }
+
+  function startReply(message: Message) {
+    setReplyTo(message);
+    focusComposer();
   }
 
   function openLightbox(message: Message, index = 0) {
@@ -1132,7 +1148,7 @@ export default function ChatView({
             message={m}
             mine={m.sender === role}
             repliedTo={m.reply_to_id ? byId.get(m.reply_to_id) ?? null : null}
-            onReply={setReplyTo}
+            onReply={startReply}
             onJumpToReply={jumpToReply}
             onMediaClick={openLightbox}
             onToggleLock={toggleLock}
@@ -1521,6 +1537,7 @@ export default function ChatView({
             )}
           </button>
           <textarea
+            ref={inputRef}
             value={text}
             onChange={(e) => {
               setText(e.target.value);
