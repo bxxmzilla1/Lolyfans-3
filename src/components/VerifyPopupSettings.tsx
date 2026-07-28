@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { IconLock } from "./Icons";
+import { IconEye } from "./Icons";
 
 /**
  * Card Verify tab: while a fan has no card on file, every photo/video the
@@ -84,13 +84,8 @@ export default function VerifyPopupSettings() {
         <div className="relative w-64 h-44 rounded-3xl overflow-hidden bg-gradient-to-br from-accent/40 via-card2 to-accent/20 border border-line">
           <div className="absolute inset-0 backdrop-blur-2xl" />
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5">
-            <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
-              <IconLock className="w-5 h-5 text-white" />
-            </span>
-            <span className="text-white text-xs font-semibold drop-shadow">
-              Locked
-            </span>
-            <span className="mt-1 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
+              <IconEye className="w-4 h-4" />
               Verify to view
             </span>
             <span className="text-white text-[11px] font-semibold drop-shadow">

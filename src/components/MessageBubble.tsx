@@ -16,6 +16,7 @@ import {
   IconBack,
   IconCheck,
   IconChevronRight,
+  IconEye,
   IconEyeOff,
   IconLink,
   IconLock,
@@ -265,15 +266,11 @@ export default function MessageBubble({
           </>
         ) : (
           <>
-            <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
-              <IconLock className="w-5 h-5 text-white" />
-            </span>
-            <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
             {payToUnlock ? (
               <>
-                <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
-                  <IconTip className="w-4 h-4" />
-                  Unlock
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
+                  <IconEye className="w-4 h-4" />
+                  Watch
                 </span>
                 <span className="text-white text-sm font-bold drop-shadow">
                   {formatTokens(tokensForCents(price))}
@@ -294,7 +291,7 @@ export default function MessageBubble({
             e.stopPropagation();
             onUnlock?.(message);
           }}
-          aria-label={`Unlock for ${formatTokens(tokensForCents(price))}`}
+          aria-label={`Watch for ${formatTokens(tokensForCents(price))}`}
           className="absolute inset-0 z-[15] cursor-pointer"
         />
       ) : unlocking ? (
@@ -319,11 +316,8 @@ export default function MessageBubble({
   const verifyOverlay = verifyBlurred && (
     <>
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 pointer-events-none">
-        <span className="w-10 h-10 rounded-full bg-black/50 backdrop-blur flex items-center justify-center">
-          <IconLock className="w-5 h-5 text-white" />
-        </span>
-        <span className="text-white text-xs font-semibold drop-shadow">Locked</span>
-        <span className="mt-1 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
+        <span className="inline-flex items-center gap-1.5 rounded-full bg-accent text-white text-sm font-bold px-5 py-1.5 shadow-lg">
+          <IconEye className="w-4 h-4" />
           Verify to view
         </span>
         <span className="text-white text-[11px] font-semibold drop-shadow">
