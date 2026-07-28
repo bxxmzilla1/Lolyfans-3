@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Portal from "./Portal";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { mediaUrl } from "@/lib/utils";
@@ -32,14 +32,31 @@ export default function BlurDrainerPlayer({
 }) {
   const [cleared, setCleared] = useState(initialCleared);
   const [busy, setBusy] = useState(false);
+  const [peelFlash, setPeelFlash] = useState(false);
   const [card, setCard] = useState<{
     clientSecret: string;
     amountCents: number;
     country: string | null;
   } | null>(null);
+  const prevCleared = useRef(initialCleared);
 
   const remaining = Math.max(0, config.layers - cleared);
   const progress = config.layers > 0 ? cleared / config.layers : 1;
+  // How fogged the region still is (1 = untouched, 0 = fully paid off).
+  // Curve so each early tap already shows a clear “more video” step.
+  const fog = remaining <= 0 ? 0 : Math.pow(remaining / config.layers, 0.85);
+  const blurPx = fog * 36;
+  const frost = fog * 0.42;
+
+  useEffect(() => {
+    if (cleared > prevCleared.current) {
+      setPeelFlash(true);
+      const t = setTimeout(() => setPeelFlash(false), 420);
+      prevCleared.current = cleared;
+      return () => clearTimeout(t);
+    }
+    prevCleared.current = cleared;
+  }, [cleared]);
 
   useEffect(() => {
     setCleared(initialCleared);
@@ -155,27 +172,57 @@ export default function BlurDrainerPlayer({
             controls={false}
             className="absolute inset-0 w-full h-full object-contain bg-black"
           />
-          {/* Stacked blur layers — same shape; peel from the top each tap */}
-          {remaining > 0 &&
-            Array.from({ length: remaining }, (_, i) => (
-              <span
-                key={i}
-                aria-hidden
-                className="absolute pointer-events-none border border-white/10"
-                style={{
-                  left: `${config.x * 100}%`,
-                  top: `${config.y * 100}%`,
-                  width: `${config.w * 100}%`,
-                  height: `${config.h * 100}%`,
-                  backdropFilter: `blur(${6 + i * 2}px)`,
-                  WebkitBackdropFilter: `blur(${6 + i * 2}px)`,
-                  background:
-                    i === remaining - 1
-                      ? "rgba(0,0,0,0.18)"
-                      : "rgba(255,255,255,0.04)",
-                }}
-              />
-            ))}
+          {/* Progressive fog: each paid layer drops blur + frost so more video shows */}
+          {remaining > 0 && (
+            <span
+              aria-hidden
+              className="absolute pointer-events-none border border-white/20 overflow-hidden transition-[backdrop-filter,background-color,opacity] duration-500 ease-out"
+              style={{
+                left: `${config.x * 100}%`,
+                top: `${config.y * 100}%`,
+                width: `${config.w * 100}%`,
+                height: `${config.h * 100}%`,
+                backdropFilter: `blur(${blurPx}px)`,
+                WebkitBackdropFilter: `blur(${blurPx}px)`,
+                backgroundColor: `rgba(8, 12, 20, ${frost})`,
+                boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
+              }}
+            >
+              {/* Stacked “layer sheets” — peel count shrinks so progress is obvious */}
+              {Array.from({ length: remaining }, (_, i) => (
+                <span
+                  key={i}
+                  className="absolute inset-0 transition-opacity duration-500"
+                  style={{
+                    background: `rgba(255,255,255,${0.03 + (i / Math.max(remaining, 1)) * 0.04})`,
+                    opacity: 0.35 + (i / Math.max(remaining, 1)) * 0.45,
+                  }}
+                />
+              ))}
+              <span className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2 text-center">
+                <span className="text-white/90 text-[11px] font-extrabold drop-shadow-lg tabular-nums">
+                  {cleared}/{config.layers}
+                </span>
+                <span className="text-white/70 text-[10px] font-semibold drop-shadow">
+                  more clear each tap
+                </span>
+              </span>
+            </span>
+          )}
+          {peelFlash && (
+            <span
+              aria-hidden
+              className="absolute pointer-events-none animate-pulse"
+              style={{
+                left: `${config.x * 100}%`,
+                top: `${config.y * 100}%`,
+                width: `${config.w * 100}%`,
+                height: `${config.h * 100}%`,
+                boxShadow: "inset 0 0 40px rgba(0,175,240,0.45)",
+                background: "rgba(0,175,240,0.12)",
+              }}
+            />
+          )}
           {busy && (
             <span className="absolute inset-0 flex items-center justify-center bg-black/20">
               <span className="w-8 h-8 rounded-full border-2 border-white/30 border-t-white animate-spin" />
