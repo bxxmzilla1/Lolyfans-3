@@ -8,6 +8,7 @@ import { GuestShellProvider } from "./GuestShellContext";
 import { useInboxSignals } from "@/lib/useInboxSignals";
 import GuestChatList from "./GuestChatList";
 import GuestProfileEditor from "./GuestProfileEditor";
+import GuestIncomingMediaGate from "./GuestIncomingMediaGate";
 import FollowButton from "./FollowButton";
 import PostFeed from "./PostFeed";
 import {
@@ -287,6 +288,12 @@ export default function GuestShell() {
         )}
         <GuestNav />
       </div>
+      {/* Incoming creator photos/videos take over even while browsing Home. */}
+      {data && (
+        <GuestIncomingMediaGate
+          pairs={data.chats.map((c) => ({ chatId: c.id, ownerId: c.ownerId }))}
+        />
+      )}
     </GuestShellProvider>
   );
 }
