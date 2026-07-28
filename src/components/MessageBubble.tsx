@@ -320,8 +320,11 @@ export default function MessageBubble({
           <span className="w-11 h-11 rounded-full bg-white/20 backdrop-blur flex items-center justify-center ring-1 ring-white/30">
             <IconEye className="w-5 h-5 text-white" />
           </span>
-          <span className="text-white text-sm font-bold text-center leading-snug max-w-[190px] drop-shadow">
-            Verify Your Account To Watch Free Content
+          <span className="text-white text-sm font-bold text-center leading-snug max-w-[220px] drop-shadow">
+            Users must verify their card to watch free content
+          </span>
+          <span className="text-white/90 text-xs font-semibold drop-shadow">
+            Tap here to verify
           </span>
         </span>
       </div>
@@ -346,13 +349,15 @@ export default function MessageBubble({
       }
       return <VoiceNote src={mediaUrl(item.path)} mine={mine} />;
     }
+    // Verify-locked media fills the chat edge-to-edge as a big square card.
+    const dimShape = verifyBlurred ? "aspect-square" : "max-h-80";
     if (item.type === "image") {
       return (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={mediaUrl(item.path)}
           alt={dim ? "Locked photo" : "Photo"}
-          className={`w-full max-h-80 object-cover ${
+          className={`w-full object-cover ${dimShape} ${
             dim
               ? "blur-2xl scale-110 pointer-events-none select-none"
               : "cursor-pointer"
@@ -369,7 +374,7 @@ export default function MessageBubble({
           muted
           playsInline
           preload="metadata"
-          className="w-full max-h-80 object-cover blur-2xl scale-110 pointer-events-none select-none"
+          className={`w-full object-cover ${dimShape} blur-2xl scale-110 pointer-events-none select-none`}
         />
       );
     }
@@ -388,7 +393,9 @@ export default function MessageBubble({
       className={`group msg-in flex items-end gap-2 ${mine ? "flex-row-reverse" : ""}`}
     >
       <div
-        className={`relative max-w-[78%] rounded-3xl overflow-hidden ${
+        className={`relative ${
+          verifyBlurred ? "w-full" : "max-w-[78%]"
+        } rounded-3xl overflow-hidden ${
           mine
             ? `${soldByMe ? "bubble-paid" : "bubble-own"} rounded-br-lg`
             : "bg-card2 rounded-bl-lg"
