@@ -79,7 +79,7 @@ export default function IncomingMediaGate({
         ) : (
           <>
             <p className="absolute top-[max(1.1rem,env(safe-area-inset-top))] left-4 z-10 text-white text-lg font-extrabold tracking-tight drop-shadow-lg select-none">
-              Lolyfans
+              LolyFans
             </p>
 
             <button
