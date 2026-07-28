@@ -196,6 +196,9 @@ export default function MessageBubble({
   const paidUnlocked = !mine && locked && price > 0 && !!message.unlocked;
   // Creator's own priced media that the fan paid for → green bubble.
   const soldByMe = mine && price > 0 && !!message.unlocked;
+  // Incoming-media gate: the fan rejected this media — label it for the
+  // creator (fans never see rejected messages at all).
+  const declinedByFan = mine && message.fan_decision === "rejected";
   // Receiver of a locked message: blurred, unless they've paid to unlock it.
   const blurred = locked && !mine && !paidUnlocked;
   // Verify media trigger: incoming photos/videos stay locked until the fan
@@ -414,7 +417,7 @@ export default function MessageBubble({
           mine
             ? `${soldByMe ? "bubble-paid" : "bubble-own"} rounded-br-lg`
             : "bg-card2 rounded-bl-lg"
-        } ${message.hidden ? "opacity-60" : ""} ${
+        } ${message.hidden || declinedByFan ? "opacity-60" : ""} ${
           selectMode && selected ? "ring-2 ring-accent" : ""
         } ${highlighted ? "msg-highlight" : ""}`}
       >
@@ -426,6 +429,13 @@ export default function MessageBubble({
               }`}
             >
               <IconEyeOff className="w-3 h-3" /> Hidden
+            </span>
+          </div>
+        )}
+        {declinedByFan && (
+          <div className="px-3 pt-2">
+            <span className="inline-flex items-center gap-1 rounded-full bg-red-500/90 text-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+              <IconEyeOff className="w-3 h-3" /> Declined
             </span>
           </div>
         )}
