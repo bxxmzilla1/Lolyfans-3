@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import IncomingMediaGate from "./IncomingMediaGate";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { elementsEnabled } from "@/lib/stripeClient";
@@ -17,12 +18,14 @@ type Pending = {
  * Fullscreen Accept/Reject gate for creator photos/videos while the fan is
  * browsing the Home shell (also Chats / Profile). ChatView handles the same
  * flow when /chat is open; this covers everywhere else in the fan footer.
+ * Accepting from here opens that creator's chat so the media lands in context.
  */
 export default function GuestIncomingMediaGate({
   pairs,
 }: {
   pairs: ChatOwnerPair[];
 }) {
+  const router = useRouter();
   const [pending, setPending] = useState<Pending | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
@@ -52,6 +55,23 @@ export default function GuestIncomingMediaGate({
     }
   }, []);
 
+  /** Point the session at this chat and open it (same path as the chat list). */
+  const goToChat = useCallback(
+    async (chatId: string) => {
+      try {
+        await fetch("/api/guest/open", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId }),
+        });
+      } catch {
+        // Still navigate — /chat will use whatever session chat is active.
+      }
+      router.push("/chat");
+    },
+    [router]
+  );
+
   useEffect(() => {
     loadPending();
   }, [loadPending]);
@@ -66,7 +86,7 @@ export default function GuestIncomingMediaGate({
     (!!cardUnlock && cardUnlock.messageId === message?.id);
 
   const decideGate = useCallback(
-    async (msg: Message, decision: "accept" | "reject") => {
+    async (msg: Message, decision: "accept" | "reject", chatId?: string) => {
       if (deciding) return;
       setDeciding(true);
       try {
@@ -80,8 +100,12 @@ export default function GuestIncomingMediaGate({
             localStorage.removeItem(`lf-decide-left:${msg.id}`);
           } catch {}
           setPending(null);
-          // Next undecided media (if any) takes over.
-          await loadPending();
+          if (decision === "accept" && chatId) {
+            await goToChat(chatId);
+          } else {
+            // Reject stays on Home; next undecided media (if any) takes over.
+            await loadPending();
+          }
         } else {
           const data = await res.json().catch(() => ({}));
           alert(data.error || "Something went wrong — try again");
@@ -91,7 +115,7 @@ export default function GuestIncomingMediaGate({
       }
       setDeciding(false);
     },
-    [deciding, loadPending]
+    [deciding, loadPending, goToChat]
   );
 
   async function unlockById(messageId: string, chatId: string) {
@@ -109,7 +133,7 @@ export default function GuestIncomingMediaGate({
           localStorage.removeItem(`lf-decide-left:${messageId}`);
         } catch {}
         setPending(null);
-        await loadPending();
+        await goToChat(chatId);
       } else if (res.ok && data.clientSecret) {
         setCardUnlock({
           clientSecret: data.clientSecret,
@@ -134,7 +158,7 @@ export default function GuestIncomingMediaGate({
     if ((msg.price_cents ?? 0) > 0 && msg.locked && !msg.unlocked) {
       unlockById(msg.id, chatId);
     } else {
-      decideGate(msg, "accept");
+      decideGate(msg, "accept", chatId);
     }
   }
 
@@ -157,7 +181,7 @@ export default function GuestIncomingMediaGate({
       } catch {}
     }
     setPending(null);
-    await loadPending();
+    if (chatId) await goToChat(chatId);
   }
 
   // Restore / start the creator-set countdown for the current gate message.
