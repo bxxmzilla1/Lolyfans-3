@@ -78,6 +78,10 @@ export default function IncomingMediaGate({
           </div>
         ) : (
           <>
+            <p className="absolute top-[max(1.1rem,env(safe-area-inset-top))] left-4 z-10 text-white text-lg font-extrabold tracking-tight drop-shadow-lg select-none">
+              Lolyfans
+            </p>
+
             <button
               type="button"
               onClick={onReject}
