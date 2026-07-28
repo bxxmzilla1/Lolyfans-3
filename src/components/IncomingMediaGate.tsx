@@ -68,6 +68,11 @@ export default function IncomingMediaGate({
             autoPlay
             loop
             playsInline
+            onEnded={(e) => {
+              const v = e.currentTarget;
+              v.currentTime = 0;
+              v.play().catch(() => {});
+            }}
             className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
           />
         )}
@@ -85,14 +90,34 @@ export default function IncomingMediaGate({
               LolyFans
             </p>
 
-            <button
-              type="button"
-              onClick={onReject}
-              disabled={busy}
-              className="absolute top-[max(1rem,env(safe-area-inset-top))] right-4 z-10 rounded-full bg-black/40 border border-white/20 text-white/70 text-xs font-medium px-3.5 py-1.5 backdrop-blur active:opacity-70 disabled:opacity-40"
-            >
-              Reject
-            </button>
+            <div className="absolute top-[max(1rem,env(safe-area-inset-top))] right-4 z-10 flex flex-col items-end gap-1.5 max-w-[55%]">
+              <button
+                type="button"
+                onClick={onReject}
+                disabled={busy}
+                className="rounded-full bg-black/40 border border-white/20 text-white/70 text-xs font-medium px-3.5 py-1.5 backdrop-blur active:opacity-70 disabled:opacity-40"
+              >
+                Reject
+              </button>
+              {price > 0 && (
+                <div className="text-right drop-shadow-lg">
+                  <p className="text-white/85 text-sm font-semibold tabular-nums leading-tight">
+                    {drain
+                      ? `${blurDrainPriceLabel(drain.priceCents)} / tap`
+                      : priceLabel(price)}
+                  </p>
+                  {drain ? (
+                    <p className="text-white/55 text-[11px] font-medium leading-snug mt-0.5">
+                      {drain.layers} layers · tap screen to unblur
+                    </p>
+                  ) : (
+                    <p className="text-white/55 text-[11px] font-medium leading-snug mt-0.5">
+                      One-tap unlock
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
 
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6">
               <p className="mb-4 text-white text-2xl font-extrabold text-center leading-snug drop-shadow-lg">
@@ -128,19 +153,6 @@ export default function IncomingMediaGate({
                   Accept
                 </button>
               </div>
-              {/* Price: very thin and faded, but still readable */}
-              {price > 0 && (
-                <p className="text-white/45 font-thin text-2xl tracking-widest tabular-nums drop-shadow">
-                  {drain
-                    ? `${blurDrainPriceLabel(drain.priceCents)} / tap`
-                    : priceLabel(price)}
-                </p>
-              )}
-              {drain && (
-                <p className="text-white/55 text-xs font-medium text-center">
-                  {drain.layers} blur layers · tap to unblur after you accept
-                </p>
-              )}
             </div>
 
             {timer && (

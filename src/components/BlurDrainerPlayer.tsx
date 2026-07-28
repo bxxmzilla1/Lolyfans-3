@@ -135,18 +135,7 @@ export default function BlurDrainerPlayer({
   return (
     <Portal>
       <div className="fixed inset-0 z-[85] bg-black fade-up flex flex-col">
-        <div className="absolute top-[max(0.75rem,env(safe-area-inset-top))] left-4 right-4 z-20 flex items-start justify-between gap-3 pointer-events-none">
-          <div className="pointer-events-none">
-            <p className="text-white text-lg font-extrabold tracking-tight drop-shadow-lg">
-              {blurDrainPriceLabel(config.priceCents)}
-              <span className="text-white/70 text-sm font-semibold ml-1.5">
-                / tap
-              </span>
-            </p>
-            <p className="text-white/75 text-xs font-medium mt-0.5 drop-shadow">
-              Tap the screen to unblur
-            </p>
-          </div>
+        <div className="absolute top-[max(0.75rem,env(safe-area-inset-top))] right-4 z-20 flex flex-col items-end gap-1.5 max-w-[55%] pointer-events-none">
           <button
             type="button"
             onClick={onClose}
@@ -154,6 +143,17 @@ export default function BlurDrainerPlayer({
           >
             Close
           </button>
+          <div className="text-right drop-shadow-lg">
+            <p className="text-white text-sm font-extrabold tracking-tight tabular-nums">
+              {blurDrainPriceLabel(config.priceCents)}
+              <span className="text-white/70 text-xs font-semibold ml-1">
+                / tap
+              </span>
+            </p>
+            <p className="text-white/70 text-[11px] font-medium mt-0.5">
+              Tap the screen to unblur
+            </p>
+          </div>
         </div>
 
         <button
@@ -170,6 +170,12 @@ export default function BlurDrainerPlayer({
             loop
             muted={false}
             controls={false}
+            onEnded={(e) => {
+              // Backup if loop attribute is ignored on some mobile browsers.
+              const v = e.currentTarget;
+              v.currentTime = 0;
+              v.play().catch(() => {});
+            }}
             className="absolute inset-0 w-full h-full object-contain bg-black"
           />
           {/* Progressive fog: each paid layer drops blur + frost so more video shows */}
@@ -199,14 +205,6 @@ export default function BlurDrainerPlayer({
                   }}
                 />
               ))}
-              <span className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2 text-center">
-                <span className="text-white/90 text-[11px] font-extrabold drop-shadow-lg tabular-nums">
-                  {cleared}/{config.layers}
-                </span>
-                <span className="text-white/70 text-[10px] font-semibold drop-shadow">
-                  more clear each tap
-                </span>
-              </span>
             </span>
           )}
           {peelFlash && (
