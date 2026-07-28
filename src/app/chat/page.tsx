@@ -51,6 +51,8 @@ export default async function GuestChatPage() {
   const initialMessages = (messages ?? [])
     .slice()
     .reverse()
+    // Media the fan rejected at the incoming gate is gone for them for good.
+    .filter((m) => m.fan_decision !== "rejected")
     .map((m) => ({
       ...m,
       unlocked: unlockedIds.has(m.id),

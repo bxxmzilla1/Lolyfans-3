@@ -71,7 +71,9 @@ export async function GET(req: NextRequest) {
   // and show as paid (green bubble) for the creator.
   let messages = data ?? [];
   if (auth.role === "guest") {
-    messages = messages.filter((m) => !m.hidden);
+    // Rejected media (the fan declined it at the incoming-media gate) is
+    // gone for them for good.
+    messages = messages.filter((m) => !m.hidden && m.fan_decision !== "rejected");
   }
   const { data: unlocks } = await supabaseAdmin()
     .from("message_unlocks")
@@ -109,7 +111,7 @@ function normalizeMediaItems(body: {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { chatId, content, replyToId, locked, priceCents } = body;
+  const { chatId, content, replyToId, locked, priceCents, decideSeconds } = body;
   const mediaItems = normalizeMediaItems(body);
   const mediaPath = mediaItems[0]?.path ?? null;
   const mediaType = mediaItems[0]?.type ?? null;
@@ -132,6 +134,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // Optional decision countdown for the incoming-media gate (owner-set, only
+  // meaningful on photos/videos). Clamped to 1 hour; 0 = no time limit. The
+  // key is only included when set, so sends keep working pre-migration.
+  const hasVisualMedia = mediaItems.some((i) => i.type === "image" || i.type === "video");
+  const decide =
+    auth.role === "owner" && hasVisualMedia
+      ? Math.max(0, Math.min(3600, Math.round(Number(decideSeconds)) || 0))
+      : 0;
+
   const db = supabaseAdmin();
   const { data: message, error } = await db
     .from("messages")
@@ -149,6 +160,7 @@ export async function POST(req: NextRequest) {
         auth.role === "owner" && mediaItems.length > 0 && Number.isFinite(priceCents)
           ? Math.max(0, Math.round(Number(priceCents)))
           : 0,
+      ...(decide > 0 ? { decide_seconds: decide } : {}),
     })
     .select()
     .single();

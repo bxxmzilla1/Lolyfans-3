@@ -13,6 +13,7 @@ import {
 import MessageBubble, { Message } from "./MessageBubble";
 import Portal from "./Portal";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
+import IncomingMediaGate from "./IncomingMediaGate";
 import { elementsEnabled } from "@/lib/stripeClient";
 import { type VerifyPopup } from "@/lib/popupOffer";
 import {
@@ -69,7 +70,14 @@ export default function ChatView({
   const [dragOver, setDragOver] = useState(false);
   const [sendLocked, setSendLocked] = useState(false);
   const [lockPrice, setLockPrice] = useState("");
+  // Optional decision countdown (seconds) for the incoming-media gate.
+  const [decideTimer, setDecideTimer] = useState("");
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
+  // Incoming-media gate (guest side): accept/reject in flight + the
+  // countdown remaining for the media currently on screen.
+  const [deciding, setDeciding] = useState(false);
+  const [gateLeft, setGateLeft] = useState<number | null>(null);
+  const gateIdRef = useRef<string | null>(null);
   // First unlock: the composer area swaps for the embedded 3-step card
   // wizard instead of redirecting to Stripe Checkout. The card is saved so
   // every later unlock is one tap.
@@ -171,6 +179,7 @@ export default function ChatView({
     setAttachments([]);
     setLinkAttachment(null);
     setLockPrice("");
+    setDecideTimer("");
     setMsgSelectMode(false);
     setSelectedMsgs(new Set());
     // Wait a frame so the list has laid out its content
@@ -235,8 +244,13 @@ export default function ChatView({
       .on("broadcast", { event: "message-unlocked" }, ({ payload }) => {
         const messageId = (payload as { messageId?: string } | null)?.messageId;
         if (!messageId) return;
+        // Unlocked implies accepted (paying IS the fan's Accept).
         setMessages((prev) =>
-          prev.map((m) => (m.id === messageId ? { ...m, unlocked: true } : m))
+          prev.map((m) =>
+            m.id === messageId
+              ? { ...m, unlocked: true, fan_decision: m.fan_decision ?? "accepted" }
+              : m
+          )
         );
       })
       .on("broadcast", { event: "typing" }, ({ payload }) => {
@@ -283,6 +297,117 @@ export default function ChatView({
   // embedded card wizard directly (SetupIntent — no charge, no popup).
   const verifyLockActive =
     role === "guest" && !hasCard && !!verifyCfg?.enabled && elementsEnabled();
+
+  // Incoming-media gate: creator photos/videos the fan hasn't decided on yet
+  // show full screen (blurred) with Accept / Reject instead of in the chat.
+  // fan_decision === null strictly — absent means the column isn't migrated
+  // yet, so the gate stays dormant rather than trapping every old message.
+  const needsDecision = useCallback(
+    (m: Message) =>
+      role === "guest" &&
+      m.sender === "owner" &&
+      !m.id.startsWith("temp-") &&
+      m.fan_decision === null &&
+      !m.unlocked &&
+      mediaItemsFromMessage(m).some((i) => i.type === "image" || i.type === "video"),
+    [role]
+  );
+  // Oldest undecided first; the next one takes over after each decision.
+  const pendingGate = messages.find(needsDecision) ?? null;
+  const visibleMessages =
+    role === "guest"
+      ? messages.filter((m) => m.fan_decision !== "rejected" && !needsDecision(m))
+      : messages;
+  // The countdown pauses while a decision/payment is in flight or the card
+  // wizard is open — closing the wizard without finishing resumes it.
+  const gatePaused =
+    deciding ||
+    unlockingId === pendingGate?.id ||
+    (!!cardUnlock && cardUnlock.messageId === pendingGate?.id);
+
+  /** Accept or reject the media currently on the gate (free/manual-lock). */
+  const decideGate = useCallback(
+    async (message: Message, decision: "accept" | "reject") => {
+      if (deciding) return;
+      setDeciding(true);
+      try {
+        const res = await fetch("/api/messages/decide", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ messageId: message.id, decision }),
+        });
+        if (res.ok) {
+          const fan = decision === "accept" ? "accepted" : "rejected";
+          setMessages((prev) =>
+            prev.map((m) => (m.id === message.id ? { ...m, fan_decision: fan } : m))
+          );
+          try {
+            localStorage.removeItem(`lf-decide-left:${message.id}`);
+          } catch {}
+        } else {
+          const data = await res.json().catch(() => ({}));
+          alert(data.error || "Something went wrong — try again");
+        }
+      } catch {
+        alert("Something went wrong — try again");
+      }
+      setDeciding(false);
+    },
+    [deciding]
+  );
+
+  /** Accept: priced locked media pays first (one tap / card wizard); the
+   *  payment itself records the acceptance. Free media accepts directly. */
+  function acceptGate(message: Message) {
+    if ((message.price_cents ?? 0) > 0 && message.locked && !message.unlocked) {
+      unlockById(message.id);
+    } else {
+      decideGate(message, "accept");
+    }
+  }
+
+  // Start (or restore) the countdown when a new gate message appears. The
+  // remaining time persists in localStorage so a refresh doesn't reset it.
+  useEffect(() => {
+    const id = pendingGate?.id ?? null;
+    if (gateIdRef.current === id) return;
+    gateIdRef.current = id;
+    if (!pendingGate || !(pendingGate.decide_seconds && pendingGate.decide_seconds > 0)) {
+      setGateLeft(null);
+      return;
+    }
+    let left = pendingGate.decide_seconds;
+    try {
+      const saved = parseInt(
+        localStorage.getItem(`lf-decide-left:${pendingGate.id}`) ?? "",
+        10
+      );
+      if (Number.isFinite(saved) && saved >= 0 && saved < left) left = saved;
+    } catch {}
+    setGateLeft(left);
+  }, [pendingGate]);
+
+  // Tick once a second (unless paused); hitting zero auto-rejects.
+  useEffect(() => {
+    if (gateLeft === null || !pendingGate || gatePaused) return;
+    if (gateLeft <= 0) {
+      decideGate(pendingGate, "reject");
+      return;
+    }
+    const t = setTimeout(() => {
+      setGateLeft((s) => {
+        const next = s === null ? null : Math.max(0, s - 1);
+        if (next !== null) {
+          try {
+            localStorage.setItem(`lf-decide-left:${pendingGate.id}`, String(next));
+          } catch {}
+        }
+        return next;
+      });
+    }, 1000);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gateLeft, gatePaused, pendingGate?.id]);
 
   // Back from a hosted-Checkout unlock (the fallback when the embedded card
   // wizard can't run): confirm the session so the unlock is recorded even if
@@ -362,9 +487,15 @@ export default function ChatView({
     // unlock is one tap.
     setHasCard(true);
     if (messageId) {
+      // Paying is also the Accept at the incoming-media gate.
       setMessages((prev) =>
-        prev.map((m) => (m.id === messageId ? { ...m, unlocked: true } : m))
+        prev.map((m) =>
+          m.id === messageId ? { ...m, unlocked: true, fan_decision: "accepted" } : m
+        )
       );
+      try {
+        localStorage.removeItem(`lf-decide-left:${messageId}`);
+      } catch {}
     }
   }
 
@@ -429,6 +560,11 @@ export default function ChatView({
         ? Math.round((parseFloat(lockPrice.replace(/[^\d.]/g, "")) || 0) * 100)
         : 0;
     const locked = (sendLocked || priceCents > 0) && mediaItems.length > 0;
+    // Owner-set decision countdown for the incoming-media gate (seconds).
+    const decideSeconds =
+      role === "owner" && mediaItems.some((i) => i.type === "image" || i.type === "video")
+        ? Math.max(0, Math.round(parseFloat(decideTimer.replace(/[^\d]/g, ""))) || 0)
+        : 0;
 
     // Optimistic: show the message immediately, reconcile with the server response.
     const tempId = `temp-${Date.now()}`;
@@ -453,6 +589,7 @@ export default function ChatView({
     if (usedLink) setLinkAttachment(null);
     if (locked) setSendLocked(false);
     if (priceCents > 0) setLockPrice("");
+    if (decideSeconds > 0) setDecideTimer("");
 
     try {
       const res = await fetch("/api/messages", {
@@ -467,6 +604,7 @@ export default function ChatView({
           replyToId,
           locked,
           priceCents,
+          decideSeconds,
         }),
       });
       if (res.ok) {
@@ -620,10 +758,16 @@ export default function ChatView({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.unlocked) {
+        // Paying is also the Accept at the incoming-media gate.
         setMessages((prev) =>
-          prev.map((m) => (m.id === messageId ? { ...m, unlocked: true } : m))
+          prev.map((m) =>
+            m.id === messageId ? { ...m, unlocked: true, fan_decision: "accepted" } : m
+          )
         );
         setHasCard(true);
+        try {
+          localStorage.removeItem(`lf-decide-left:${messageId}`);
+        } catch {}
       } else if (res.ok && data.clientSecret) {
         // No saved card yet (or it was declined): collect one in-chat.
         setCardUnlock({
@@ -831,7 +975,7 @@ export default function ChatView({
             <p className="text-muted text-sm">No messages yet. Say hi!</p>
           </div>
         )}
-        {messages.map((m) => (
+        {visibleMessages.map((m) => (
           <MessageBubble
             key={m.id}
             message={m}
@@ -1007,21 +1151,41 @@ export default function ChatView({
             ))}
           </div>
           {role === "owner" ? (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              <span className="text-xs text-muted">Unlock price</span>
-              <span className="text-xs font-bold text-accent">$</span>
-              <input
-                value={lockPrice}
-                onChange={(e) => setLockPrice(e.target.value.replace(/[^\d.]/g, ""))}
-                inputMode="decimal"
-                placeholder="0.00"
-                className="w-16 bg-bg border border-line rounded-lg px-2 py-1 text-xs focus:border-accent"
-              />
-              <span className="text-[11px] text-muted">
-                {parseFloat(lockPrice) > 0
-                  ? "fan pays once to unlock all"
-                  : "free / manual lock"}
-              </span>
+            <div className="space-y-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-xs text-muted">Unlock price</span>
+                <span className="text-xs font-bold text-accent">$</span>
+                <input
+                  value={lockPrice}
+                  onChange={(e) => setLockPrice(e.target.value.replace(/[^\d.]/g, ""))}
+                  inputMode="decimal"
+                  placeholder="0.00"
+                  className="w-16 bg-bg border border-line rounded-lg px-2 py-1 text-xs focus:border-accent"
+                />
+                <span className="text-[11px] text-muted">
+                  {parseFloat(lockPrice) > 0
+                    ? "fan pays once to unlock all"
+                    : "free / manual lock"}
+                </span>
+              </div>
+              {attachments.some((a) => a.type === "image" || a.type === "video") && (
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="text-xs text-muted">Decision timer</span>
+                  <input
+                    value={decideTimer}
+                    onChange={(e) => setDecideTimer(e.target.value.replace(/[^\d]/g, ""))}
+                    inputMode="numeric"
+                    placeholder="0"
+                    className="w-16 bg-bg border border-line rounded-lg px-2 py-1 text-xs focus:border-accent"
+                  />
+                  <span className="text-xs text-muted">sec</span>
+                  <span className="text-[11px] text-muted">
+                    {parseInt(decideTimer, 10) > 0
+                      ? "auto-rejects if they don't accept in time"
+                      : "no time limit to accept"}
+                  </span>
+                </div>
+              )}
             </div>
           ) : (
             <p className="text-xs text-muted">Add a message below, then send</p>
@@ -1030,9 +1194,10 @@ export default function ChatView({
       )}
 
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {cardUnlock ? (
-          // First unlock: the composer area becomes the embedded 3-step card
-          // wizard so the fan never leaves the chat.
+        {cardUnlock && cardUnlock.messageId !== pendingGate?.id ? (
+          // First unlock from an in-chat bubble: the composer area becomes
+          // the embedded 3-step card wizard so the fan never leaves the chat.
+          // (Gate-initiated unlocks render the wizard inside the gate.)
           <EmbeddedCardTopup
             clientSecret={cardUnlock.clientSecret}
             amountCents={cardUnlock.amountCents}
@@ -1320,6 +1485,30 @@ export default function ChatView({
             </div>
           </div>
         </Portal>
+      )}
+
+      {pendingGate && (
+        <IncomingMediaGate
+          message={pendingGate}
+          peerName={peerName}
+          secondsLeft={gateLeft}
+          busy={deciding || unlockingId === pendingGate.id}
+          wizard={
+            cardUnlock && cardUnlock.messageId === pendingGate.id ? (
+              <EmbeddedCardTopup
+                clientSecret={cardUnlock.clientSecret}
+                amountCents={cardUnlock.amountCents}
+                label="Unlock content"
+                countryGuess={cardUnlock.country}
+                onSuccess={completeCardUnlock}
+                // Backing out resumes the countdown where it left off.
+                onCancel={() => setCardUnlock(null)}
+              />
+            ) : null
+          }
+          onAccept={() => acceptGate(pendingGate)}
+          onReject={() => decideGate(pendingGate, "reject")}
+        />
       )}
 
       {lightbox && (() => {

@@ -30,7 +30,8 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json();
-  const { chatId, content, mediaPath, mediaType, locked, notify, priceCents } = body;
+  const { chatId, content, mediaPath, mediaType, locked, notify, priceCents, decideSeconds } =
+    body;
 
   // Normalize single mediaPath (legacy) or mediaItems (packages).
   const mediaItems: { path: string; type: "image" | "video" | "audio" }[] = [];
@@ -71,6 +72,12 @@ export async function POST(req: NextRequest) {
       ? Math.max(0, Math.round(Number(priceCents)))
       : 0;
 
+  // Optional decision countdown for the incoming-media gate (photos/videos).
+  const hasVisualMedia = mediaItems.some((i) => i.type === "image" || i.type === "video");
+  const decide = hasVisualMedia
+    ? Math.max(0, Math.min(3600, Math.round(Number(decideSeconds)) || 0))
+    : 0;
+
   const { data: message, error } = await db
     .from("messages")
     .insert({
@@ -83,6 +90,7 @@ export async function POST(req: NextRequest) {
       // A positive price implies locked; `locked` alone still works (manual blur).
       locked: (!!locked || price > 0) && mediaItems.length > 0,
       price_cents: price,
+      ...(decide > 0 ? { decide_seconds: decide } : {}),
     })
     .select()
     .single();

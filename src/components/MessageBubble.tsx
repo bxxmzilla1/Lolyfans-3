@@ -50,6 +50,14 @@ export type Message = {
   // Has the fan paid to unlock this priced media? (reveals it for them,
   // turns the creator's own bubble green)
   unlocked?: boolean;
+  /**
+   * Incoming-media gate: null = the fan hasn't decided yet (shows full
+   * screen with Accept/Reject), "accepted" shows in chat, "rejected" is
+   * hidden for the fan permanently. Absent = column not migrated yet.
+   */
+  fan_decision?: "accepted" | "rejected" | null;
+  /** Decision countdown in seconds (0/absent = no time limit). */
+  decide_seconds?: number;
   created_at: string;
 };
 

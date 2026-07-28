@@ -19,6 +19,13 @@ export async function recordUnlock(opts: {
     },
     { onConflict: "message_id,chat_id", ignoreDuplicates: true }
   );
+  // Paying is also the fan's "Accept" at the incoming-media gate. Errors are
+  // ignored so unlocks keep working before the fan_decision migration runs.
+  await db
+    .from("messages")
+    .update({ fan_decision: "accepted" })
+    .eq("id", opts.messageId)
+    .is("fan_decision", null);
   await broadcast(`chat:${opts.chatId}`, "message-unlocked", {
     messageId: opts.messageId,
   });

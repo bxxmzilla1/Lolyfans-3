@@ -511,6 +511,28 @@ create table if not exists subscriptions (
 alter table subscriptions enable row level security;
 create index if not exists subscriptions_owner_idx on subscriptions (owner_id);
 
+-- Incoming-media gate: creator photos/videos arrive full screen (blurred)
+-- with Accept / Reject. fan_decision: null = the fan hasn't decided yet,
+-- 'accepted' = shows in the chat, 'rejected' = never shown to the fan.
+-- Messages that existed before this feature are backfilled as accepted so
+-- they don't suddenly demand a decision (the DO block only runs once).
+do $$
+begin
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'messages'
+      and column_name = 'fan_decision'
+  ) then
+    alter table messages add column fan_decision text
+      check (fan_decision in ('accepted', 'rejected'));
+    update messages set fan_decision = 'accepted';
+  end if;
+end $$;
+
+-- Optional decision countdown (seconds) set by the creator per message.
+-- 0 = no time limit; when it runs out the media auto-rejects.
+alter table messages add column if not exists decide_seconds int not null default 0;
+
 -- Public storage bucket for chat media and vault files.
 -- file_size_limit null = no per-bucket cap (project global Storage limit applies).
 insert into storage.buckets (id, name, public, file_size_limit)
