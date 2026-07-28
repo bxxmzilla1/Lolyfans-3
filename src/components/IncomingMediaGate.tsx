@@ -81,6 +81,11 @@ export default function IncomingMediaGate({
             <p className="absolute top-[max(1.4rem,env(safe-area-inset-top))] left-4 right-24 text-white/60 text-xs font-medium truncate drop-shadow">
               {peerName || "They"} sent you a {first.type === "video" ? "video" : "photo"}
               {items.length > 1 ? ` +${items.length - 1} more` : ""}
+              {price > 0 && (
+                <span className="ml-1.5 text-white/85 font-semibold tabular-nums">
+                  {priceLabel(price)}
+                </span>
+              )}
             </p>
 
             <button
@@ -93,17 +98,34 @@ export default function IncomingMediaGate({
             </button>
 
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 px-6">
-              <button
-                type="button"
-                onClick={onAccept}
-                disabled={busy}
-                className="rounded-full bg-accent text-white text-base font-bold px-14 py-3.5 shadow-2xl glow-accent active:opacity-80 disabled:opacity-60 flex items-center justify-center gap-2"
-              >
-                {busy && (
-                  <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+              {/* Incoming-call effect: expanding ripple rings + a breathing button */}
+              <div className="relative">
+                {!busy && (
+                  <>
+                    <span
+                      aria-hidden
+                      className="call-ring absolute inset-0 rounded-full bg-accent/40"
+                    />
+                    <span
+                      aria-hidden
+                      className="call-ring call-ring-delay absolute inset-0 rounded-full bg-accent/30"
+                    />
+                  </>
                 )}
-                Accept
-              </button>
+                <button
+                  type="button"
+                  onClick={onAccept}
+                  disabled={busy}
+                  className={`relative rounded-full bg-accent text-white text-base font-bold px-14 py-3.5 shadow-2xl glow-accent active:opacity-80 disabled:opacity-60 flex items-center justify-center gap-2 ${
+                    busy ? "" : "call-breathe"
+                  }`}
+                >
+                  {busy && (
+                    <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+                  )}
+                  Accept
+                </button>
+              </div>
               {/* Price: very thin and faded, but still readable */}
               {price > 0 && (
                 <p className="text-white/45 font-thin text-2xl tracking-widest tabular-nums drop-shadow">

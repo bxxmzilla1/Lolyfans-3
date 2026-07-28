@@ -147,6 +147,37 @@ body::before {
   animation: offer-pulse 1.6s ease-out infinite;
 }
 
+/* Incoming-call effect on the media gate's Accept button: the button
+   breathes while ripple rings expand outward, like a ringing call. */
+@keyframes call-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.07);
+  }
+}
+.call-breathe {
+  animation: call-breathe 1.4s ease-in-out infinite;
+}
+@keyframes call-ring {
+  0% {
+    transform: scale(1);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+.call-ring {
+  animation: call-ring 1.4s ease-out infinite;
+}
+.call-ring-delay {
+  animation-delay: 0.45s;
+}
+
 /* Loading shimmer sweeping across incoming locked media cards */
 @keyframes shimmer-sweep {
   0% {
