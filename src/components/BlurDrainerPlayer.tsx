@@ -32,14 +32,18 @@ export default function BlurDrainerPlayer({
   onProgress?: (layersCleared: number) => void;
 }) {
   const [cleared, setCleared] = useState(initialCleared);
-  const [busy, setBusy] = useState(false);
   const [peelFlash, setPeelFlash] = useState(false);
   const [card, setCard] = useState<{
     clientSecret: string;
     amountCents: number;
     country: string | null;
   } | null>(null);
+  const [cardNote, setCardNote] = useState<string | null>(null);
   const prevCleared = useRef(initialCleared);
+  // Optimistic taps: the layer clears instantly; the charge settles in the
+  // background. Track in-flight charges so a failure can revert one layer.
+  const inflightRef = useRef(0);
+  const [inflight, setInflight] = useState(0);
   // Blur coordinates are relative to the VIDEO FRAME (set in the editor), so
   // map them onto the frame's real on-screen rect, excluding letterbox bars.
   const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
@@ -75,8 +79,9 @@ export default function BlurDrainerPlayer({
         const res = await fetch(`/api/payments/blur-drain?messageId=${messageId}`);
         if (!res.ok || !alive) return;
         const data = await res.json();
-        if (typeof data.layersCleared === "number") {
-          setCleared(data.layersCleared);
+        // Don't overwrite optimistic progress while charges are settling.
+        if (typeof data.layersCleared === "number" && inflightRef.current === 0) {
+          setCleared((c) => Math.max(c, data.layersCleared));
           onProgress?.(data.layersCleared);
         }
       } catch {
@@ -89,9 +94,13 @@ export default function BlurDrainerPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messageId]);
 
+  /** Instant unblur: peel the layer now, settle the charge in the background.
+   *  If the payment fails, the layer fogs back and the card form explains. */
   async function tap() {
-    if (busy || remaining <= 0 || card) return;
-    setBusy(true);
+    if (card || cleared + inflightRef.current >= config.layers) return;
+    setCleared((c) => Math.min(config.layers, c + 1));
+    inflightRef.current += 1;
+    setInflight(inflightRef.current);
     try {
       const res = await fetch("/api/payments/blur-drain", {
         method: "POST",
@@ -100,21 +109,27 @@ export default function BlurDrainerPlayer({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && typeof data.layersCleared === "number") {
-        setCleared(data.layersCleared);
         onProgress?.(data.layersCleared);
       } else if (res.ok && data.clientSecret) {
+        // Charge didn't go through — refog that layer and collect the card.
+        setCleared((c) => Math.max(0, c - 1));
+        setCardNote(
+          "Your payment didn't go through. Check your card details to keep unblurring."
+        );
         setCard({
           clientSecret: data.clientSecret,
           amountCents: Number(data.amountCents ?? config.priceCents),
           country: data.country ?? null,
         });
-      } else if (!res.ok) {
-        alert(data.error || "Could not charge this tap");
+      } else {
+        setCleared((c) => Math.max(0, c - 1));
       }
     } catch {
-      alert("Could not charge this tap");
+      setCleared((c) => Math.max(0, c - 1));
+    } finally {
+      inflightRef.current = Math.max(0, inflightRef.current - 1);
+      setInflight(inflightRef.current);
     }
-    setBusy(false);
   }
 
   async function completeCard(paymentIntentId: string) {
@@ -126,13 +141,14 @@ export default function BlurDrainerPlayer({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && typeof data.layersCleared === "number") {
-        setCleared(data.layersCleared);
+        setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
       }
     } catch {
       // webhook still records
     }
     setCard(null);
+    setCardNote(null);
   }
 
   // Checkpoint marks along the progress track (every layer).
@@ -149,18 +165,15 @@ export default function BlurDrainerPlayer({
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full bg-black/40 border border-white/20 text-white/80 text-xs font-medium px-3.5 py-1.5 backdrop-blur"
+              className="rounded-full bg-black/40 border border-white/20 text-white/80 text-xs font-light px-3.5 py-1.5 backdrop-blur"
             >
               Close
             </button>
-            <p className="text-white text-base font-extrabold tracking-tight drop-shadow-lg tabular-nums">
-              {blurDrainPriceLabel(config.priceCents)}
-              <span className="text-white/70 text-sm font-semibold ml-1">
-                / tap
-              </span>
+            <p className="text-white/80 text-sm font-light tracking-wide drop-shadow tabular-nums">
+              {blurDrainPriceLabel(config.priceCents)} / tap
             </p>
-            <p className="text-white/75 text-xs font-medium drop-shadow max-w-[11rem]">
-              Tap the screen to unblur · {config.layers} layers
+            <p className="text-white/60 text-xs font-light drop-shadow max-w-[11rem]">
+              Tap the screen to unblur
             </p>
           </div>
         </div>
@@ -169,7 +182,7 @@ export default function BlurDrainerPlayer({
           type="button"
           ref={setContainerEl}
           onClick={tap}
-          disabled={busy || remaining <= 0 || !!card}
+          disabled={remaining <= 0 || !!card}
           className="relative flex-1 w-full min-h-0 disabled:cursor-default"
           aria-label="Tap to unblur one layer"
         >
@@ -206,23 +219,9 @@ export default function BlurDrainerPlayer({
                 boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
               }}
             >
-              {/* Stacked “layer sheets” — peel count shrinks so progress is obvious */}
-              {Array.from({ length: remaining }, (_, i) => (
-                <span
-                  key={i}
-                  className="absolute inset-0 transition-opacity duration-500"
-                  style={{
-                    background: `rgba(255,255,255,${0.03 + (i / Math.max(remaining, 1)) * 0.04})`,
-                    opacity: 0.35 + (i / Math.max(remaining, 1)) * 0.45,
-                  }}
-                />
-              ))}
-              <span className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 px-2 text-center">
-                <span className="text-white/90 text-[11px] font-extrabold drop-shadow-lg tabular-nums">
-                  {cleared}/{config.layers}
-                </span>
-                <span className="text-white/70 text-[10px] font-semibold drop-shadow">
-                  more clear each tap
+              <span className="absolute inset-0 flex items-center justify-center px-3 text-center">
+                <span className="text-white/85 text-2xl font-thin tracking-wide drop-shadow-lg select-none">
+                  Tap to unblur
                 </span>
               </span>
             </span>
@@ -241,26 +240,24 @@ export default function BlurDrainerPlayer({
               }}
             />
           )}
-          {busy && (
-            <span className="absolute inset-0 flex items-center justify-center bg-black/20">
-              <span className="w-8 h-8 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-            </span>
-          )}
         </button>
 
-        {/* Progress bar with layer checkpoints */}
-        <div className="relative z-20 px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 bg-gradient-to-t from-black/80 to-transparent">
-          <div className="flex items-center justify-between text-[11px] text-white/70 mb-1.5">
-            <span>
-              {cleared}/{config.layers} cleared
+        {/* Minimal progress: slim bar + checkpoints, quiet labels */}
+        <div className="relative z-20 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 bg-gradient-to-t from-black/70 to-transparent">
+          <div className="flex items-center justify-between text-[11px] text-white/50 font-light mb-2">
+            <span className="tabular-nums">
+              {cleared}/{config.layers}
             </span>
-            <span>
+            <span className="flex items-center gap-1.5">
+              {inflight > 0 && (
+                <span className="w-3 h-3 rounded-full border border-white/30 border-t-white/80 animate-spin" />
+              )}
               {remaining > 0
                 ? `${remaining} tap${remaining === 1 ? "" : "s"} left`
                 : "Fully clear"}
             </span>
           </div>
-          <div className="relative h-2.5 rounded-full bg-white/15">
+          <div className="relative h-1.5 rounded-full bg-white/10">
             <div
               className="absolute inset-y-0 left-0 rounded-full bg-accent transition-all duration-300"
               style={{ width: `${progress * 100}%` }}
@@ -268,10 +265,8 @@ export default function BlurDrainerPlayer({
             {checkpoints.map((i) => (
               <span
                 key={i}
-                className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2 h-2 rounded-full border ${
-                  i <= cleared
-                    ? "bg-accent border-white"
-                    : "bg-white/20 border-white/40"
+                className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full ${
+                  i <= cleared ? "bg-white" : "bg-white/25"
                 }`}
                 style={{ left: `${(i / config.layers) * 100}%` }}
               />
@@ -281,14 +276,22 @@ export default function BlurDrainerPlayer({
 
         {card && (
           <div className="absolute inset-0 z-30 flex items-center justify-center p-4 bg-black/60">
-            <div className="w-full max-w-sm">
+            <div className="w-full max-w-sm space-y-2">
+              {cardNote && (
+                <p className="rounded-xl bg-red-500/15 border border-red-500/40 text-red-200 text-xs font-light px-3.5 py-2.5 text-center">
+                  {cardNote}
+                </p>
+              )}
               <EmbeddedCardTopup
                 clientSecret={card.clientSecret}
                 amountCents={card.amountCents}
                 label="Unblur tap"
                 countryGuess={card.country}
                 onSuccess={completeCard}
-                onCancel={() => setCard(null)}
+                onCancel={() => {
+                  setCard(null);
+                  setCardNote(null);
+                }}
               />
             </div>
           </div>
