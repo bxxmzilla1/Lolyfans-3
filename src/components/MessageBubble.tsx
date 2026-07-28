@@ -23,6 +23,7 @@ import {
   IconEyeOff,
   IconLink,
   IconLock,
+  IconPlay,
   IconReply,
   IconTip,
   IconUnlock,
@@ -410,6 +411,34 @@ export default function MessageBubble({
           preload="metadata"
           className={`w-full object-cover ${dimShape} blur-2xl scale-110 pointer-events-none select-none`}
         />
+      );
+    }
+    // BlurDrainer for the fan: the play control reopens the BlurDrainer
+    // screen (with remaining layers) instead of the plain fullscreen video.
+    if (drainCfg && !mine && onOpenBlurDrainer) {
+      return (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenBlurDrainer(message);
+          }}
+          aria-label="Open BlurDrainer"
+          className="relative w-full block group/drain"
+        >
+          <video
+            src={`${mediaUrl(item.path)}#t=0.001`}
+            muted
+            playsInline
+            preload="metadata"
+            className="w-full max-h-80 object-cover pointer-events-none"
+          />
+          <span className="absolute inset-0 flex items-center justify-center bg-black/25">
+            <span className="w-12 h-12 rounded-full bg-black/55 border border-white/30 flex items-center justify-center group-active/drain:scale-95 transition-transform">
+              <IconPlay className="w-5 h-5 text-white ml-0.5" />
+            </span>
+          </span>
+        </button>
       );
     }
     return (

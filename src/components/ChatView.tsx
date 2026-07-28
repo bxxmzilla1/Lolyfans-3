@@ -1090,6 +1090,11 @@ export default function ChatView({
     ) {
       return;
     }
+    // BlurDrainer videos reopen the control screen, not the plain lightbox.
+    if (role === "guest" && parseBlurDrainer(message.blur_drainer)) {
+      setDrainPlayer(message);
+      return;
+    }
     setLightbox({ message, index: Math.min(Math.max(index, 0), items.length - 1) });
   }
 

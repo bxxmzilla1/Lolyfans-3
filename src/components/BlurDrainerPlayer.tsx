@@ -13,8 +13,8 @@ import {
 
 /**
  * Fullscreen BlurDrainer: video plays under a stacked square blur. Each tap
- * is a one-tap card charge that peels one layer. Progress + checkpoints so
- * the fan can leave and come back later.
+ * on the blur square (not the whole screen) is a one-tap card charge that
+ * peels one layer. The first tap also unmutes the video.
  */
 export default function BlurDrainerPlayer({
   videoPath,
@@ -53,10 +53,10 @@ export default function BlurDrainerPlayer({
   const remaining = Math.max(0, config.layers - cleared);
   const progress = config.layers > 0 ? cleared / config.layers : 1;
   // How fogged the region still is (1 = untouched, 0 = fully paid off).
-  // Curve so each early tap already shows a clear “more video” step.
   const fog = remaining <= 0 ? 0 : Math.pow(remaining / config.layers, 0.85);
   const blurPx = fog * 36;
   const frost = fog * 0.42;
+  const unmuted = cleared >= 1;
 
   useEffect(() => {
     if (cleared > prevCleared.current) {
@@ -71,6 +71,14 @@ export default function BlurDrainerPlayer({
   useEffect(() => {
     setCleared(initialCleared);
   }, [initialCleared, messageId]);
+
+  // Keep the <video> muted attribute in sync (first tap also unmutes inline
+  // inside tap() so it counts as a user gesture on iOS).
+  useEffect(() => {
+    if (!videoEl) return;
+    videoEl.muted = !unmuted;
+    if (unmuted) videoEl.play().catch(() => {});
+  }, [videoEl, unmuted]);
 
   useEffect(() => {
     let alive = true;
@@ -98,7 +106,13 @@ export default function BlurDrainerPlayer({
    *  If the payment fails, the layer fogs back and the card form explains. */
   async function tap() {
     if (card || cleared + inflightRef.current >= config.layers) return;
+    const firstTap = cleared === 0;
     setCleared((c) => Math.min(config.layers, c + 1));
+    // Unmute on the first tap while we still have the user gesture.
+    if (firstTap && videoEl) {
+      videoEl.muted = false;
+      videoEl.play().catch(() => {});
+    }
     inflightRef.current += 1;
     setInflight(inflightRef.current);
     try {
@@ -113,6 +127,7 @@ export default function BlurDrainerPlayer({
       } else if (res.ok && data.clientSecret) {
         // Charge didn't go through — refog that layer and collect the card.
         setCleared((c) => Math.max(0, c - 1));
+        if (firstTap && videoEl) videoEl.muted = true;
         setCardNote(
           "Your payment didn't go through. Check your card details to keep unblurring."
         );
@@ -123,9 +138,11 @@ export default function BlurDrainerPlayer({
         });
       } else {
         setCleared((c) => Math.max(0, c - 1));
+        if (firstTap && videoEl) videoEl.muted = true;
       }
     } catch {
       setCleared((c) => Math.max(0, c - 1));
+      if (firstTap && videoEl) videoEl.muted = true;
     } finally {
       inflightRef.current = Math.max(0, inflightRef.current - 1);
       setInflight(inflightRef.current);
@@ -143,6 +160,10 @@ export default function BlurDrainerPlayer({
       if (res.ok && typeof data.layersCleared === "number") {
         setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
+        if (data.layersCleared >= 1 && videoEl) {
+          videoEl.muted = false;
+          videoEl.play().catch(() => {});
+        }
       }
     } catch {
       // webhook still records
@@ -153,15 +174,17 @@ export default function BlurDrainerPlayer({
 
   // Checkpoint marks along the progress track (every layer).
   const checkpoints = Array.from({ length: config.layers + 1 }, (_, i) => i);
+  const blurLabel =
+    cleared === 0 ? "Tap to unblur and unmute" : "Tap to unblur";
 
   return (
     <Portal>
       <div className="fixed inset-0 z-[85] bg-black fade-up flex flex-col">
-        <div className="absolute top-[max(0.75rem,env(safe-area-inset-top))] left-4 right-4 z-20 flex items-start justify-between gap-3">
+        <div className="absolute top-[max(0.75rem,env(safe-area-inset-top))] left-4 right-4 z-20 flex items-start justify-between gap-3 pointer-events-none">
           <p className="text-white text-lg font-extrabold tracking-tight drop-shadow-lg select-none">
             LolyFans
           </p>
-          <div className="flex flex-col items-end gap-1.5 text-right">
+          <div className="flex flex-col items-end gap-1.5 text-right pointer-events-auto">
             <button
               type="button"
               onClick={onClose}
@@ -173,41 +196,37 @@ export default function BlurDrainerPlayer({
               {blurDrainPriceLabel(config.priceCents)} / tap
             </p>
             <p className="text-white/60 text-xs font-light drop-shadow max-w-[11rem]">
-              Tap the screen to unblur
+              {cleared === 0
+                ? "Tap the blur to unblur and unmute"
+                : "Tap the blur to unblur"}
             </p>
           </div>
         </div>
 
-        <button
-          type="button"
-          ref={setContainerEl}
-          onClick={tap}
-          disabled={remaining <= 0 || !!card}
-          className="relative flex-1 w-full min-h-0 disabled:cursor-default"
-          aria-label="Tap to unblur one layer"
-        >
+        {/* Video fills the area; only the blur square itself is tappable. */}
+        <div ref={setContainerEl} className="relative flex-1 w-full min-h-0">
           <video
             ref={setVideoEl}
             src={mediaUrl(videoPath)}
             autoPlay
             playsInline
             loop
-            // Muted so mobile browsers allow continuous autoplay while the fan
-            // taps through layers; onEnded is a fallback if loop is ignored.
-            muted
+            muted={!unmuted}
             controls={false}
             onEnded={(e) => {
               const v = e.currentTarget;
               v.currentTime = 0;
               v.play().catch(() => {});
             }}
-            className="absolute inset-0 w-full h-full object-contain bg-black"
+            className="absolute inset-0 w-full h-full object-contain bg-black pointer-events-none"
           />
-          {/* Progressive fog: each paid layer drops blur + frost so more video shows */}
           {frame && remaining > 0 && (
-            <span
-              aria-hidden
-              className="absolute pointer-events-none border border-white/20 overflow-hidden transition-[backdrop-filter,background-color,opacity] duration-500 ease-out"
+            <button
+              type="button"
+              onClick={tap}
+              disabled={!!card}
+              aria-label={blurLabel}
+              className="absolute z-10 border border-white/20 overflow-hidden transition-[backdrop-filter,background-color,opacity] duration-500 ease-out disabled:opacity-70"
               style={{
                 left: frame.left + config.x * frame.width,
                 top: frame.top + config.y * frame.height,
@@ -219,17 +238,17 @@ export default function BlurDrainerPlayer({
                 boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.12)",
               }}
             >
-              <span className="absolute inset-0 flex items-center justify-center px-3 text-center">
-                <span className="text-white/85 text-2xl font-thin tracking-wide drop-shadow-lg select-none">
-                  Tap to unblur
+              <span className="absolute inset-0 flex items-center justify-center px-3 text-center pointer-events-none">
+                <span className="text-white/85 text-xl sm:text-2xl font-thin tracking-wide drop-shadow-lg select-none leading-snug">
+                  {blurLabel}
                 </span>
               </span>
-            </span>
+            </button>
           )}
           {frame && peelFlash && (
             <span
               aria-hidden
-              className="absolute pointer-events-none animate-pulse"
+              className="absolute pointer-events-none animate-pulse z-10"
               style={{
                 left: frame.left + config.x * frame.width,
                 top: frame.top + config.y * frame.height,
@@ -240,7 +259,7 @@ export default function BlurDrainerPlayer({
               }}
             />
           )}
-        </button>
+        </div>
 
         {/* Minimal progress: slim bar + checkpoints, quiet labels */}
         <div className="relative z-20 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 bg-gradient-to-t from-black/70 to-transparent">
