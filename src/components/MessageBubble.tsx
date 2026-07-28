@@ -318,7 +318,7 @@ export default function MessageBubble({
       <div className="absolute inset-0 z-10 flex items-center justify-center px-4 pointer-events-none">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-accent text-white text-sm font-bold px-4 py-2 shadow-lg text-center leading-snug">
           <IconEye className="w-4 h-4 shrink-0" />
-          Verify Your Account To View Free Content
+          Verify Your Account To Watch Free Content
         </span>
       </div>
       <button

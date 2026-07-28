@@ -44,7 +44,7 @@ export default function VerifyPopupSettings() {
         <p className="font-semibold">Card verification</p>
         <p className="text-xs text-muted mt-1 leading-relaxed">
           While a fan has no card on file, every photo and video you send shows
-          blurred with a <b>Verify Your Account To View Free Content</b>{" "}
+          blurred with a <b>Verify Your Account To Watch Free Content</b>{" "}
           button. Pressing it opens the
           Stripe card inputs right in the chat — to prevent fraud and keep
           underage users away from adult content. The card is saved with{" "}
@@ -87,7 +87,7 @@ export default function VerifyPopupSettings() {
           <div className="absolute inset-0 flex items-center justify-center px-4">
             <span className="inline-flex items-center gap-1.5 rounded-full bg-accent text-white text-sm font-bold px-4 py-2 shadow-lg text-center leading-snug">
               <IconEye className="w-4 h-4 shrink-0" />
-              Verify Your Account To View Free Content
+              Verify Your Account To Watch Free Content
             </span>
           </div>
         </div>
