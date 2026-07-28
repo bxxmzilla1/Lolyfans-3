@@ -84,10 +84,14 @@ export default function VerifyPopupSettings() {
         </p>
         <div className="relative w-64 h-44 rounded-3xl overflow-hidden bg-gradient-to-br from-accent/40 via-card2 to-accent/20 border border-line">
           <div className="absolute inset-0 backdrop-blur-2xl" />
-          <div className="absolute inset-0 flex items-center justify-center px-4">
-            <span className="inline-flex items-center gap-1.5 rounded-full bg-accent text-white text-sm font-bold px-4 py-2 shadow-lg text-center leading-snug">
-              <IconEye className="w-4 h-4 shrink-0" />
-              Verify Your Account To Watch Free Content
+          <div className="absolute inset-0 flex items-center justify-center px-5">
+            <span className="flex flex-col items-center gap-2 rounded-3xl bg-gradient-to-b from-accent to-sky-600 px-5 py-4 shadow-2xl shadow-sky-900/40 ring-1 ring-white/30">
+              <span className="w-9 h-9 rounded-full bg-white/20 backdrop-blur flex items-center justify-center ring-1 ring-white/30">
+                <IconEye className="w-4 h-4 text-white" />
+              </span>
+              <span className="text-white text-xs font-bold text-center leading-snug max-w-[170px] drop-shadow">
+                Verify Your Account To Watch Free Content
+              </span>
             </span>
           </div>
         </div>

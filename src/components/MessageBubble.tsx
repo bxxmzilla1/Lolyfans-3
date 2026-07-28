@@ -315,10 +315,14 @@ export default function MessageBubble({
   // card opens the verification popup (SetupIntent — no charge).
   const verifyOverlay = verifyBlurred && (
     <>
-      <div className="absolute inset-0 z-10 flex items-center justify-center px-4 pointer-events-none">
-        <span className="inline-flex items-center gap-1.5 rounded-full bg-accent text-white text-sm font-bold px-4 py-2 shadow-lg text-center leading-snug">
-          <IconEye className="w-4 h-4 shrink-0" />
-          Verify Your Account To Watch Free Content
+      <div className="absolute inset-0 z-10 flex items-center justify-center px-5 pointer-events-none">
+        <span className="flex flex-col items-center gap-2.5 rounded-3xl bg-gradient-to-b from-accent to-sky-600 px-6 py-5 shadow-2xl shadow-sky-900/40 ring-1 ring-white/30">
+          <span className="w-11 h-11 rounded-full bg-white/20 backdrop-blur flex items-center justify-center ring-1 ring-white/30">
+            <IconEye className="w-5 h-5 text-white" />
+          </span>
+          <span className="text-white text-sm font-bold text-center leading-snug max-w-[190px] drop-shadow">
+            Verify Your Account To Watch Free Content
+          </span>
         </span>
       </div>
       <button
