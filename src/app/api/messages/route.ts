@@ -76,17 +76,17 @@ export async function GET(req: NextRequest) {
     // gone for them for good.
     messages = messages.filter((m) => !m.hidden && m.fan_decision !== "rejected");
   }
+  // Blur progress goes to both sides: fans resume where they left off, the
+  // creator sees how many layers were tapped (green bubble).
   const [{ data: unlocks }, { data: drains }] = await Promise.all([
     supabaseAdmin()
       .from("message_unlocks")
       .select("message_id")
       .eq("chat_id", chatId),
-    auth.role === "guest"
-      ? supabaseAdmin()
-          .from("message_blur_progress")
-          .select("message_id, layers_cleared")
-          .eq("chat_id", chatId)
-      : Promise.resolve({ data: [] as { message_id: string; layers_cleared: number }[] }),
+    supabaseAdmin()
+      .from("message_blur_progress")
+      .select("message_id, layers_cleared")
+      .eq("chat_id", chatId),
   ]);
   const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id));
   const drainMap = new Map(

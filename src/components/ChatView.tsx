@@ -288,6 +288,23 @@ export default function ChatView({
           )
         );
       })
+      .on("broadcast", { event: "blur-drain-progress" }, ({ payload }) => {
+        const p = payload as { messageId?: string; layersCleared?: number } | null;
+        if (!p?.messageId || typeof p.layersCleared !== "number") return;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === p.messageId
+              ? {
+                  ...m,
+                  blur_layers_cleared: Math.max(
+                    m.blur_layers_cleared ?? 0,
+                    p.layersCleared!
+                  ),
+                }
+              : m
+          )
+        );
+      })
       .on("broadcast", { event: "typing" }, ({ payload }) => {
         if ((payload as { sender: string }).sender === role) return;
         setPeerTyping(true);
@@ -322,6 +339,7 @@ export default function ChatView({
             id: string;
             fan_decision: "accepted" | "rejected" | null;
             unlocked: boolean;
+            blur_layers_cleared?: number;
           }[];
         };
         const media = data.media ?? [];
@@ -332,7 +350,12 @@ export default function ChatView({
           const next = prev.map((m) => {
             const d = byId.get(m.id);
             if (!d) return m;
-            if (m.fan_decision === d.fan_decision && !!m.unlocked === d.unlocked) {
+            const drained = d.blur_layers_cleared ?? 0;
+            if (
+              m.fan_decision === d.fan_decision &&
+              !!m.unlocked === d.unlocked &&
+              (m.blur_layers_cleared ?? 0) === drained
+            ) {
               return m;
             }
             changed = true;
@@ -340,6 +363,7 @@ export default function ChatView({
               ...m,
               fan_decision: d.fan_decision,
               unlocked: d.unlocked,
+              blur_layers_cleared: drained,
             };
           });
           return changed ? next : prev;

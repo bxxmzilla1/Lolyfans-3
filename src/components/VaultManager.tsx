@@ -113,9 +113,16 @@ export default function VaultManager() {
     const channel = supabase
       .channel(`chat:${chatId}`)
       .on("broadcast", { event: "new-message" }, () => loadSendStatus())
-      .on("broadcast", { event: "message-unlocked" }, () => loadSendStatus());
+      .on("broadcast", { event: "message-unlocked" }, () => loadSendStatus())
+      .on("broadcast", { event: "blur-drain-progress" }, () => loadSendStatus());
     channel.subscribe();
+    // Poll every second (visible tab) so switching chats / fan payments
+    // repaint the outlines even if a broadcast is missed.
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") loadSendStatus();
+    }, 1000);
     return () => {
+      clearInterval(timer);
       supabase.removeChannel(channel);
     };
   }, [chatId, loadSendStatus]);

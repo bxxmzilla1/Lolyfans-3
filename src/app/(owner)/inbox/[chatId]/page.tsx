@@ -21,39 +21,49 @@ export default async function OwnerChatPage({
   const { chatId } = await params;
 
   const db = supabaseAdmin();
-  const [{ data: chat }, { data: messages }, { data: unlocks }] = await Promise.all([
-    db
-      .from("chats")
-      .select("*, invites(label)")
-      .eq("id", chatId)
-      .eq("owner_id", ownerId)
-      .single(),
-    // Newest 500, flipped to chronological below — ascending+limit would
-    // freeze the view at the oldest 500 once a chat grows past that.
-    db
-      .from("messages")
-      .select("*")
-      .eq("chat_id", chatId)
-      .order("created_at", { ascending: false })
-      .limit(500),
-    // Paid unlocks tint the creator's own bubble green.
-    db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
-    // Opening the chat marks it as read (clears the sidebar badge)
-    db
-      .from("chats")
-      .update({ last_read_at: new Date().toISOString() })
-      .eq("id", chatId)
-      .eq("owner_id", ownerId),
-  ]);
+  const [{ data: chat }, { data: messages }, { data: unlocks }, { data: drains }] =
+    await Promise.all([
+      db
+        .from("chats")
+        .select("*, invites(label)")
+        .eq("id", chatId)
+        .eq("owner_id", ownerId)
+        .single(),
+      // Newest 500, flipped to chronological below — ascending+limit would
+      // freeze the view at the oldest 500 once a chat grows past that.
+      db
+        .from("messages")
+        .select("*")
+        .eq("chat_id", chatId)
+        .order("created_at", { ascending: false })
+        .limit(500),
+      // Paid unlocks tint the creator's own bubble green.
+      db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
+      // BlurDrainer taps: green bubble + tapped-layer count on own videos.
+      db
+        .from("message_blur_progress")
+        .select("message_id, layers_cleared")
+        .eq("chat_id", chatId),
+      // Opening the chat marks it as read (clears the sidebar badge)
+      db
+        .from("chats")
+        .update({ last_read_at: new Date().toISOString() })
+        .eq("id", chatId)
+        .eq("owner_id", ownerId),
+    ]);
   if (!chat) notFound();
 
   const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id as string));
+  const drainMap = new Map(
+    (drains ?? []).map((d) => [d.message_id as string, d.layers_cleared as number])
+  );
   const initialMessages = (messages ?? [])
     .slice()
     .reverse()
     .map((m) => ({
       ...m,
       unlocked: unlockedIds.has(m.id),
+      ...(drainMap.has(m.id) ? { blur_layers_cleared: drainMap.get(m.id) } : {}),
     }));
 
   // Where the guest is chatting from: precise City, Country from their IP,

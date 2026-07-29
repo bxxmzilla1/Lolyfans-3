@@ -202,20 +202,23 @@ export default function MessageBubble({
   const price = message.price_cents ?? 0;
   // A fan who paid for this priced media sees it revealed.
   const paidUnlocked = !mine && locked && price > 0 && !!message.unlocked;
-  // Creator's own priced media that the fan paid for → green bubble.
-  const soldByMe = mine && price > 0 && !!message.unlocked;
+  // BlurDrainer config + how many layers this fan has paid off.
+  const drainCfg = message.blur_drainer ?? null;
+  const drainCleared = message.blur_layers_cleared ?? 0;
+  // Creator's own priced media that the fan paid for → green bubble. A
+  // BlurDrainer video turns green as soon as the fan taps the first layer.
+  const soldByMe =
+    mine && ((price > 0 && !!message.unlocked) || (!!drainCfg && drainCleared > 0));
   // Incoming-media gate labels for the creator (fans never see rejected media).
   const declinedByFan = mine && message.fan_decision === "rejected";
   // Free photos/videos the fan accepted — paid unlocks already use the green bubble.
   // BlurDrainer has its own badge below.
-  const drainCfg = message.blur_drainer ?? null;
   const acceptedFreeByFan =
     mine &&
     message.fan_decision === "accepted" &&
     price <= 0 &&
     !drainCfg &&
     mediaItems.some((i) => i.type === "image" || i.type === "video");
-  const drainCleared = message.blur_layers_cleared ?? 0;
   // Receiver of a locked message: blurred, unless they've paid to unlock it.
   const blurred = locked && !mine && !paidUnlocked;
   // Verify media trigger: incoming photos/videos stay locked until the fan
@@ -493,8 +496,12 @@ export default function MessageBubble({
         )}
         {mine && drainCfg && (
           <div className="px-3 pt-2">
-            <span className="inline-flex items-center gap-1 rounded-full bg-accent/90 text-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide">
-              BlurDrainer · {drainCfg.layers} layers · $
+            <span
+              className={`inline-flex items-center gap-1 rounded-full text-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                drainCleared > 0 ? "bg-emerald-500/90" : "bg-accent/90"
+              }`}
+            >
+              BlurDrainer · {drainCleared}/{drainCfg.layers} tapped · $
               {(drainCfg.priceCents / 100).toFixed(2).replace(/\.00$/, "")}/tap
             </span>
           </div>
