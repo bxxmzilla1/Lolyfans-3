@@ -416,8 +416,9 @@ export default function MessageBubble({
         />
       );
     }
-    // BlurDrainer for the fan: the play control reopens the BlurDrainer
-    // screen (with remaining layers) instead of the plain fullscreen video.
+    // BlurDrainer for the fan: looks exactly like a regular video (same blue
+    // play button, no price/progress hints), but tapping it opens the
+    // BlurDrainer screen with the remaining layers.
     if (drainCfg && !mine && onOpenBlurDrainer) {
       return (
         <button
@@ -426,20 +427,18 @@ export default function MessageBubble({
             e.stopPropagation();
             onOpenBlurDrainer(message);
           }}
-          aria-label="Open BlurDrainer"
-          className="relative w-full block group/drain"
+          aria-label="Play video"
+          className="relative w-full block"
         >
           <video
             src={`${mediaUrl(item.path)}#t=0.001`}
             muted
             playsInline
             preload="metadata"
-            className="w-full max-h-80 object-cover pointer-events-none"
+            className="w-full max-h-80 object-contain pointer-events-none"
           />
-          <span className="absolute inset-0 flex items-center justify-center bg-black/25">
-            <span className="w-12 h-12 rounded-full bg-black/55 border border-white/30 flex items-center justify-center group-active/drain:scale-95 transition-transform">
-              <IconPlay className="w-5 h-5 text-white ml-0.5" />
-            </span>
+          <span className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-accent text-white glow-accent flex items-center justify-center active:scale-95 transition-transform">
+            <IconPlay className="w-6 h-6 translate-x-0.5" />
           </span>
         </button>
       );
@@ -547,36 +546,6 @@ export default function MessageBubble({
             {renderSlide(active)}
             {lockedOverlay}
             {verifyOverlay}
-            {!mine &&
-              drainCfg &&
-              message.fan_decision === "accepted" &&
-              onOpenBlurDrainer && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenBlurDrainer(message);
-                  }}
-                  className="absolute inset-x-0 bottom-0 z-20 px-3 py-2.5 bg-gradient-to-t from-black/80 to-transparent text-left"
-                >
-                  <p className="text-white text-[11px] font-bold">
-                    $
-                    {(drainCfg.priceCents / 100).toFixed(2).replace(/\.00$/, "")}
-                    /tap · Tap to unblur
-                  </p>
-                  <div className="mt-1 relative h-1.5 rounded-full bg-white/20">
-                    <div
-                      className="absolute inset-y-0 left-0 rounded-full bg-accent"
-                      style={{
-                        width: `${(drainCleared / drainCfg.layers) * 100}%`,
-                      }}
-                    />
-                  </div>
-                  <p className="text-white/70 text-[10px] mt-0.5 tabular-nums">
-                    {drainCleared}/{drainCfg.layers} cleared
-                  </p>
-                </button>
-              )}
             {lockToggle}
             {mediaItems.length > 1 && (
               <>
