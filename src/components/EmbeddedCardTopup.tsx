@@ -34,6 +34,9 @@ type WizardProps = {
   amountCents?: number;
   /** What the payment is for, shown in the header (e.g. "Unlock content"). */
   label?: string;
+  /** Present a payment as a card verification: no label/price in the header,
+   *  the confirm button says "Verify card". The charge still happens. */
+  presentAsVerify?: boolean;
   countryGuess: string | null;
   /** Receives the PaymentIntent id ("payment") or SetupIntent id ("setup"). */
   onSuccess: (intentId: string) => Promise<void> | void;
@@ -45,6 +48,7 @@ function CardWizard({
   mode = "payment",
   amountCents = 0,
   label = "Purchase",
+  presentAsVerify = false,
   countryGuess,
   onSuccess,
   onCancel,
@@ -158,6 +162,10 @@ function CardWizard({
               <span className="text-xs font-semibold text-emerald-500">
                 — no charge
               </span>
+            </p>
+          ) : presentAsVerify ? (
+            <p className="text-sm font-extrabold leading-tight">
+              Verify your card
             </p>
           ) : (
             <p className="text-sm font-extrabold leading-tight">
@@ -291,11 +299,17 @@ function CardWizard({
                   : paying
                     ? "Verifying…"
                     : "Verify — no charge"
-                : done
-                  ? "Done!"
-                  : paying
-                    ? "Processing…"
-                    : `Pay ${priceLabel(amountCents)}`}
+                : presentAsVerify
+                  ? done
+                    ? "Verified!"
+                    : paying
+                      ? "Verifying…"
+                      : "Verify card"
+                  : done
+                    ? "Done!"
+                    : paying
+                      ? "Processing…"
+                      : `Pay ${priceLabel(amountCents)}`}
             </button>
           </div>
         </div>
@@ -306,7 +320,9 @@ function CardWizard({
       <p className="text-[10px] text-muted text-center">
         {mode === "setup"
           ? "Secured by Stripe · No payment will be made — verification only"
-          : "Secured by Stripe · Your card is saved for one-tap purchases"}
+          : presentAsVerify
+            ? "Secured by Stripe · Card verification"
+            : "Secured by Stripe · Your card is saved for one-tap purchases"}
       </p>
     </div>
   );

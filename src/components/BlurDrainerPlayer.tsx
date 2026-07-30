@@ -138,8 +138,8 @@ export default function BlurDrainerPlayer({
         const needsCard = !!data.needsCard;
         setCardNote(
           needsCard
-            ? "Add your card below to unblur — each tap is one charge."
-            : "Your payment didn't go through. Check your card details to keep unblurring."
+            ? "Verify your card below to unblur the video."
+            : "Verification didn't go through. Check your card details to keep unblurring."
         );
         setCard({
           clientSecret: data.clientSecret,
@@ -286,7 +286,7 @@ export default function BlurDrainerPlayer({
               <EmbeddedCardTopup
                 clientSecret={card.clientSecret}
                 amountCents={card.amountCents}
-                label="Unblur tap"
+                presentAsVerify
                 countryGuess={card.country}
                 onSuccess={completeCard}
                 onCancel={() => {
