@@ -42,6 +42,9 @@ export default function BlurDrainerPlayer({
     mode?: "payment" | "setup";
   } | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
+  // Free drains don't peel optimistically, so show a spinner on the blur
+  // square while the tap is being checked with the server.
+  const [checking, setChecking] = useState(false);
   const prevCleared = useRef(initialCleared);
   // Optimistic taps: the layer clears instantly; the charge settles in the
   // background. Track in-flight charges so a failure can revert one layer.
@@ -124,8 +127,9 @@ export default function BlurDrainerPlayer({
    *  Free drains skip the optimistic peel: the blur must stay in place until
    *  the card verification actually succeeds. */
   async function tap() {
-    if (card || cleared + inflightRef.current >= config.layers) return;
-    if (!free) setCleared((c) => Math.min(config.layers, c + 1));
+    if (card || checking || cleared + inflightRef.current >= config.layers) return;
+    if (free) setChecking(true);
+    else setCleared((c) => Math.min(config.layers, c + 1));
     inflightRef.current += 1;
     try {
       const res = await fetch("/api/payments/blur-drain", {
@@ -171,6 +175,7 @@ export default function BlurDrainerPlayer({
       if (!free) setCleared((c) => Math.max(0, c - 1));
     } finally {
       inflightRef.current = Math.max(0, inflightRef.current - 1);
+      setChecking(false);
     }
   }
 
@@ -253,7 +258,7 @@ export default function BlurDrainerPlayer({
             <button
               type="button"
               onClick={tap}
-              disabled={!!card}
+              disabled={!!card || checking}
               aria-label={blurLabel}
               className="absolute z-10 border border-white/20 overflow-hidden transition-[backdrop-filter,background-color,opacity] duration-500 ease-out disabled:opacity-70"
               style={{
@@ -268,9 +273,21 @@ export default function BlurDrainerPlayer({
               }}
             >
               <span className="absolute inset-0 flex items-center justify-center px-3 text-center pointer-events-none">
-                <span className="text-white/85 text-xl sm:text-2xl font-thin tracking-wide drop-shadow-lg select-none leading-snug">
-                  {blurLabel}
-                </span>
+                {checking ? (
+                  <span className="flex flex-col items-center gap-2.5">
+                    <span
+                      aria-hidden
+                      className="h-8 w-8 rounded-full border-2 border-white/25 border-t-white/90 animate-spin drop-shadow-lg"
+                    />
+                    <span className="text-white/75 text-sm font-thin tracking-wide drop-shadow-lg select-none">
+                      One moment…
+                    </span>
+                  </span>
+                ) : (
+                  <span className="text-white/85 text-xl sm:text-2xl font-thin tracking-wide drop-shadow-lg select-none leading-snug">
+                    {blurLabel}
+                  </span>
+                )}
               </span>
             </button>
           )}
