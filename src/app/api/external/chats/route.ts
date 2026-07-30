@@ -159,6 +159,12 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   const chatId = req.nextUrl.searchParams.get("chatId");
 
+  // Optional per-chat message window (?limit=N): callers that only need the
+  // most recent slice of every transcript get a much cheaper read. Absent or
+  // 0 keeps the defaults (80 in the list, 200 on a deep fetch).
+  const limitParam = Math.floor(Number(req.nextUrl.searchParams.get("limit") || 0));
+  const msgLimit = limitParam > 0 ? Math.min(500, Math.max(10, limitParam)) : 0;
+
   // Single-chat deep fetch (opened conversation).
   if (chatId) {
     const { data: chat, error } = await db
@@ -174,7 +180,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Chat not found" }, { status: 404, headers: CORS });
     }
     try {
-      const msgs = await loadMessagesForChat(db, chat.id, 200);
+      const msgs = await loadMessagesForChat(db, chat.id, msgLimit || 200);
       const last = msgs[msgs.length - 1];
       return NextResponse.json(
         {
@@ -212,7 +218,7 @@ export async function GET(req: NextRequest) {
   let messagesByChat = new Map<string, ReturnType<typeof shapeMessage>[]>();
   if (ids.length) {
     try {
-      messagesByChat = await loadMessagesForChats(db, ids, 80);
+      messagesByChat = await loadMessagesForChats(db, ids, msgLimit || 80);
     } catch (err) {
       console.error("external/chats message load failed:", err);
       // Still return the chat list — Orion can deep-fetch per chat.

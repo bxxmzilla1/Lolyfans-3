@@ -8,6 +8,8 @@ import GuestPresenceStatus from "@/components/GuestPresenceStatus";
 import OwnerOnlineSwitch from "@/components/OwnerOnlineSwitch";
 import FanWalletStatus from "@/components/FanWalletStatus";
 import PpmAcceptedBadge from "@/components/PpmAcceptedBadge";
+import PpmFreeLeft from "@/components/PpmFreeLeft";
+import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
 import { IconBack, IconMapPin } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
@@ -22,39 +24,47 @@ export default async function OwnerChatPage({
   const { chatId } = await params;
 
   const db = supabaseAdmin();
-  const [{ data: chat }, { data: messages }, { data: unlocks }, { data: drains }] =
-    await Promise.all([
-      db
-        .from("chats")
-        .select("*, invites(label)")
-        .eq("id", chatId)
-        .eq("owner_id", ownerId)
-        .single(),
-      // Newest 500, flipped to chronological below — ascending+limit would
-      // freeze the view at the oldest 500 once a chat grows past that.
-      db
-        .from("messages")
-        .select("*")
-        .eq("chat_id", chatId)
-        .order("created_at", { ascending: false })
-        .limit(500),
-      // Paid unlocks tint the creator's own bubble green.
-      db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
-      // BlurDrainer taps: green bubble + tapped-layer count on own videos.
-      db
-        .from("message_blur_progress")
-        .select("message_id, layers_cleared")
-        .eq("chat_id", chatId),
-      // Opening the chat marks it as read (clears the sidebar badge)
-      db
-        .from("chats")
-        .update({ last_read_at: new Date().toISOString() })
-        .eq("id", chatId)
-        .eq("owner_id", ownerId),
-    ]);
+  const [
+    { data: chat },
+    { data: messages },
+    { data: unlocks },
+    { data: drains },
+    { data: ownerUser },
+  ] = await Promise.all([
+    db
+      .from("chats")
+      .select("*, invites(label)")
+      .eq("id", chatId)
+      .eq("owner_id", ownerId)
+      .single(),
+    // Newest 500, flipped to chronological below — ascending+limit would
+    // freeze the view at the oldest 500 once a chat grows past that.
+    db
+      .from("messages")
+      .select("*")
+      .eq("chat_id", chatId)
+      .order("created_at", { ascending: false })
+      .limit(500),
+    // Paid unlocks tint the creator's own bubble green.
+    db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
+    // BlurDrainer taps: green bubble + tapped-layer count on own videos.
+    db
+      .from("message_blur_progress")
+      .select("message_id, layers_cleared")
+      .eq("chat_id", chatId),
+    db.auth.admin.getUserById(ownerId),
+    // Opening the chat marks it as read (clears the sidebar badge)
+    db
+      .from("chats")
+      .update({ last_read_at: new Date().toISOString() })
+      .eq("id", chatId)
+      .eq("owner_id", ownerId),
+  ]);
   // Chat gone (e.g. deleted via guest exit) — back to the inbox instead of
   // stranding the creator on a 404.
   if (!chat) redirect("/inbox");
+
+  const ppm = payPerMessageFromMetadata(ownerUser?.user?.user_metadata ?? {});
 
   const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id as string));
   const drainMap = new Map(
@@ -105,6 +115,12 @@ export default async function OwnerChatPage({
               )}
             </span>
           </FanWalletStatus>
+          <PpmFreeLeft
+            chatId={chatId}
+            initialEnabled={ppm.enabled}
+            initialFree={ppm.freeMessages}
+            initialUsed={chat.ppm_messages_used ?? 0}
+          />
         </p>
         <p className="text-muted text-xs truncate flex items-center gap-1.5">
           {guestLocation && (

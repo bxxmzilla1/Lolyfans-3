@@ -17,7 +17,7 @@ export default function InboxPage() {
           </div>
           <LogoutButton />
         </header>
-        <div className="flex-1 overflow-y-auto pb-20">
+        <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y pb-20">
           <ChatList />
         </div>
       </div>

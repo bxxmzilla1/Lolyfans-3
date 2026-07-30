@@ -25,10 +25,18 @@ type ChatRow = {
   stripe_payment_method_id: string | null;
   /** Fan accepted the Pay per Message terms popup (checkmark by their name). */
   ppm_accepted_at?: string | null;
+  /** Fan messages counted against the free allowance. */
+  ppm_messages_used?: number | null;
   invites: { label: string | null; code: string } | null;
   preview: ChatPreview | null;
   unread: number;
   categories: string[];
+};
+
+type PpmConfig = {
+  enabled: boolean;
+  freeMessages: number;
+  priceCents: number;
 };
 
 type InboxMessagePayload = {
@@ -46,6 +54,7 @@ type Category = { id: string; name: string };
 let chatsCache: ChatRow[] | null = null;
 let ownerIdCache: string | null = null;
 let categoriesCache: Category[] | null = null;
+let ppmCache: PpmConfig | null = null;
 
 // Persisted copy so a fresh app launch paints instantly from the last known
 // inbox while the network request runs. Cleared on logout / auth failure.
@@ -169,6 +178,7 @@ export default function ChatList() {
   const [chats, setChats] = useState<ChatRow[] | null>(chatsCache);
   const [ownerId, setOwnerId] = useState<string | null>(ownerIdCache);
   const [categories, setCategories] = useState<Category[]>(categoriesCache ?? []);
+  const [ppm, setPpm] = useState<PpmConfig | null>(ppmCache);
   // "all" or a category id
   const [activeCat, setActiveCat] = useState<string>("all");
   const [selectMode, setSelectMode] = useState(false);
@@ -199,12 +209,13 @@ export default function ChatList() {
     const chatsRes = await fetch("/api/chats").catch(() => null);
     if (!chatsRes) return;
     if (chatsRes.ok) {
-      const { chats, ownerId, categories } = await chatsRes.json();
+      const { chats, ownerId, categories, ppm: ppmCfg } = await chatsRes.json();
       // Always refresh the module cache — even if this instance is mid-navigation
       // or unmounting — so the next mount / sibling sidebar paints fresh data.
       chatsCache = chats;
       ownerIdCache = ownerId;
       categoriesCache = categories;
+      if (ppmCfg) ppmCache = ppmCfg;
       try {
         localStorage.setItem(INBOX_CACHE_KEY, JSON.stringify({ chats, ownerId, categories }));
       } catch {
@@ -214,6 +225,7 @@ export default function ChatList() {
       setChats(chats);
       setOwnerId(ownerId);
       setCategories(categories);
+      if (ppmCfg) setPpm(ppmCfg);
     } else if (chatsRes.status === 401) {
       try {
         localStorage.removeItem(INBOX_CACHE_KEY);
@@ -255,6 +267,11 @@ export default function ChatList() {
           payload.sender === "guest" && !pathname?.includes(chatId)
             ? (current.unread || 0) + 1
             : current.unread,
+        // Guest send counts against their free-message allowance.
+        ppm_messages_used:
+          payload.sender === "guest"
+            ? (current.ppm_messages_used ?? 0) + 1
+            : current.ppm_messages_used,
       };
       const copy = list.slice();
       copy.splice(idx, 1);
@@ -722,13 +739,17 @@ export default function ChatList() {
               <li key={chat.id} className="group/row relative">
                 <Link
                   href={`/inbox/${chat.id}`}
+                  // Prevent the browser from starting a link-drag when the
+                  // creator scrolls the list with click-and-drag / trackpad.
+                  draggable={false}
+                  onDragStart={(e) => e.preventDefault()}
                   onClick={(e) => {
                     if (selectMode) {
                       e.preventDefault();
                       toggleSelected(chat.id);
                     }
                   }}
-                  className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+                  className={`relative flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors select-none [-webkit-user-drag:none] ${
                     selectMode && checked
                       ? "bg-accent/15 ring-1 ring-accent"
                       : active
@@ -770,6 +791,14 @@ export default function ChatList() {
                         </span>
                       )}
                       <span className="truncate">{displayName}</span>
+                      {ppm?.enabled && (
+                        <span
+                          title={`${Math.max(0, ppm.freeMessages - (chat.ppm_messages_used ?? 0))} free messages left`}
+                          className="shrink-0 text-[11px] font-semibold text-muted tabular-nums"
+                        >
+                          {Math.max(0, ppm.freeMessages - (chat.ppm_messages_used ?? 0))} left
+                        </span>
+                      )}
                       {chat.custom_name && (
                         <span className="text-muted text-[11px] font-normal truncate">
                           {chat.guest_name}

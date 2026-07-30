@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { previewMediaType } from "@/lib/chatPreview";
+import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
 
 export async function GET() {
   const ownerId = await getOwnerId();
@@ -10,7 +11,7 @@ export async function GET() {
   }
 
   const db = supabaseAdmin();
-  const [chatsRes, catsRes] = await Promise.all([
+  const [chatsRes, catsRes, ownerUserRes] = await Promise.all([
     db
       .from("chats")
       .select("*, invites(label, code), chat_category_members(category_id)")
@@ -21,6 +22,7 @@ export async function GET() {
       .select("*")
       .eq("owner_id", ownerId)
       .order("created_at", { ascending: true }),
+    db.auth.admin.getUserById(ownerId),
   ]);
 
   const { data: chats, error } = chatsRes;
@@ -162,9 +164,19 @@ export async function GET() {
     }
   }
 
+  const ppm = payPerMessageFromMetadata(
+    ownerUserRes.data?.user?.user_metadata ?? {}
+  );
+
   return NextResponse.json({
     ownerId,
     categories: catsRes.data ?? [],
+    // So the inbox can show "X free left" next to each fan's name.
+    ppm: {
+      enabled: ppm.enabled,
+      freeMessages: ppm.freeMessages,
+      priceCents: ppm.priceCents,
+    },
     chats: (chats ?? []).map(({ chat_category_members, ...c }) => ({
       ...c,
       categories: ((chat_category_members ?? []) as { category_id: string }[]).map(

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { mediaItemsFromMessage } from "@/lib/utils";
+import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
 
 /**
  * Live fan state for the creator's open chat. Polled while the tab is
@@ -19,7 +20,7 @@ export async function GET(req: NextRequest) {
     const db = supabaseAdmin();
     const { data: chat, error: chatErr } = await db
       .from("chats")
-      .select("stripe_payment_method_id, ppm_accepted_at")
+      .select("stripe_payment_method_id, ppm_accepted_at, ppm_messages_used")
       .eq("id", chatId)
       .eq("owner_id", ownerId)
       .maybeSingle();
@@ -27,6 +28,9 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: chatErr.message }, { status: 500 });
     }
     if (!chat) return NextResponse.json({ error: "Chat not found" }, { status: 404 });
+
+    const { data: ownerUser } = await db.auth.admin.getUserById(ownerId);
+    const ppm = payPerMessageFromMetadata(ownerUser?.user?.user_metadata ?? {});
 
     // Recent owner media only — enough for the open thread, cheap to poll.
     const { data: rows, error: rowsErr } = await db
@@ -76,6 +80,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       hasCard: !!chat.stripe_payment_method_id,
       ppmAccepted: !!chat.ppm_accepted_at,
+      ppmEnabled: ppm.enabled,
+      ppmFreeMessages: ppm.freeMessages,
+      ppmMessagesUsed: chat.ppm_messages_used ?? 0,
       media,
     });
   } catch (err) {
