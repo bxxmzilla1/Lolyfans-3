@@ -324,17 +324,21 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chatId, load]);
 
-  // Creator: poll accept/decline/unlock every second so Declined badges and
-  // paid bubbles appear even if a realtime broadcast was missed.
+  // Creator: poll accept/decline/unlock (+ card status for the header).
+  // Kept gentle (5s) so we don't 503 the deployment; realtime still covers
+  // the instant path. Also feeds FanWalletStatus via a window event.
   useEffect(() => {
     if (role !== "owner") return;
     let stopped = false;
+    let inflight = false;
     async function tick() {
-      if (document.visibilityState !== "visible") return;
+      if (stopped || inflight || document.visibilityState !== "visible") return;
+      inflight = true;
       try {
         const res = await fetch(`/api/chats/fanstate?chatId=${chatId}`);
         if (!res.ok || stopped) return;
         const data = (await res.json()) as {
+          hasCard?: boolean;
           media?: {
             id: string;
             fan_decision: "accepted" | "rejected" | null;
@@ -342,6 +346,14 @@ export default function ChatView({
             blur_layers_cleared?: number;
           }[];
         };
+        window.dispatchEvent(
+          new CustomEvent("loly-fanstate", {
+            detail: {
+              chatId,
+              hasCard: data.hasCard,
+            },
+          })
+        );
         const media = data.media ?? [];
         if (!media.length) return;
         const byId = new Map(media.map((m) => [m.id, m]));
@@ -370,9 +382,11 @@ export default function ChatView({
         });
       } catch {
         // offline blip — next tick retries
+      } finally {
+        inflight = false;
       }
     }
-    const timer = setInterval(tick, 1000);
+    const timer = setInterval(tick, 5000);
     tick();
     return () => {
       stopped = true;

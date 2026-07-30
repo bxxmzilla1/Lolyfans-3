@@ -90,7 +90,7 @@ export default function GuestIncomingMediaGate({
   useEffect(() => {
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") loadPending();
-    }, 1000);
+    }, 5000);
     return () => clearInterval(timer);
   }, [loadPending]);
 

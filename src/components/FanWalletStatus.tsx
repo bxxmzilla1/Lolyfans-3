@@ -3,11 +3,18 @@
 import { useEffect, useState } from "react";
 import { IconCard } from "./Icons";
 
+/** Dispatched by ChatView's fanstate poll so the header doesn't hit the API too. */
+export const FANSTATE_EVENT = "loly-fanstate";
+
+export type FanstateDetail = {
+  chatId: string;
+  hasCard?: boolean;
+};
+
 /**
- * Creator's chat header, live: a card icon to the left of the fan's name
- * once they've registered a card. Polls every second (while the tab is
- * visible) so a card registration shows without a refresh. The fan's name
- * is passed as children so it renders next to the indicator.
+ * Creator's chat header: card icon left of the fan's name once they've
+ * registered a card. Updates from ChatView's shared fanstate poll (no
+ * second request loop of its own).
  */
 export default function FanWalletStatus({
   chatId,
@@ -21,24 +28,17 @@ export default function FanWalletStatus({
   const [hasCard, setHasCard] = useState(initialHasCard);
 
   useEffect(() => {
-    let stopped = false;
-    async function tick() {
-      if (document.visibilityState !== "visible") return;
-      try {
-        const res = await fetch(`/api/chats/fanstate?chatId=${chatId}`);
-        if (!res.ok) return;
-        const data = (await res.json()) as { hasCard?: boolean };
-        if (stopped) return;
-        if (typeof data.hasCard === "boolean") setHasCard(data.hasCard);
-      } catch {
-        // offline blip — next tick retries
-      }
+    setHasCard(initialHasCard);
+  }, [chatId, initialHasCard]);
+
+  useEffect(() => {
+    function onFanstate(e: Event) {
+      const detail = (e as CustomEvent<FanstateDetail>).detail;
+      if (!detail || detail.chatId !== chatId) return;
+      if (typeof detail.hasCard === "boolean") setHasCard(detail.hasCard);
     }
-    const timer = setInterval(tick, 1000);
-    return () => {
-      stopped = true;
-      clearInterval(timer);
-    };
+    window.addEventListener(FANSTATE_EVENT, onFanstate);
+    return () => window.removeEventListener(FANSTATE_EVENT, onFanstate);
   }, [chatId]);
 
   return (

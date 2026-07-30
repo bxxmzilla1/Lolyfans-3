@@ -204,7 +204,7 @@ export default function ChatList() {
     loadRef.current();
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") loadRef.current();
-    }, 2000);
+    }, 5000);
     function onVisible() {
       if (document.visibilityState === "visible") loadRef.current();
     }

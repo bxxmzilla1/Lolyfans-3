@@ -96,17 +96,24 @@ export default function VaultManager() {
   const chatId = pathname?.match(/^\/inbox\/([^/?#]+)/)?.[1] ?? null;
   const [sendStatus, setSendStatus] = useState<Record<string, SendStatus>>({});
 
+  const statusInflightRef = useRef(false);
   const loadSendStatus = useCallback(async () => {
-    if (!chatId) return;
-    const res = await fetch(`/api/vault/status?chatId=${chatId}`).catch(() => null);
-    if (!res?.ok) return;
-    const data = await res.json().catch(() => null);
-    setSendStatus((data?.status as Record<string, SendStatus>) ?? {});
+    if (!chatId || statusInflightRef.current) return;
+    statusInflightRef.current = true;
+    try {
+      const res = await fetch(`/api/vault/status?chatId=${chatId}`).catch(() => null);
+      if (!res?.ok) return;
+      const data = await res.json().catch(() => null);
+      setSendStatus((data?.status as Record<string, SendStatus>) ?? {});
+    } finally {
+      statusInflightRef.current = false;
+    }
   }, [chatId]);
 
   useEffect(() => {
     setSendStatus({});
     if (!chatId) return;
+    // Immediate refresh on chat switch — this is the important path.
     loadSendStatus();
     // Live updates: repaint when something is sent or the fan unlocks.
     const supabase = supabaseBrowser();
@@ -116,11 +123,10 @@ export default function VaultManager() {
       .on("broadcast", { event: "message-unlocked" }, () => loadSendStatus())
       .on("broadcast", { event: "blur-drain-progress" }, () => loadSendStatus());
     channel.subscribe();
-    // Poll every second (visible tab) so switching chats / fan payments
-    // repaint the outlines even if a broadcast is missed.
+    // Gentle backup poll — 1 Hz was 503-ing the deployment.
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") loadSendStatus();
-    }, 1000);
+    }, 5000);
     return () => {
       clearInterval(timer);
       supabase.removeChannel(channel);

@@ -209,7 +209,7 @@ export default function GuestShell() {
   useEffect(() => {
     const interval = setInterval(() => {
       if (document.visibilityState === "visible") refresh();
-    }, 3000);
+    }, 5000);
     function onVisible() {
       if (document.visibilityState === "visible") refresh();
     }
