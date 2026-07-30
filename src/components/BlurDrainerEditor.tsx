@@ -90,7 +90,10 @@ export default function BlurDrainerEditor({
   }
 
   function save() {
-    const layerN = Math.max(1, Math.min(40, Math.round(parseFloat(layers) || 0)));
+    // Free mode is a single verification tap — no layer stacking needed.
+    const layerN = free
+      ? 1
+      : Math.max(1, Math.min(40, Math.round(parseFloat(layers) || 0)));
     const cents = free
       ? 0
       : Math.max(1, Math.round((parseFloat(price.replace(/[^\d.]/g, "")) || 0) * 100));
@@ -181,15 +184,17 @@ export default function BlurDrainerEditor({
             </div>
 
             <div className="flex items-center gap-3 flex-wrap">
-              <label className="flex items-center gap-1.5 text-xs">
-                <span className="text-muted">Layers</span>
-                <input
-                  value={layers}
-                  onChange={(e) => setLayers(e.target.value.replace(/[^\d]/g, ""))}
-                  inputMode="numeric"
-                  className="w-14 bg-bg border border-line rounded-lg px-2 py-1.5 text-xs focus:border-accent"
-                />
-              </label>
+              {!free && (
+                <label className="flex items-center gap-1.5 text-xs">
+                  <span className="text-muted">Layers</span>
+                  <input
+                    value={layers}
+                    onChange={(e) => setLayers(e.target.value.replace(/[^\d]/g, ""))}
+                    inputMode="numeric"
+                    className="w-14 bg-bg border border-line rounded-lg px-2 py-1.5 text-xs focus:border-accent"
+                  />
+                </label>
+              )}
               {!free && (
                 <label className="flex items-center gap-1.5 text-xs">
                   <span className="text-muted">Per tap</span>
@@ -214,7 +219,7 @@ export default function BlurDrainerEditor({
             </div>
             <p className="text-[11px] text-muted">
               {free
-                ? `Fans unblur for free, but must verify their card first · ${Math.max(1, parseInt(layers, 10) || 1)} taps to fully clear`
+                ? "Fans unblur for free with a single tap, after verifying their card"
                 : `Fans pay ${priceCents > 0 ? blurDrainPriceLabel(priceCents) : "$—"} each tap · ${Math.max(1, parseInt(layers, 10) || 1)} taps to fully clear`}
             </p>
 

@@ -1408,9 +1408,8 @@ export default function ChatView({
                   {blurDrainer ? (
                     <>
                       <span className="text-[11px] text-fg/80">
-                        {blurDrainer.layers} layers ·{" "}
                         {blurDrainer.priceCents > 0
-                          ? `$${(blurDrainer.priceCents / 100).toFixed(2).replace(/\.00$/, "")}/tap`
+                          ? `${blurDrainer.layers} layers · $${(blurDrainer.priceCents / 100).toFixed(2).replace(/\.00$/, "")}/tap`
                           : "FREE (card verify)"}
                       </span>
                       <button
