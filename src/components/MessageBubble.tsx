@@ -205,6 +205,9 @@ export default function MessageBubble({
   // BlurDrainer config + how many layers this fan has paid off.
   const drainCfg = message.blur_drainer ?? null;
   const drainCleared = message.blur_layers_cleared ?? 0;
+  // Fan bubble stays blurred until every BlurDrainer layer is paid off.
+  const drainIncomplete =
+    !mine && !!drainCfg && drainCleared < drainCfg.layers;
   // Creator's own priced media that the fan paid for → green bubble. A
   // BlurDrainer video turns green as soon as the fan taps the first layer.
   const soldByMe =
@@ -390,6 +393,31 @@ export default function MessageBubble({
     // Verify-locked media fills the chat edge-to-edge as a big square card.
     const dimShape = verifyBlurred ? "aspect-square" : "max-h-80";
     if (item.type === "image") {
+      // Images attached alongside an unfinished BlurDrainer stay blurred too.
+      if (drainIncomplete && onOpenBlurDrainer) {
+        return (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenBlurDrainer(message);
+            }}
+            aria-label="Open media"
+            className="relative w-full block overflow-hidden"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={mediaUrl(item.path)}
+              alt=""
+              className="w-full object-cover max-h-80 blur-2xl scale-110 pointer-events-none select-none"
+              draggable={false}
+            />
+            <span className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-accent text-white glow-accent flex items-center justify-center active:scale-95 transition-transform">
+              <IconPlay className="w-6 h-6 translate-x-0.5" />
+            </span>
+          </button>
+        );
+      }
       return (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -416,9 +444,8 @@ export default function MessageBubble({
         />
       );
     }
-    // BlurDrainer for the fan: looks exactly like a regular video (same blue
-    // play button, no price/progress hints), but tapping it opens the
-    // BlurDrainer screen with the remaining layers.
+    // BlurDrainer for the fan: blue play button, thumbnail stays blurred
+    // until every layer is cleared. Tap opens the BlurDrainer screen.
     if (drainCfg && !mine && onOpenBlurDrainer) {
       return (
         <button
@@ -428,14 +455,16 @@ export default function MessageBubble({
             onOpenBlurDrainer(message);
           }}
           aria-label="Play video"
-          className="relative w-full block"
+          className="relative w-full block overflow-hidden"
         >
           <video
             src={`${mediaUrl(item.path)}#t=0.001`}
             muted
             playsInline
             preload="metadata"
-            className="w-full max-h-80 object-contain pointer-events-none"
+            className={`w-full max-h-80 object-contain pointer-events-none ${
+              drainIncomplete ? "blur-2xl scale-110 select-none" : ""
+            }`}
           />
           <span className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-accent text-white glow-accent flex items-center justify-center active:scale-95 transition-transform">
             <IconPlay className="w-6 h-6 translate-x-0.5" />
