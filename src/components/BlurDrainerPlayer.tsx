@@ -183,7 +183,10 @@ export default function BlurDrainerPlayer({
 
   // Checkpoint marks along the progress track (every layer).
   const checkpoints = Array.from({ length: config.layers + 1 }, (_, i) => i);
-  const blurLabel = "Tap to unblur";
+  const blurLabel =
+    remaining > 0
+      ? `Tap (${remaining}) to unblur full video`
+      : "Tap to unblur";
 
   return (
     <Portal>
