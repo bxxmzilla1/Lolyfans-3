@@ -56,7 +56,6 @@ export default function BlurDrainerPlayer({
   const fog = remaining <= 0 ? 0 : Math.pow(remaining / config.layers, 0.85);
   const blurPx = fog * 36;
   const frost = fog * 0.42;
-  const unmuted = cleared >= 1;
 
   useEffect(() => {
     if (cleared > prevCleared.current) {
@@ -72,18 +71,29 @@ export default function BlurDrainerPlayer({
     setCleared(initialCleared);
   }, [initialCleared, messageId]);
 
-  // Keep the <video> muted state in sync and always kick playback. The
-  // `autoPlay` attribute alone is unreliable here: React applies `muted` as a
-  // JS property (not an HTML attribute), so on first load the browser may not
-  // treat the video as muted-autoplay eligible and leaves it paused/static.
-  // (The first tap also unmutes inline inside tap() so it counts as a user
-  // gesture on iOS.)
+  // Start the video WITH sound right away. The player always opens from a
+  // user tap (Accept / play button), so unmuted playback is normally allowed.
+  // If the browser still blocks it, fall back to muted playback (never a
+  // static frame) and unmute on the first touch anywhere.
   useEffect(() => {
     if (!videoEl) return;
-    videoEl.defaultMuted = !unmuted;
-    videoEl.muted = !unmuted;
-    videoEl.play().catch(() => {});
-  }, [videoEl, unmuted]);
+    let unmuteOnTouch: (() => void) | null = null;
+    videoEl.defaultMuted = false;
+    videoEl.muted = false;
+    videoEl.play().catch(() => {
+      videoEl.muted = true;
+      videoEl.play().catch(() => {});
+      unmuteOnTouch = () => {
+        videoEl.muted = false;
+        if (unmuteOnTouch) window.removeEventListener("pointerdown", unmuteOnTouch);
+        unmuteOnTouch = null;
+      };
+      window.addEventListener("pointerdown", unmuteOnTouch);
+    });
+    return () => {
+      if (unmuteOnTouch) window.removeEventListener("pointerdown", unmuteOnTouch);
+    };
+  }, [videoEl]);
 
   useEffect(() => {
     let alive = true;
@@ -111,13 +121,7 @@ export default function BlurDrainerPlayer({
    *  If the payment fails, the layer fogs back and the card form explains. */
   async function tap() {
     if (card || cleared + inflightRef.current >= config.layers) return;
-    const firstTap = cleared === 0;
     setCleared((c) => Math.min(config.layers, c + 1));
-    // Unmute on the first tap while we still have the user gesture.
-    if (firstTap && videoEl) {
-      videoEl.muted = false;
-      videoEl.play().catch(() => {});
-    }
     inflightRef.current += 1;
     setInflight(inflightRef.current);
     try {
@@ -132,7 +136,6 @@ export default function BlurDrainerPlayer({
       } else if (res.ok && data.clientSecret) {
         // Charge didn't go through — refog that layer and collect the card.
         setCleared((c) => Math.max(0, c - 1));
-        if (firstTap && videoEl) videoEl.muted = true;
         setCardNote(
           "Your payment didn't go through. Check your card details to keep unblurring."
         );
@@ -143,11 +146,9 @@ export default function BlurDrainerPlayer({
         });
       } else {
         setCleared((c) => Math.max(0, c - 1));
-        if (firstTap && videoEl) videoEl.muted = true;
       }
     } catch {
       setCleared((c) => Math.max(0, c - 1));
-      if (firstTap && videoEl) videoEl.muted = true;
     } finally {
       inflightRef.current = Math.max(0, inflightRef.current - 1);
       setInflight(inflightRef.current);
@@ -165,10 +166,7 @@ export default function BlurDrainerPlayer({
       if (res.ok && typeof data.layersCleared === "number") {
         setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
-        if (data.layersCleared >= 1 && videoEl) {
-          videoEl.muted = false;
-          videoEl.play().catch(() => {});
-        }
+        if (videoEl) videoEl.play().catch(() => {});
       }
     } catch {
       // webhook still records
@@ -179,8 +177,7 @@ export default function BlurDrainerPlayer({
 
   // Checkpoint marks along the progress track (every layer).
   const checkpoints = Array.from({ length: config.layers + 1 }, (_, i) => i);
-  const blurLabel =
-    cleared === 0 ? "Tap to unblur and unmute" : "Tap to unblur";
+  const blurLabel = "Tap to unblur";
 
   return (
     <Portal>
@@ -189,7 +186,7 @@ export default function BlurDrainerPlayer({
           <p className="text-white text-lg font-extrabold tracking-tight drop-shadow-lg select-none">
             LolyFans
           </p>
-          <div className="flex flex-col items-end gap-1.5 text-right pointer-events-auto">
+          <div className="pointer-events-auto">
             <button
               type="button"
               onClick={onClose}
@@ -197,14 +194,6 @@ export default function BlurDrainerPlayer({
             >
               Close
             </button>
-            <p className="text-white/80 text-sm font-light tracking-wide drop-shadow tabular-nums">
-              {blurDrainPriceLabel(config.priceCents)} / tap
-            </p>
-            <p className="text-white/60 text-xs font-light drop-shadow max-w-[11rem]">
-              {cleared === 0
-                ? "Tap the blur to unblur and unmute"
-                : "Tap the blur to unblur"}
-            </p>
           </div>
         </div>
 
@@ -216,7 +205,6 @@ export default function BlurDrainerPlayer({
             autoPlay
             playsInline
             loop
-            muted={!unmuted}
             controls={false}
             onCanPlay={(e) => {
               // Second chance in case the play() in the effect ran before the
@@ -277,6 +265,9 @@ export default function BlurDrainerPlayer({
           <div className="flex items-center justify-between text-[11px] text-white/50 font-light mb-2">
             <span className="tabular-nums">
               {cleared}/{config.layers}
+            </span>
+            <span className="text-white/70 tabular-nums">
+              {blurDrainPriceLabel(config.priceCents)} / tap
             </span>
             <span className="flex items-center gap-1.5">
               {inflight > 0 && (
