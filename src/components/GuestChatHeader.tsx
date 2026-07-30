@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { mediaUrl } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { IconMapPin, IconUser, IconVerified } from "./Icons";
+import PpmWalletBadge from "./PpmWalletBadge";
 
 /**
  * Guest-side chat header: the owner's profile. Shown as online unless the
@@ -93,6 +94,10 @@ export default function GuestChatHeader({
             </span>
           )}
         </div>
+      </div>
+      {/* Pay per Message balance — renders only when the creator enabled it */}
+      <div className="ml-auto shrink-0">
+        <PpmWalletBadge />
       </div>
     </header>
   );

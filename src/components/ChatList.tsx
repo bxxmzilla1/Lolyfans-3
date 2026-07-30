@@ -23,6 +23,8 @@ type ChatRow = {
   in_all: boolean;
   /** Card on file → the fan can one-tap purchase (credit-card icon). */
   stripe_payment_method_id: string | null;
+  /** Fan accepted the Pay per Message terms popup (checkmark by their name). */
+  ppm_accepted_at?: string | null;
   invites: { label: string | null; code: string } | null;
   preview: ChatPreview | null;
   unread: number;
@@ -719,6 +721,14 @@ export default function ChatList() {
                     <p className={`text-[14px] flex items-center gap-1.5 min-w-0 ${
                       chat.unread > 0 && !active ? "font-bold" : "font-semibold"
                     }`}>
+                      {chat.ppm_accepted_at && (
+                        <span
+                          title="Accepted the pay-per-message agreement"
+                          className="shrink-0 text-green-500"
+                        >
+                          <IconCheck className="w-3.5 h-3.5" />
+                        </span>
+                      )}
                       {chat.stripe_payment_method_id && (
                         <span title="Card registered" className="shrink-0 text-accent">
                           <IconCard className="w-3.5 h-3.5" />

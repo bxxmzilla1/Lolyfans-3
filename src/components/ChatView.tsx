@@ -113,6 +113,22 @@ export default function ChatView({
     clientSecret: string;
     country: string | null;
   } | null>(null);
+  // Pay per Message: the creator's config + this chat's state (terms
+  // accepted, free messages used, accrued balance, declined card). null
+  // until the wallet endpoint answers, so nothing gates prematurely.
+  const [ppm, setPpm] = useState<{
+    enabled: boolean;
+    priceCents: number;
+    freeMessages: number;
+    accepted: boolean;
+    messagesUsed: number;
+    balanceCents: number;
+    declined: boolean;
+  } | null>(null);
+  const [acceptingPpm, setAcceptingPpm] = useState(false);
+  // Auto-open the card wizard only once per gating episode — a failed start
+  // falls back to the manual "Add payment details" button (no retry loop).
+  const ppmVerifyStartedRef = useRef(false);
   // Voice notes: recording state + the moment between stop and message sent.
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -404,6 +420,13 @@ export default function ChatView({
         const data = await res.json();
         if (data.verifyPopup) setVerifyCfg(data.verifyPopup);
         if (typeof data.hasCard === "boolean") setHasCard(data.hasCard);
+        if (data.ppm) {
+          setPpm(data.ppm);
+          // The wallet badge in the chat header listens for this.
+          window.dispatchEvent(
+            new CustomEvent("loly-ppm", { detail: { chatId, ...data.ppm } })
+          );
+        }
       }
     } catch {
       // The server-rendered values stay until the next refresh.
@@ -414,11 +437,42 @@ export default function ChatView({
     refreshWallet();
   }, [refreshWallet]);
 
+  // Pay per Message: keep the balance / declined state fresh while the fan
+  // has the chat open (the hourly charge can flip the card to declined).
+  useEffect(() => {
+    if (role !== "guest" || !ppm?.enabled) return;
+    const timer = setInterval(() => {
+      if (!document.hidden) refreshWallet();
+    }, 5000);
+    return () => clearInterval(timer);
+  }, [role, ppm?.enabled, refreshWallet]);
+
   // Card Verify: while the fan has no card on file, every photo/video from
   // the creator renders locked ("Verify to view"). Tapping one opens the
   // embedded card wizard directly (SetupIntent — no charge, no popup).
   const verifyLockActive =
     role === "guest" && !hasCard && !!verifyCfg?.enabled && elementsEnabled();
+
+  // Pay per Message composer gating: after the free messages are spent the
+  // fan needs a working card — the chat input swaps for the card wizard.
+  // Also engages when the hourly balance charge was declined.
+  const ppmNeedsCard =
+    role === "guest" &&
+    !!ppm?.enabled &&
+    ppm.accepted &&
+    elementsEnabled() &&
+    (ppm.declined || (ppm.messagesUsed >= ppm.freeMessages && !hasCard));
+
+  useEffect(() => {
+    if (!ppmNeedsCard) {
+      ppmVerifyStartedRef.current = false;
+      return;
+    }
+    if (cardVerify || startingVerify || ppmVerifyStartedRef.current) return;
+    ppmVerifyStartedRef.current = true;
+    void startVerify();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ppmNeedsCard, cardVerify, startingVerify]);
 
   // Incoming-media gate: creator photos/videos the fan hasn't decided on yet
   // show full screen (blurred) with Accept / Reject instead of in the chat.
@@ -715,6 +769,34 @@ export default function ChatView({
     }
     setCardVerify(null);
     setHasCard(true);
+    // Pay per Message: a declined balance retries on the new card right away,
+    // so the chat input comes back without waiting for the hourly cycle.
+    if (ppm?.declined) {
+      try {
+        await fetch("/api/chats/ppm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId, action: "retry" }),
+        });
+      } catch {}
+    }
+    void refreshWallet();
+  }
+
+  /** Pay per Message: the fan accepted the mandatory terms popup. */
+  async function acceptPpm() {
+    if (acceptingPpm) return;
+    setAcceptingPpm(true);
+    try {
+      const res = await fetch("/api/chats/ppm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, action: "accept" }),
+      });
+      if (res.ok) setPpm((p) => (p ? { ...p, accepted: true } : p));
+    } finally {
+      setAcceptingPpm(false);
+    }
   }
 
   async function send() {
@@ -802,11 +884,34 @@ export default function ChatView({
             ? withoutTemp
             : [...withoutTemp, message];
         });
+        // Pay per Message: bump the local counters so the wallet badge and
+        // composer gating react instantly (the 5s poll reconciles later).
+        if (role === "guest" && ppm?.enabled && ppm.accepted) {
+          const used = ppm.messagesUsed + 1;
+          const billable = used > ppm.freeMessages;
+          const next = {
+            ...ppm,
+            messagesUsed: used,
+            balanceCents: ppm.balanceCents + (billable ? ppm.priceCents : 0),
+          };
+          setPpm(next);
+          window.dispatchEvent(
+            new CustomEvent("loly-ppm", { detail: { chatId, ...next } })
+          );
+        }
       } else {
+        const errData = await res.json().catch(() => null);
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
         setText(caption);
         setAttachments(usedAttachments);
         if (usedLink) setLinkAttachment(usedLink);
+        // Pay per Message rejections: re-show the terms popup or refresh the
+        // gating state so the card wizard takes over the composer.
+        if (errData?.ppm === "accept") {
+          setPpm((p) => (p ? { ...p, accepted: false } : p));
+        } else if (errData?.ppm) {
+          void refreshWallet();
+        }
       }
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
@@ -1448,14 +1553,51 @@ export default function ChatView({
             onCancel={() => setCardUnlock(null)}
           />
         ) : cardVerify ? (
-          // Card verification (SetupIntent): same wizard, no charge.
-          <EmbeddedCardTopup
-            clientSecret={cardVerify.clientSecret}
-            mode="setup"
-            countryGuess={cardVerify.country}
-            onSuccess={completeVerify}
-            onCancel={() => setCardVerify(null)}
-          />
+          // Card verification (SetupIntent): same wizard, no charge. When Pay
+          // per Message gates the chat, a note explains why the input is gone.
+          <div className="space-y-2">
+            {ppmNeedsCard && (
+              <p
+                className={`text-center text-xs font-semibold ${
+                  ppm?.declined ? "text-red-400" : "text-muted"
+                }`}
+              >
+                {ppm?.declined
+                  ? "Payment failed. Please add another payment detail"
+                  : "Add your payment details to keep chatting"}
+              </p>
+            )}
+            <EmbeddedCardTopup
+              clientSecret={cardVerify.clientSecret}
+              mode="setup"
+              countryGuess={cardVerify.country}
+              onSuccess={completeVerify}
+              onCancel={() => setCardVerify(null)}
+            />
+          </div>
+        ) : ppmNeedsCard ? (
+          // Pay per Message: free messages spent (or the hourly charge was
+          // declined) — no chat input until a working card is on file. The
+          // wizard opens by itself; this panel covers a failed/canceled start.
+          <div className="rounded-2xl bg-card2/80 border border-line2 px-4 py-4 text-center space-y-2.5 backdrop-blur">
+            <p
+              className={`text-xs font-semibold ${
+                ppm?.declined ? "text-red-400" : "text-muted"
+              }`}
+            >
+              {ppm?.declined
+                ? "Payment failed. Please add another payment detail"
+                : "Add your payment details to keep chatting"}
+            </p>
+            <button
+              type="button"
+              onClick={() => void startVerify()}
+              disabled={startingVerify}
+              className="bg-accent text-white text-sm font-semibold rounded-xl px-6 py-2.5 disabled:opacity-60 active:opacity-80 transition-opacity"
+            >
+              {startingVerify ? "Opening…" : "Add payment details"}
+            </button>
+          </div>
         ) : (
         <>
         {recording ? (
@@ -1902,6 +2044,38 @@ export default function ChatView({
           </div>
         );
       })()}
+
+      {/* Pay per Message terms: shown once per fan, and there is deliberately
+          no close button — accepting is the only way to start or keep
+          chatting. Free amount big, price per message small and muted. */}
+      {role === "guest" && ppm?.enabled && !ppm.accepted && (
+        <Portal>
+          <div className="fixed inset-0 z-[95] bg-black/85 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="w-full max-w-sm rounded-3xl bg-card border border-line px-7 py-8 text-center space-y-4 fade-up">
+              <p className="text-4xl font-extrabold leading-tight">
+                {ppm.freeMessages} FREE
+                <br />
+                message{ppm.freeMessages === 1 ? "" : "s"}
+              </p>
+              <p className="text-xs text-muted leading-relaxed">
+                Then ${(ppm.priceCents / 100).toFixed(2)} per message — billed
+                automatically to your card
+              </p>
+              <button
+                type="button"
+                onClick={() => void acceptPpm()}
+                disabled={acceptingPpm}
+                className="w-full bg-accent text-white font-semibold rounded-2xl py-3 text-sm disabled:opacity-60 active:opacity-80 transition-opacity"
+              >
+                {acceptingPpm ? "One moment…" : "Accept & start chatting"}
+              </button>
+              <p className="text-[10px] text-muted">
+                By accepting you agree to the Terms of Service.
+              </p>
+            </div>
+          </div>
+        </Portal>
+      )}
     </div>
   );
 }

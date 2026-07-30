@@ -5,6 +5,8 @@ import { broadcast } from "@/lib/realtime";
 import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
+import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
+import { settlePpmBalance } from "@/lib/payments";
 
 type ChatAuth = { role: "owner" | "guest"; chatOwnerId: string };
 
@@ -151,6 +153,56 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const db = supabaseAdmin();
+
+  // Pay per Message: meter guest messages. Free allowance first; after that
+  // each message adds its price to the chat's balance (auto-charged hourly).
+  // Terms must be accepted, and billing requires a working card on file.
+  if (auth.role === "guest") {
+    const { data: ownerUser } = await db.auth.admin.getUserById(auth.chatOwnerId);
+    const ppm = payPerMessageFromMetadata(ownerUser?.user?.user_metadata ?? {});
+    if (ppm.enabled) {
+      const { data: chatRow } = await db
+        .from("chats")
+        .select(
+          "ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_card_declined, stripe_payment_method_id"
+        )
+        .eq("id", chatId)
+        .maybeSingle();
+      if (!chatRow?.ppm_accepted_at) {
+        return NextResponse.json(
+          { error: "Accept the chat terms to start messaging", ppm: "accept" },
+          { status: 402 }
+        );
+      }
+      const used = chatRow.ppm_messages_used ?? 0;
+      const billable = used + 1 > ppm.freeMessages;
+      if (billable && !chatRow.stripe_payment_method_id) {
+        return NextResponse.json(
+          { error: "Add your card to keep chatting", ppm: "card" },
+          { status: 402 }
+        );
+      }
+      if (billable && chatRow.ppm_card_declined) {
+        return NextResponse.json(
+          { error: "Payment failed. Please add another payment detail", ppm: "declined" },
+          { status: 402 }
+        );
+      }
+      await db
+        .from("chats")
+        .update({
+          ppm_messages_used: used + 1,
+          ...(billable
+            ? { ppm_balance_cents: (chatRow.ppm_balance_cents ?? 0) + ppm.priceCents }
+            : {}),
+        })
+        .eq("id", chatId);
+      // Hourly auto-charge, attempted after the response (never blocks a send).
+      if (billable) after(() => settlePpmBalance(chatId));
+    }
+  }
+
   // Optional decision countdown for the incoming-media gate (owner-set, only
   // meaningful on photos/videos). Clamped to 1 hour; 0 = no time limit. The
   // key is only included when set, so sends keep working pre-migration.
@@ -164,7 +216,6 @@ export async function POST(req: NextRequest) {
   const drain =
     auth.role === "owner" && hasVideo ? parseBlurDrainer(blurDrainer) : null;
 
-  const db = supabaseAdmin();
   const { data: message, error } = await db
     .from("messages")
     .insert({

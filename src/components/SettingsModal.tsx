@@ -10,6 +10,7 @@ import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
+import PayPerMessageSettings from "./PayPerMessageSettings";
 import VerifyPopupSettings from "./VerifyPopupSettings";
 import WelcomeMessageEditor from "./WelcomeMessageEditor";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
@@ -32,6 +33,7 @@ type Section =
   | "posts"
   | "social"
   | "subscriptions"
+  | "paypermessage"
   | "verify"
   | "welcome"
   | "links"
@@ -400,6 +402,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconTip className="w-3.5 h-3.5" /> Subscriptions
         </button>
         <button
+          onClick={() => setSection("paypermessage")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "paypermessage"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconSend className="w-3.5 h-3.5" /> Pay per Message
+        </button>
+        <button
           onClick={() => setSection("verify")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "verify"
@@ -474,6 +486,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             section === "profile" ||
             section === "welcome" ||
             section === "subscriptions" ||
+            section === "paypermessage" ||
             section === "verify"
               ? "max-w-2xl"
               : section === "editor" || section === "posts"
@@ -489,6 +502,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <SocialProofManager />
           ) : section === "subscriptions" ? (
             <SubscriptionSettings />
+          ) : section === "paypermessage" ? (
+            <PayPerMessageSettings />
           ) : section === "verify" ? (
             <VerifyPopupSettings />
           ) : section === "welcome" ? (

@@ -558,6 +558,14 @@ alter table messages add column if not exists decide_seconds int not null defaul
 -- { x, y, w, h, layers, priceCents }.
 alter table messages add column if not exists blur_drainer jsonb;
 
+-- Pay per Message: per-chat state (config lives in the creator's auth
+-- user_metadata: ppm_enabled / ppm_price_cents / ppm_free_messages).
+alter table chats add column if not exists ppm_accepted_at timestamptz;
+alter table chats add column if not exists ppm_messages_used int not null default 0;
+alter table chats add column if not exists ppm_balance_cents int not null default 0;
+alter table chats add column if not exists ppm_last_settle_at timestamptz;
+alter table chats add column if not exists ppm_card_declined boolean not null default false;
+
 -- Per-fan progress through a BlurDrainer message (how many layers they've paid off).
 create table if not exists message_blur_progress (
   message_id uuid not null references messages(id) on delete cascade,

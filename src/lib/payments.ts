@@ -1,6 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
-import { stripe } from "@/lib/stripe";
+import { stripe, stripeConfigured } from "@/lib/stripe";
 import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
 import type Stripe from "stripe";
 
@@ -53,6 +53,77 @@ export async function recordBlurDrainTap(opts: {
     layersCleared: next,
   });
   return next;
+}
+
+/** Minimum gap between Pay per Message settlement charges. */
+const PPM_SETTLE_INTERVAL_MS = 60 * 60 * 1000;
+
+/**
+ * Pay per Message settlement: charge the chat's accrued message balance to
+ * the fan's saved card as ONE PaymentIntent. Called lazily (message sends,
+ * wallet polls) — runs at most once an hour unless forced (e.g. right after
+ * the fan adds a new card following a decline). A failed charge flips
+ * ppm_card_declined, which hides the fan's chat input until a working card
+ * is saved.
+ */
+export async function settlePpmBalance(chatId: string, force = false) {
+  if (!stripeConfigured()) return;
+  const db = supabaseAdmin();
+  const { data: chat } = await db
+    .from("chats")
+    .select(
+      "id, ppm_balance_cents, ppm_last_settle_at, stripe_customer_id, stripe_payment_method_id"
+    )
+    .eq("id", chatId)
+    .maybeSingle();
+  if (!chat) return;
+
+  const balance = chat.ppm_balance_cents ?? 0;
+  if (balance <= 0) return;
+  const last = chat.ppm_last_settle_at ? Date.parse(chat.ppm_last_settle_at) : 0;
+  if (!force && Date.now() - last < PPM_SETTLE_INTERVAL_MS) return;
+  if (!chat.stripe_customer_id || !chat.stripe_payment_method_id) return;
+
+  // Claim the settle slot (compare-and-set on the previous timestamp) so two
+  // lazy triggers can't double-charge the same balance.
+  const claim = db
+    .from("chats")
+    .update({ ppm_last_settle_at: new Date().toISOString() })
+    .eq("id", chatId);
+  const { data: claimed } = await (chat.ppm_last_settle_at === null
+    ? claim.is("ppm_last_settle_at", null)
+    : claim.eq("ppm_last_settle_at", chat.ppm_last_settle_at)
+  ).select("id");
+  if (!claimed?.length) return;
+
+  try {
+    await stripe().paymentIntents.create({
+      amount: balance,
+      currency: "usd",
+      customer: chat.stripe_customer_id,
+      payment_method: chat.stripe_payment_method_id,
+      off_session: true,
+      confirm: true,
+      metadata: { chatId, kind: "ppm-settle" },
+      description: "Chat messages",
+    });
+    // Messages sent while the charge ran keep accruing — only subtract what
+    // was actually billed.
+    const { data: fresh } = await db
+      .from("chats")
+      .select("ppm_balance_cents")
+      .eq("id", chatId)
+      .maybeSingle();
+    await db
+      .from("chats")
+      .update({
+        ppm_balance_cents: Math.max(0, (fresh?.ppm_balance_cents ?? 0) - balance),
+        ppm_card_declined: false,
+      })
+      .eq("id", chatId);
+  } catch {
+    await db.from("chats").update({ ppm_card_declined: true }).eq("id", chatId);
+  }
 }
 
 /** Record that a fan unlocked a message (idempotent) and notify the chat. */
