@@ -219,11 +219,9 @@ export default function GuestIncomingMediaGate({
   }
 
   function acceptGate(msg: Message, chatId: string) {
+    // BlurDrainer: accept with or without a card. The Stripe card form appears
+    // inside the player on the first tap of the blur layer.
     if (parseBlurDrainer(msg.blur_drainer)) {
-      if (!pending?.hasCard) {
-        startGateCardSetup(msg.id, chatId);
-        return;
-      }
       decideGate(msg, "accept", chatId);
       return;
     }

@@ -37,6 +37,7 @@ export default function BlurDrainerPlayer({
     clientSecret: string;
     amountCents: number;
     country: string | null;
+    needsCard?: boolean;
   } | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
   const prevCleared = useRef(initialCleared);
@@ -134,15 +135,20 @@ export default function BlurDrainerPlayer({
       if (res.ok && typeof data.layersCleared === "number") {
         onProgress?.(data.layersCleared);
       } else if (res.ok && data.clientSecret) {
-        // Charge didn't go through — refog that layer and collect the card.
+        // No saved card (or charge failed) — refog and show the card sheet
+        // under the still-playing video.
         setCleared((c) => Math.max(0, c - 1));
+        const needsCard = !!data.needsCard;
         setCardNote(
-          "Your payment didn't go through. Check your card details to keep unblurring."
+          needsCard
+            ? "Add your card below to unblur — each tap is one charge."
+            : "Your payment didn't go through. Check your card details to keep unblurring."
         );
         setCard({
           clientSecret: data.clientSecret,
           amountCents: Number(data.amountCents ?? config.priceCents),
           country: data.country ?? null,
+          needsCard,
         });
       } else {
         setCleared((c) => Math.max(0, c - 1));
@@ -296,10 +302,19 @@ export default function BlurDrainerPlayer({
         </div>
 
         {card && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center p-4 bg-black/60">
-            <div className="w-full max-w-sm space-y-2">
+          <div className="absolute inset-x-0 bottom-0 z-30 flex flex-col justify-end pointer-events-none">
+            {/* Soft dim so the video stays visible above the sheet */}
+            <div className="flex-1 min-h-[20vh] bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
+            <div className="pointer-events-auto w-full max-h-[min(72vh,640px)] overflow-y-auto rounded-t-3xl border-t border-white/15 bg-card px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(0,0,0,0.45)] space-y-2">
+              <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-line" />
               {cardNote && (
-                <p className="rounded-xl bg-red-500/15 border border-red-500/40 text-red-200 text-xs font-light px-3.5 py-2.5 text-center">
+                <p
+                  className={`rounded-xl text-xs font-light px-3.5 py-2.5 text-center ${
+                    card.needsCard
+                      ? "bg-accent/10 border border-accent/30 text-fg"
+                      : "bg-red-500/15 border border-red-500/40 text-red-200"
+                  }`}
+                >
                   {cardNote}
                 </p>
               )}

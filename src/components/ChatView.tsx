@@ -528,13 +528,10 @@ export default function ChatView({
     }
   }
 
-  /** Accept: BlurDrainer needs a card first; priced media pays; free accepts. */
+  /** Accept: BlurDrainer opens even without a card — card is collected on
+   *  the first tap inside the player. Priced media pays; free accepts. */
   async function acceptGate(message: Message) {
     if (parseBlurDrainer(message.blur_drainer)) {
-      if (!hasCard) {
-        startGateCardSetup(message.id);
-        return;
-      }
       const ok = await decideGate(message, "accept");
       if (ok) setDrainPlayer(message);
       return;
@@ -1395,21 +1392,22 @@ export default function ChatView({
                 </div>
               )}
               {attachments.some((a) => a.type === "video") && (
-                <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-2 flex-wrap rounded-xl border border-accent/30 bg-accent/5 px-2.5 py-2">
                   <button
                     type="button"
                     onClick={() => setBlurEditorOpen(true)}
-                    className={`text-xs font-bold px-2.5 py-1 rounded-lg border ${
+                    className={`text-xs font-bold px-2.5 py-1 rounded-lg border inline-flex items-center gap-1.5 ${
                       blurDrainer
                         ? "bg-accent text-white border-accent"
-                        : "bg-bg border-line text-fg"
+                        : "bg-bg border-accent/40 text-fg"
                     }`}
                   >
+                    <IconEye className="w-3.5 h-3.5" />
                     BlurDrainer
                   </button>
                   {blurDrainer ? (
                     <>
-                      <span className="text-[11px] text-muted">
+                      <span className="text-[11px] text-fg/80">
                         {blurDrainer.layers} layers · $
                         {(blurDrainer.priceCents / 100).toFixed(2).replace(/\.00$/, "")}
                         /tap
@@ -1424,7 +1422,7 @@ export default function ChatView({
                     </>
                   ) : (
                     <span className="text-[11px] text-muted">
-                      square blur · pay per tap to peel layers
+                      Tap to place the blur · fans pay per tap to unblur
                     </span>
                   )}
                 </div>
@@ -1559,6 +1557,32 @@ export default function ChatView({
               }
             >
               {sendLocked ? <IconLock className="w-4.5 h-4.5" /> : <IconUnlock className="w-4.5 h-4.5" />}
+            </button>
+          )}
+          {role === "owner" && (
+            <button
+              type="button"
+              onClick={() => {
+                if (!attachments.some((a) => a.type === "video")) {
+                  alert("Attach a video first, then set up BlurDrainer on it.");
+                  fileRef.current?.click();
+                  return;
+                }
+                setBlurEditorOpen(true);
+              }}
+              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center transition-colors ${
+                blurDrainer
+                  ? "bg-accent text-white glow-accent"
+                  : "bg-transparent border border-line text-muted hover:text-fg"
+              }`}
+              aria-label="BlurDrainer"
+              title={
+                blurDrainer
+                  ? `BlurDrainer on · ${blurDrainer.layers} layers`
+                  : "BlurDrainer — pay-per-tap unblur on a video"
+              }
+            >
+              <IconEye className="w-4.5 h-4.5" />
             </button>
           )}
           <button

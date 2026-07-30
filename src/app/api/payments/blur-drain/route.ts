@@ -152,6 +152,7 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  const hadCard = !!(chat?.stripe_customer_id && chat?.stripe_payment_method_id);
   const customerId = await ensureStripeCustomer(message.chat_id);
   if (embedded === true) {
     const pi = await s.paymentIntents.create({
@@ -167,6 +168,8 @@ export async function POST(req: NextRequest) {
       clientSecret: pi.client_secret,
       amountCents: price,
       country: await visitorCountryCode(req.headers),
+      // True when the fan has never saved a card — player shows a softer prompt.
+      needsCard: !hadCard,
     });
   }
 
