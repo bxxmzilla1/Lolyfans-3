@@ -4,12 +4,14 @@ import { stripe } from "@/lib/stripe";
 import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
 import type Stripe from "stripe";
 
-/** Advance one BlurDrainer layer for this fan (idempotent per PaymentIntent). */
+/** Advance BlurDrainer layer(s) for this fan (idempotent per PaymentIntent).
+ *  count > 1 is used by batched settlements that cover several taps at once. */
 export async function recordBlurDrainTap(opts: {
   messageId: string;
   chatId: string;
   layers: number;
   paymentIntentId: string;
+  count?: number;
 }): Promise<number> {
   const db = supabaseAdmin();
   const { error: ledgerErr } = await db.from("message_blur_taps").insert({
@@ -33,7 +35,10 @@ export async function recordBlurDrainTap(opts: {
     .eq("message_id", opts.messageId)
     .eq("chat_id", opts.chatId)
     .maybeSingle();
-  const next = Math.min(opts.layers, (prev?.layers_cleared ?? 0) + 1);
+  const next = Math.min(
+    opts.layers,
+    (prev?.layers_cleared ?? 0) + Math.max(1, opts.count ?? 1)
+  );
   await db.from("message_blur_progress").upsert(
     {
       message_id: opts.messageId,

@@ -9,6 +9,7 @@ import {
 import { parseBlurDrainer } from "@/lib/blurDrainer";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { visitorCountryCode } from "@/lib/geo";
+import { broadcast } from "@/lib/realtime";
 import Stripe from "stripe";
 
 /** GET: current progress for this fan + message. */
@@ -32,7 +33,7 @@ export async function GET(req: NextRequest) {
 
   const { data: prog } = await db
     .from("message_blur_progress")
-    .select("layers_cleared")
+    .select("layers_cleared, pending_layers")
     .eq("message_id", messageId)
     .eq("chat_id", message.chat_id)
     .maybeSingle();
@@ -40,6 +41,9 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     config: cfg,
     layersCleared: prog?.layers_cleared ?? 0,
+    // Unbilled taps left over from a previous session — the player settles
+    // them right away when it reopens.
+    pendingLayers: prog?.pending_layers ?? 0,
   });
 }
 
@@ -52,7 +56,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
   }
 
-  const { messageId, embedded, paymentIntentId, setupIntentId } = await req.json();
+  const { messageId, embedded, paymentIntentId, setupIntentId, settle } =
+    await req.json();
   if (!messageId) return NextResponse.json({ error: "messageId required" }, { status: 400 });
 
   const db = supabaseAdmin();
@@ -71,11 +76,105 @@ export async function POST(req: NextRequest) {
 
   const { data: prog } = await db
     .from("message_blur_progress")
-    .select("layers_cleared")
+    .select("layers_cleared, pending_layers")
     .eq("message_id", messageId)
     .eq("chat_id", message.chat_id)
     .maybeSingle();
   const cleared = prog?.layers_cleared ?? 0;
+  const pending = prog?.pending_layers ?? 0;
+
+  // Settle: bill all unbilled taps as ONE combined charge. Rapid-fire per-tap
+  // charges trip bank velocity / duplicate-transaction rules, so taps after
+  // the first only advance progress and are settled here in a batch. Must run
+  // before the "all layers cleared" early-return — the final taps of a fully
+  // cleared drain still need billing.
+  if (settle === true && cfg.priceCents > 0) {
+    if (pending <= 0) {
+      return NextResponse.json({ ok: true, layersCleared: cleared, pendingLayers: 0 });
+    }
+    const amount = pending * cfg.priceCents;
+    const metadata = {
+      chatId: message.chat_id,
+      kind: "blur-drain-settle",
+      messageId: message.id,
+      layersCount: String(pending),
+    };
+    const { data: chat } = await db
+      .from("chats")
+      .select("stripe_customer_id, stripe_payment_method_id")
+      .eq("id", message.chat_id)
+      .maybeSingle();
+    if (chat?.stripe_customer_id && chat?.stripe_payment_method_id) {
+      try {
+        const pi = await stripe().paymentIntents.create({
+          amount,
+          currency: "usd",
+          customer: chat.stripe_customer_id,
+          payment_method: chat.stripe_payment_method_id,
+          off_session: true,
+          confirm: true,
+          metadata,
+          description: `BlurDrainer × ${pending} tap${pending === 1 ? "" : "s"}`,
+        });
+        // Layers already advanced at tap time — just ledger the batch and
+        // zero the pending counter. Conflict = webhook got there first.
+        await db.from("message_blur_taps").insert({
+          message_id: message.id,
+          chat_id: message.chat_id,
+          stripe_payment_intent_id: pi.id,
+        });
+        await db
+          .from("message_blur_progress")
+          .update({ pending_layers: 0, updated_at: new Date().toISOString() })
+          .eq("message_id", message.id)
+          .eq("chat_id", message.chat_id);
+        return NextResponse.json({ ok: true, layersCleared: cleared, pendingLayers: 0 });
+      } catch {
+        // Charge declined — fall through to refog the unpaid layers.
+      }
+    }
+    // Settlement failed: fog the unbilled layers back and let the fan retry
+    // with the embedded card sheet (marked as a refog retry so completing it
+    // re-advances the layers).
+    const refogged = Math.max(0, cleared - pending);
+    await db
+      .from("message_blur_progress")
+      .update({
+        layers_cleared: refogged,
+        pending_layers: 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("message_id", message.id)
+      .eq("chat_id", message.chat_id);
+    await broadcast(`chat:${message.chat_id}`, "blur-drain-progress", {
+      messageId: message.id,
+      layersCleared: refogged,
+    });
+    if (embedded === true) {
+      const customerId = await ensureStripeCustomer(message.chat_id);
+      const pi = await stripe().paymentIntents.create({
+        amount,
+        currency: "usd",
+        customer: customerId,
+        payment_method_types: ["card"],
+        setup_future_usage: "off_session",
+        metadata: { ...metadata, refog: "1" },
+        description: `BlurDrainer × ${pending} tap${pending === 1 ? "" : "s"}`,
+      });
+      return NextResponse.json({
+        clientSecret: pi.client_secret,
+        amountCents: amount,
+        layersCleared: refogged,
+        refogged: true,
+        country: await visitorCountryCode(req.headers),
+      });
+    }
+    return NextResponse.json(
+      { ok: false, layersCleared: refogged, refogged: true },
+      { status: 402 }
+    );
+  }
+
   if (cleared >= cfg.layers) {
     return NextResponse.json({ ok: true, layersCleared: cleared, done: true });
   }
@@ -110,13 +209,19 @@ export async function POST(req: NextRequest) {
     });
   }
 
-  // Completing an embedded PaymentIntent after the wizard succeeds.
+  // Completing an embedded PaymentIntent after the wizard succeeds — a single
+  // tap ("blur-drain") or a failed-settlement retry ("blur-drain-settle",
+  // which restores every layer the batch covered).
   if (typeof paymentIntentId === "string" && paymentIntentId) {
     const pi = await stripe().paymentIntents.retrieve(paymentIntentId);
     if (pi.status !== "succeeded") {
       return NextResponse.json({ error: "Payment not complete" }, { status: 400 });
     }
-    if (pi.metadata?.kind !== "blur-drain" || pi.metadata.messageId !== messageId) {
+    const kind = pi.metadata?.kind;
+    if (
+      (kind !== "blur-drain" && kind !== "blur-drain-settle") ||
+      pi.metadata?.messageId !== messageId
+    ) {
       return NextResponse.json({ error: "Invalid payment" }, { status: 400 });
     }
     const customerId =
@@ -126,11 +231,16 @@ export async function POST(req: NextRequest) {
         ? pi.payment_method
         : pi.payment_method?.id ?? null;
     await saveStripePaymentMethod(message.chat_id, customerId, pmId);
+    const count =
+      kind === "blur-drain-settle"
+        ? Math.max(1, Math.round(Number(pi.metadata?.layersCount)) || 1)
+        : 1;
     const layersCleared = await recordBlurDrainTap({
       messageId,
       chatId: message.chat_id,
       layers: cfg.layers,
       paymentIntentId: pi.id,
+      count,
     });
     return NextResponse.json({
       ok: true,
@@ -189,6 +299,33 @@ export async function POST(req: NextRequest) {
   }
 
   if (chat?.stripe_customer_id && chat?.stripe_payment_method_id) {
+    // After the first paid layer, taps advance instantly WITHOUT a charge —
+    // they accumulate in pending_layers and settle later as one combined
+    // PaymentIntent (see the settle branch above). One charge per tap looks
+    // like fraud to banks and gets declined.
+    if (cleared > 0) {
+      const next = Math.min(cfg.layers, cleared + 1);
+      await db.from("message_blur_progress").upsert(
+        {
+          message_id: message.id,
+          chat_id: message.chat_id,
+          layers_cleared: next,
+          pending_layers: pending + 1,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "message_id,chat_id" }
+      );
+      await broadcast(`chat:${message.chat_id}`, "blur-drain-progress", {
+        messageId: message.id,
+        layersCleared: next,
+      });
+      return NextResponse.json({
+        ok: true,
+        layersCleared: next,
+        pendingLayers: pending + 1,
+        done: next >= cfg.layers,
+      });
+    }
     try {
       const pi = await s.paymentIntents.create({
         amount: price,

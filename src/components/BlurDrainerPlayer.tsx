@@ -11,10 +11,15 @@ import {
   type BlurDrainerConfig,
 } from "@/lib/blurDrainer";
 
+/** Quiet period after the last tap before the pending taps are billed as one
+ *  combined charge (banks decline rapid-fire per-tap charges). */
+const SETTLE_DELAY_MS = 8000;
+
 /**
- * Fullscreen BlurDrainer: video plays under a stacked square blur. Each tap
- * on the blur square (not the whole screen) is a one-tap card charge that
- * peels one layer. The first tap also unmutes the video.
+ * Fullscreen BlurDrainer: video plays under a stacked square blur. Taps on
+ * the blur square (not the whole screen) peel layers. Only the FIRST tap is
+ * charged on its own — later taps unblur instantly and settle as a single
+ * combined charge shortly after the fan stops tapping (or on close).
  */
 export default function BlurDrainerPlayer({
   videoPath,
@@ -53,6 +58,9 @@ export default function BlurDrainerPlayer({
   // Optimistic taps: the layer clears instantly; the charge settles in the
   // background. Track in-flight charges so a failure can revert one layer.
   const inflightRef = useRef(0);
+  // Batched settlement: taps after the first are unbilled until settled.
+  const pendingRef = useRef(0);
+  const settleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Blur coordinates are relative to the VIDEO FRAME (set in the editor), so
   // map them onto the frame's real on-screen rect, excluding letterbox bars.
   const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
@@ -116,6 +124,11 @@ export default function BlurDrainerPlayer({
           setCleared((c) => Math.max(c, data.layersCleared));
           onProgress?.(data.layersCleared);
         }
+        // Unbilled taps abandoned in a previous session — settle them now.
+        if (typeof data.pendingLayers === "number" && data.pendingLayers > 0) {
+          pendingRef.current = data.pendingLayers;
+          void settleNow();
+        }
       } catch {
         // keep local
       }
@@ -125,6 +138,78 @@ export default function BlurDrainerPlayer({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messageId]);
+
+  // Settle whatever is still unbilled when the player goes away — closing it,
+  // navigating, or hiding the tab. keepalive lets the request finish anyway.
+  const settleRef = useRef<(keepalive?: boolean) => void>(() => {});
+  settleRef.current = (keepalive?: boolean) => void settleNow(keepalive);
+  useEffect(() => {
+    const onHide = () => settleRef.current(true);
+    window.addEventListener("pagehide", onHide);
+    return () => {
+      window.removeEventListener("pagehide", onHide);
+      if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+      settleRef.current(true);
+    };
+  }, []);
+
+  function scheduleSettle(delayMs: number = SETTLE_DELAY_MS) {
+    if (settleTimerRef.current) clearTimeout(settleTimerRef.current);
+    settleTimerRef.current = setTimeout(() => void settleNow(), delayMs);
+  }
+
+  /** Bill every unbilled tap as ONE combined charge. keepalive = fired while
+   *  leaving: the response can't be shown, so no embedded card sheet. */
+  async function settleNow(keepalive = false) {
+    if (settleTimerRef.current) {
+      clearTimeout(settleTimerRef.current);
+      settleTimerRef.current = null;
+    }
+    if (free || pendingRef.current <= 0) return;
+    if (!keepalive && inflightRef.current > 0) {
+      // A tap is still in flight — try again once it lands.
+      scheduleSettle(2000);
+      return;
+    }
+    const pendingWas = pendingRef.current;
+    pendingRef.current = 0;
+    try {
+      const res = await fetch("/api/payments/blur-drain", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId,
+          settle: true,
+          embedded: keepalive ? false : elementsEnabled(),
+        }),
+        keepalive,
+      });
+      if (keepalive) return;
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) return;
+      // Settlement charge failed — the server fogged the unpaid layers back.
+      if (typeof data.layersCleared === "number") {
+        setCleared(data.layersCleared);
+        onProgress?.(data.layersCleared);
+      }
+      setCardKnownGood(false);
+      if (data.clientSecret) {
+        setCardNote(
+          "Your card payment didn't go through — confirm your card to restore the unblurred layers."
+        );
+        setCard({
+          clientSecret: data.clientSecret,
+          amountCents: Number(data.amountCents ?? 0),
+          country: data.country ?? null,
+          needsCard: false,
+        });
+      }
+    } catch {
+      // Network hiccup: keep the taps pending and retry shortly.
+      pendingRef.current = Math.max(pendingRef.current, pendingWas);
+      if (!keepalive) scheduleSettle(4000);
+    }
+  }
 
   /** Unblur a layer. Once the card is known good the peel is optimistic
    *  (instant, charge settles in the background; a failure fogs it back).
@@ -148,6 +233,12 @@ export default function BlurDrainerPlayer({
         setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
         setCardKnownGood(true);
+        // Unbilled taps accumulate; bill them as one charge after the fan
+        // stops tapping.
+        if (typeof data.pendingLayers === "number" && data.pendingLayers > 0) {
+          pendingRef.current = data.pendingLayers;
+          scheduleSettle();
+        }
       } else if (res.ok && data.setupClientSecret) {
         // Free drain, no verified card yet — the blur never peeled, just show
         // the verification sheet (SetupIntent, no charge) under the video.

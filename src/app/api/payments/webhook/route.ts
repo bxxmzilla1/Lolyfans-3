@@ -93,6 +93,42 @@ export async function POST(req: NextRequest) {
         });
       }
     } else if (
+      pi.metadata?.kind === "blur-drain-settle" &&
+      pi.metadata.messageId
+    ) {
+      await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+      if (pi.metadata.refog === "1") {
+        // Failed-settlement retry paid through the card sheet: restore every
+        // layer the batch covered (idempotent with the client's completion
+        // call via the tap ledger).
+        const { data: msg } = await supabaseAdmin()
+          .from("messages")
+          .select("blur_drainer")
+          .eq("id", pi.metadata.messageId)
+          .maybeSingle();
+        const cfg = parseBlurDrainer(msg?.blur_drainer);
+        if (cfg) {
+          await recordBlurDrainTap({
+            messageId: pi.metadata.messageId,
+            chatId,
+            layers: cfg.layers,
+            paymentIntentId: pi.id,
+            count: Math.max(1, Math.round(Number(pi.metadata.layersCount)) || 1),
+          });
+        }
+      } else {
+        // Server-confirmed batch settlement: layers were already advanced at
+        // tap time — just make sure the ledger row exists.
+        await supabaseAdmin().from("message_blur_taps").upsert(
+          {
+            stripe_payment_intent_id: pi.id,
+            message_id: pi.metadata.messageId,
+            chat_id: chatId,
+          },
+          { onConflict: "stripe_payment_intent_id", ignoreDuplicates: true }
+        );
+      }
+    } else if (
       pi.metadata?.kind === "subscription" &&
       pi.metadata?.interval === "lifetime" &&
       pi.metadata.ownerId

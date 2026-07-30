@@ -563,9 +563,14 @@ create table if not exists message_blur_progress (
   message_id uuid not null references messages(id) on delete cascade,
   chat_id uuid not null references chats(id) on delete cascade,
   layers_cleared int not null default 0,
+  -- Taps advanced but not yet billed: after the first paid tap, layers clear
+  -- instantly and settle later as ONE combined charge (rapid-fire per-tap
+  -- charges trip bank velocity / duplicate-transaction rules).
+  pending_layers int not null default 0,
   updated_at timestamptz not null default now(),
   primary key (message_id, chat_id)
 );
+alter table message_blur_progress add column if not exists pending_layers int not null default 0;
 alter table message_blur_progress enable row level security;
 create index if not exists message_blur_progress_chat_idx
   on message_blur_progress (chat_id);
