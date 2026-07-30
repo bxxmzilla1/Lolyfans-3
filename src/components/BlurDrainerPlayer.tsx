@@ -186,7 +186,7 @@ export default function BlurDrainerPlayer({
           <p className="text-white text-lg font-extrabold tracking-tight drop-shadow-lg select-none">
             LolyFans
           </p>
-          <div className="pointer-events-auto">
+          <div className="flex flex-col items-end gap-1.5 text-right pointer-events-auto">
             <button
               type="button"
               onClick={onClose}
@@ -194,6 +194,9 @@ export default function BlurDrainerPlayer({
             >
               Close
             </button>
+            <p className="text-white/80 text-sm font-light tracking-wide drop-shadow tabular-nums">
+              {blurDrainPriceLabel(config.priceCents)} / tap
+            </p>
           </div>
         </div>
 
@@ -265,9 +268,6 @@ export default function BlurDrainerPlayer({
           <div className="flex items-center justify-between text-[11px] text-white/50 font-light mb-2">
             <span className="tabular-nums">
               {cleared}/{config.layers}
-            </span>
-            <span className="text-white/70 tabular-nums">
-              {blurDrainPriceLabel(config.priceCents)} / tap
             </span>
             <span className="flex items-center gap-1.5">
               {inflight > 0 && (
