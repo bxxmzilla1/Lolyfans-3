@@ -309,7 +309,7 @@ export default function BlurDrainerPlayer({
     remaining <= 0
       ? "Tap to unblur"
       : freePrompt
-        ? "To watch this video for free, please add your payment details"
+        ? "Confirm your payment details to watch this video for FREE"
         : `Tap ${remaining} time${remaining === 1 ? "" : "s"} to unblur the video`;
 
   return (
