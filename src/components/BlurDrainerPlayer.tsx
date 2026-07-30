@@ -72,12 +72,17 @@ export default function BlurDrainerPlayer({
     setCleared(initialCleared);
   }, [initialCleared, messageId]);
 
-  // Keep the <video> muted attribute in sync (first tap also unmutes inline
-  // inside tap() so it counts as a user gesture on iOS).
+  // Keep the <video> muted state in sync and always kick playback. The
+  // `autoPlay` attribute alone is unreliable here: React applies `muted` as a
+  // JS property (not an HTML attribute), so on first load the browser may not
+  // treat the video as muted-autoplay eligible and leaves it paused/static.
+  // (The first tap also unmutes inline inside tap() so it counts as a user
+  // gesture on iOS.)
   useEffect(() => {
     if (!videoEl) return;
+    videoEl.defaultMuted = !unmuted;
     videoEl.muted = !unmuted;
-    if (unmuted) videoEl.play().catch(() => {});
+    videoEl.play().catch(() => {});
   }, [videoEl, unmuted]);
 
   useEffect(() => {
@@ -213,6 +218,12 @@ export default function BlurDrainerPlayer({
             loop
             muted={!unmuted}
             controls={false}
+            onCanPlay={(e) => {
+              // Second chance in case the play() in the effect ran before the
+              // source was ready.
+              const v = e.currentTarget;
+              if (v.paused) v.play().catch(() => {});
+            }}
             onEnded={(e) => {
               const v = e.currentTarget;
               v.currentTime = 0;

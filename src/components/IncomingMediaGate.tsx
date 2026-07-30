@@ -68,6 +68,19 @@ export default function IncomingMediaGate({
             autoPlay
             loop
             playsInline
+            // React sets `muted` as a JS property, not an HTML attribute, so
+            // the browser can refuse muted autoplay on first load. Force the
+            // attribute and kick playback explicitly.
+            ref={(v) => {
+              if (!v) return;
+              v.defaultMuted = true;
+              v.muted = true;
+              v.play().catch(() => {});
+            }}
+            onCanPlay={(e) => {
+              const v = e.currentTarget;
+              if (v.paused) v.play().catch(() => {});
+            }}
             className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
           />
         )}
