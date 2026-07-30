@@ -49,6 +49,23 @@ let categoriesCache: Category[] | null = null;
 // inbox while the network request runs. Cleared on logout / auth failure.
 export const INBOX_CACHE_KEY = "loly_inbox_v1";
 
+// How many recent chats to render (0 = all). Big audiences (1000+ chats)
+// make the list heavy to re-render on every 5s refresh, so cap it by default.
+const LIST_LIMIT_KEY = "loly_chat_list_limit";
+const DEFAULT_LIST_LIMIT = 100;
+
+function readStoredListLimit(): number {
+  if (typeof window === "undefined") return DEFAULT_LIST_LIMIT;
+  try {
+    const raw = localStorage.getItem(LIST_LIMIT_KEY);
+    if (raw === null) return DEFAULT_LIST_LIMIT;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n >= 0 ? n : DEFAULT_LIST_LIMIT;
+  } catch {
+    return DEFAULT_LIST_LIMIT;
+  }
+}
+
 function readStoredInbox(): { chats: ChatRow[]; ownerId: string; categories: Category[] } | null {
   try {
     return JSON.parse(localStorage.getItem(INBOX_CACHE_KEY) || "null");
@@ -147,6 +164,8 @@ export default function ChatList() {
   // Guests currently viewing their chat, and whether to show only them.
   const [onlineIds, setOnlineIds] = useState<Set<string>>(new Set());
   const [onlineOnly, setOnlineOnly] = useState(false);
+  // How many recent chats to render (0 = all) — creator-tunable, persisted.
+  const [listLimit, setListLimit] = useState<number>(readStoredListLimit);
   const [massOpen, setMassOpen] = useState(false);
   // Chats whose fan is typing right now (each entry auto-clears after 3s).
   const [typingIds, setTypingIds] = useState<Set<string>>(new Set());
@@ -352,6 +371,15 @@ export default function ChatList() {
     load();
   }
 
+  function updateListLimit(raw: string) {
+    const n = parseInt(raw.replace(/[^\d]/g, ""), 10);
+    const next = Number.isFinite(n) && n >= 0 ? n : 0;
+    setListLimit(next);
+    try {
+      localStorage.setItem(LIST_LIMIT_KEY, String(next));
+    } catch {}
+  }
+
   function toggleSelected(id: string) {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -443,11 +471,17 @@ export default function ChatList() {
   }
 
   // Main section: chats marked for "All" plus safety net for uncategorized ones
-  const visibleChats = (
+  const filteredChats = (
     activeCat === "all"
       ? chats.filter((c) => c.in_all || c.categories.length === 0)
       : chats.filter((c) => c.categories.includes(activeCat))
   ).filter((c) => !onlineOnly || onlineIds.has(c.id));
+
+  // Cap what's rendered: with big audiences the full list makes every 5s
+  // refresh repaint thousands of rows. Unread badges still count everything.
+  const visibleChats =
+    listLimit > 0 ? filteredChats.slice(0, listLimit) : filteredChats;
+  const hiddenCount = filteredChats.length - visibleChats.length;
 
   const onlineCount = chats.filter((c) => onlineIds.has(c.id)).length;
 
@@ -514,6 +548,19 @@ export default function ChatList() {
               <span className="text-[10px] opacity-80">{onlineCount}</span>
             )}
           </button>
+          <label
+            title="How many recent chats to display (empty = all)"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted"
+          >
+            Show
+            <input
+              value={listLimit > 0 ? String(listLimit) : ""}
+              onChange={(e) => updateListLimit(e.target.value)}
+              inputMode="numeric"
+              placeholder="All"
+              className="w-11 bg-transparent text-fg text-center outline-none border-b border-line focus:border-accent placeholder:text-muted"
+            />
+          </label>
           <button
             onClick={() => {
               setSelectMode((v) => !v);
@@ -741,6 +788,20 @@ export default function ChatList() {
             );
           })}
         </ul>
+      )}
+
+      {hiddenCount > 0 && (
+        <div className="px-3 py-3 text-center space-y-1.5">
+          <p className="text-muted text-xs">
+            Showing the {visibleChats.length} most recent of {filteredChats.length} chats
+          </p>
+          <button
+            onClick={() => updateListLimit("0")}
+            className="text-accent text-xs font-semibold hover:opacity-80"
+          >
+            Show all
+          </button>
+        </div>
       )}
 
       {newCatOpen && (
