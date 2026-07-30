@@ -44,7 +44,6 @@ export default function BlurDrainerPlayer({
   // Optimistic taps: the layer clears instantly; the charge settles in the
   // background. Track in-flight charges so a failure can revert one layer.
   const inflightRef = useRef(0);
-  const [inflight, setInflight] = useState(0);
   // Blur coordinates are relative to the VIDEO FRAME (set in the editor), so
   // map them onto the frame's real on-screen rect, excluding letterbox bars.
   const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
@@ -52,7 +51,6 @@ export default function BlurDrainerPlayer({
   const frame = useVideoContentBox(containerEl, videoEl);
 
   const remaining = Math.max(0, config.layers - cleared);
-  const progress = config.layers > 0 ? cleared / config.layers : 1;
   // How fogged the region still is (1 = untouched, 0 = fully paid off).
   const fog = remaining <= 0 ? 0 : Math.pow(remaining / config.layers, 0.85);
   const blurPx = fog * 36;
@@ -124,7 +122,6 @@ export default function BlurDrainerPlayer({
     if (card || cleared + inflightRef.current >= config.layers) return;
     setCleared((c) => Math.min(config.layers, c + 1));
     inflightRef.current += 1;
-    setInflight(inflightRef.current);
     try {
       const res = await fetch("/api/payments/blur-drain", {
         method: "POST",
@@ -157,7 +154,6 @@ export default function BlurDrainerPlayer({
       setCleared((c) => Math.max(0, c - 1));
     } finally {
       inflightRef.current = Math.max(0, inflightRef.current - 1);
-      setInflight(inflightRef.current);
     }
   }
 
@@ -181,12 +177,8 @@ export default function BlurDrainerPlayer({
     setCardNote(null);
   }
 
-  // Checkpoint marks along the progress track (every layer).
-  const checkpoints = Array.from({ length: config.layers + 1 }, (_, i) => i);
   const blurLabel =
-    remaining > 0
-      ? `Tap (${remaining}) to unblur full video`
-      : "Tap to unblur";
+    remaining > 0 ? `Tap ${remaining} to unblur full video` : "Tap to unblur";
 
   return (
     <Portal>
@@ -270,38 +262,6 @@ export default function BlurDrainerPlayer({
               }}
             />
           )}
-        </div>
-
-        {/* Minimal progress: slim bar + checkpoints, quiet labels */}
-        <div className="relative z-20 px-5 pb-[max(1rem,env(safe-area-inset-bottom))] pt-3 bg-gradient-to-t from-black/70 to-transparent">
-          <div className="flex items-center justify-between text-[11px] text-white/50 font-light mb-2">
-            <span className="tabular-nums">
-              {cleared}/{config.layers}
-            </span>
-            <span className="flex items-center gap-1.5">
-              {inflight > 0 && (
-                <span className="w-3 h-3 rounded-full border border-white/30 border-t-white/80 animate-spin" />
-              )}
-              {remaining > 0
-                ? `${remaining} tap${remaining === 1 ? "" : "s"} left`
-                : "Fully clear"}
-            </span>
-          </div>
-          <div className="relative h-1.5 rounded-full bg-white/10">
-            <div
-              className="absolute inset-y-0 left-0 rounded-full bg-accent transition-all duration-300"
-              style={{ width: `${progress * 100}%` }}
-            />
-            {checkpoints.map((i) => (
-              <span
-                key={i}
-                className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-1.5 h-1.5 rounded-full ${
-                  i <= cleared ? "bg-white" : "bg-white/25"
-                }`}
-                style={{ left: `${(i / config.layers) * 100}%` }}
-              />
-            ))}
-          </div>
         </div>
 
         {card && (
