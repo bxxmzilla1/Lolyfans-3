@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { settlePpmBalance } from "@/lib/payments";
+import { broadcast } from "@/lib/realtime";
 
 /**
  * Pay per Message fan actions:
@@ -23,14 +24,20 @@ export async function POST(req: NextRequest) {
   if (action === "accept") {
     const { data: chat } = await db
       .from("chats")
-      .select("ppm_accepted_at")
+      .select("ppm_accepted_at, owner_id")
       .eq("id", chatId)
       .maybeSingle();
-    if (!chat?.ppm_accepted_at) {
+    if (chat && !chat.ppm_accepted_at) {
       await db
         .from("chats")
         .update({ ppm_accepted_at: new Date().toISOString() })
         .eq("id", chatId);
+      // The creator's checkmark flips instantly — the open chat header and
+      // the inbox list both listen for this.
+      await Promise.all([
+        broadcast(`chat:${chatId}`, "ppm-accepted", { chatId }),
+        broadcast(`inbox:${chat.owner_id}`, "ppm-accepted", { chatId }),
+      ]);
     }
     return NextResponse.json({ ok: true, accepted: true });
   }

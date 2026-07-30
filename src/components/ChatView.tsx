@@ -355,6 +355,7 @@ export default function ChatView({
         if (!res.ok || stopped) return;
         const data = (await res.json()) as {
           hasCard?: boolean;
+          ppmAccepted?: boolean;
           media?: {
             id: string;
             fan_decision: "accepted" | "rejected" | null;
@@ -367,6 +368,7 @@ export default function ChatView({
             detail: {
               chatId,
               hasCard: data.hasCard,
+              ppmAccepted: data.ppmAccepted,
             },
           })
         );

@@ -7,7 +7,8 @@ import ChatView from "@/components/ChatView";
 import GuestPresenceStatus from "@/components/GuestPresenceStatus";
 import OwnerOnlineSwitch from "@/components/OwnerOnlineSwitch";
 import FanWalletStatus from "@/components/FanWalletStatus";
-import { IconBack, IconCheck, IconMapPin } from "@/components/Icons";
+import PpmAcceptedBadge from "@/components/PpmAcceptedBadge";
+import { IconBack, IconMapPin } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -85,15 +86,11 @@ export default async function OwnerChatPage({
       </div>
       <div className="min-w-0">
         <p className="font-semibold text-[15px] truncate flex items-center gap-1.5">
-          {/* Checkmark: this fan accepted the pay-per-message agreement */}
-          {chat.ppm_accepted_at && (
-            <span
-              title="Accepted the pay-per-message agreement"
-              className="shrink-0 text-green-500"
-            >
-              <IconCheck className="w-3.5 h-3.5" />
-            </span>
-          )}
+          {/* Shield: this fan accepted the pay-per-message agreement (live) */}
+          <PpmAcceptedBadge
+            chatId={chatId}
+            initialAccepted={!!chat.ppm_accepted_at}
+          />
           {/* Card icon (once registered) + name */}
           <FanWalletStatus
             chatId={chatId}

@@ -8,7 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { chatPreviewLabel, type ChatPreview } from "@/lib/chatPreview";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
-import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
+import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconShieldCheck, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
 import MassMessage from "./MassMessage";
@@ -83,6 +83,7 @@ let inboxChannel: RealtimeChannel | null = null;
 let inboxChannelOwner: string | null = null;
 const inboxListeners = new Set<(payload?: InboxMessagePayload) => void>();
 const typingListeners = new Set<(chatId: string) => void>();
+const ppmListeners = new Set<(chatId: string) => void>();
 
 function ensureInboxChannel(ownerId: string) {
   if (inboxChannel && inboxChannelOwner === ownerId) return;
@@ -107,6 +108,11 @@ function ensureInboxChannel(ownerId: string) {
       if (p.chatId && p.sender === "guest") {
         typingListeners.forEach((listener) => listener(p.chatId!));
       }
+    })
+    // A fan accepted the pay-per-message terms → purple shield on their row.
+    .on("broadcast", { event: "ppm-accepted" }, ({ payload }) => {
+      const p = payload as { chatId?: string };
+      if (p.chatId) ppmListeners.forEach((listener) => listener(p.chatId!));
     })
     .subscribe((status) => {
       // Recreate the channel if Realtime drops — otherwise new-message
@@ -145,6 +151,17 @@ function subscribeInboxTyping(
   typingListeners.add(onTyping);
   return () => {
     typingListeners.delete(onTyping);
+  };
+}
+
+function subscribeInboxPpm(
+  ownerId: string,
+  onAccepted: (chatId: string) => void
+): () => void {
+  ensureInboxChannel(ownerId);
+  ppmListeners.add(onAccepted);
+  return () => {
+    ppmListeners.delete(onAccepted);
   };
 }
 
@@ -314,6 +331,24 @@ export default function ChatList() {
   useEffect(() => {
     if (!ownerId) return;
     return subscribeGuestPresence(ownerId, setOnlineIds);
+  }, [ownerId]);
+
+  // Purple shield flips the moment a fan accepts the pay-per-message terms
+  // (broadcast from the accept endpoint; the 5s poll reconciles anyway).
+  useEffect(() => {
+    if (!ownerId) return;
+    return subscribeInboxPpm(ownerId, (chatId) => {
+      setChats((prev) => {
+        if (!prev) return prev;
+        const next = prev.map((c) =>
+          c.id === chatId && !c.ppm_accepted_at
+            ? { ...c, ppm_accepted_at: new Date().toISOString() }
+            : c
+        );
+        chatsCache = next;
+        return next;
+      });
+    });
   }, [ownerId]);
 
   // Typing animation on the rows: fans send throttled typing pings (~1.5s),
@@ -724,9 +759,9 @@ export default function ChatList() {
                       {chat.ppm_accepted_at && (
                         <span
                           title="Accepted the pay-per-message agreement"
-                          className="shrink-0 text-green-500"
+                          className="shrink-0 text-purple-500"
                         >
-                          <IconCheck className="w-3.5 h-3.5" />
+                          <IconShieldCheck className="w-4 h-4" />
                         </span>
                       )}
                       {chat.stripe_payment_method_id && (

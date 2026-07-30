@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const db = supabaseAdmin();
     const { data: chat, error: chatErr } = await db
       .from("chats")
-      .select("stripe_payment_method_id")
+      .select("stripe_payment_method_id, ppm_accepted_at")
       .eq("id", chatId)
       .eq("owner_id", ownerId)
       .maybeSingle();
@@ -75,6 +75,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       hasCard: !!chat.stripe_payment_method_id,
+      ppmAccepted: !!chat.ppm_accepted_at,
       media,
     });
   } catch (err) {
