@@ -59,12 +59,78 @@ export async function recordBlurDrainTap(opts: {
 const PPM_SETTLE_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
+ * Apply a successful Pay per Message charge: debit the billed amount from the
+ * chat balance (atomically) and push the new balance to the fan so their
+ * Balance popup goes back to $0.00 when nothing else is outstanding.
+ * Idempotent per Stripe PaymentIntent via ppm_settlements.
+ */
+export async function applyPpmSettlement(opts: {
+  chatId: string;
+  amountCents: number;
+  paymentIntentId: string;
+}): Promise<number | null> {
+  const amount = Math.max(0, Math.round(opts.amountCents));
+  if (amount <= 0) return null;
+  const db = supabaseAdmin();
+
+  const { error: ledgerErr } = await db.from("ppm_settlements").insert({
+    stripe_payment_intent_id: opts.paymentIntentId,
+    chat_id: opts.chatId,
+    amount_cents: amount,
+  });
+  // Unique violation = this PaymentIntent already cleared the balance.
+  // Any other ledger error (table not migrated yet) → still debit below.
+  if (ledgerErr?.code === "23505") {
+    const { data } = await db
+      .from("chats")
+      .select("ppm_balance_cents")
+      .eq("id", opts.chatId)
+      .maybeSingle();
+    const bal = data?.ppm_balance_cents ?? 0;
+    await broadcast(`chat:${opts.chatId}`, "ppm-balance", {
+      balanceCents: bal,
+      declined: false,
+    });
+    return bal;
+  }
+
+  // Prefer the atomic SQL function; fall back to a read/write if it isn't
+  // installed yet so settlement still clears the balance.
+  let newBal: number;
+  const { data: rpcBal, error: rpcErr } = await db.rpc("ppm_debit_balance", {
+    p_chat_id: opts.chatId,
+    p_amount: amount,
+  });
+  if (!rpcErr && typeof rpcBal === "number") {
+    newBal = rpcBal;
+  } else {
+    const { data: fresh } = await db
+      .from("chats")
+      .select("ppm_balance_cents")
+      .eq("id", opts.chatId)
+      .maybeSingle();
+    newBal = Math.max(0, (fresh?.ppm_balance_cents ?? 0) - amount);
+    await db
+      .from("chats")
+      .update({ ppm_balance_cents: newBal, ppm_card_declined: false })
+      .eq("id", opts.chatId);
+  }
+
+  await broadcast(`chat:${opts.chatId}`, "ppm-balance", {
+    balanceCents: newBal,
+    declined: false,
+  });
+  return newBal;
+}
+
+/**
  * Pay per Message settlement: charge the chat's accrued message balance to
  * the fan's saved card as ONE PaymentIntent. Called lazily (message sends,
  * wallet polls) — runs at most once an hour unless forced (e.g. right after
  * the fan adds a new card following a decline). A failed charge flips
  * ppm_card_declined, which hides the fan's chat input until a working card
- * is saved.
+ * is saved. On success the billed amount is deducted so the Balance popup
+ * returns to $0.00 (plus anything sent during the charge).
  */
 export async function settlePpmBalance(chatId: string, force = false) {
   if (!stripeConfigured()) return;
@@ -97,32 +163,33 @@ export async function settlePpmBalance(chatId: string, force = false) {
   if (!claimed?.length) return;
 
   try {
-    await stripe().paymentIntents.create({
+    const pi = await stripe().paymentIntents.create({
       amount: balance,
       currency: "usd",
       customer: chat.stripe_customer_id,
       payment_method: chat.stripe_payment_method_id,
       off_session: true,
       confirm: true,
-      metadata: { chatId, kind: "ppm-settle" },
+      metadata: {
+        chatId,
+        kind: "ppm-settle",
+        amountCents: String(balance),
+      },
       description: "Chat messages",
     });
-    // Messages sent while the charge ran keep accruing — only subtract what
-    // was actually billed.
-    const { data: fresh } = await db
-      .from("chats")
-      .select("ppm_balance_cents")
-      .eq("id", chatId)
-      .maybeSingle();
-    await db
-      .from("chats")
-      .update({
-        ppm_balance_cents: Math.max(0, (fresh?.ppm_balance_cents ?? 0) - balance),
-        ppm_card_declined: false,
-      })
-      .eq("id", chatId);
+    if (pi.status !== "succeeded") {
+      await db.from("chats").update({ ppm_card_declined: true }).eq("id", chatId);
+      await broadcast(`chat:${chatId}`, "ppm-balance", { declined: true });
+      return;
+    }
+    await applyPpmSettlement({
+      chatId,
+      amountCents: balance,
+      paymentIntentId: pi.id,
+    });
   } catch {
     await db.from("chats").update({ ppm_card_declined: true }).eq("id", chatId);
+    await broadcast(`chat:${chatId}`, "ppm-balance", { declined: true });
   }
 }
 

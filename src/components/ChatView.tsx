@@ -327,6 +327,26 @@ export default function ChatView({
         if (typingHideRef.current) clearTimeout(typingHideRef.current);
         typingHideRef.current = setTimeout(() => setPeerTyping(false), 3000);
       })
+      // Pay per Message auto-charge cleared (or declined) the balance —
+      // update the Balance popup immediately without waiting for the poll.
+      .on("broadcast", { event: "ppm-balance" }, ({ payload }) => {
+        if (role !== "guest") return;
+        const p = payload as { balanceCents?: number; declined?: boolean } | null;
+        setPpm((prev) => {
+          if (!prev?.enabled) return prev;
+          const next = {
+            ...prev,
+            ...(typeof p?.balanceCents === "number"
+              ? { balanceCents: Math.max(0, p.balanceCents) }
+              : {}),
+            ...(typeof p?.declined === "boolean" ? { declined: p.declined } : {}),
+          };
+          window.dispatchEvent(
+            new CustomEvent("loly-ppm", { detail: { chatId, ...next } })
+          );
+          return next;
+        });
+      })
       .subscribe();
     channelRef.current = channel;
 

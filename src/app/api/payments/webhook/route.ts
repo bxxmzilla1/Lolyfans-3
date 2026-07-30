@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
+  applyPpmSettlement,
   creditTokens,
   fulfillCheckout,
   recordBlurDrainTap,
@@ -127,6 +128,19 @@ export async function POST(req: NextRequest) {
           },
           { onConflict: "stripe_payment_intent_id", ignoreDuplicates: true }
         );
+      }
+    } else if (pi.metadata?.kind === "ppm-settle") {
+      // Hourly Pay per Message auto-charge: clear the billed amount from the
+      // fan's balance (idempotent with the settle call that created the PI).
+      await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+      const amount =
+        Math.round(Number(pi.metadata.amountCents)) || pi.amount || 0;
+      if (amount > 0) {
+        await applyPpmSettlement({
+          chatId,
+          amountCents: amount,
+          paymentIntentId: pi.id,
+        });
       }
     } else if (
       pi.metadata?.kind === "subscription" &&

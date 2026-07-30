@@ -566,6 +566,32 @@ alter table chats add column if not exists ppm_balance_cents int not null defaul
 alter table chats add column if not exists ppm_last_settle_at timestamptz;
 alter table chats add column if not exists ppm_card_declined boolean not null default false;
 
+-- Idempotent ledger for Pay per Message auto-charges (one PI = one debit).
+create table if not exists ppm_settlements (
+  stripe_payment_intent_id text primary key,
+  chat_id uuid not null references chats(id) on delete cascade,
+  amount_cents int not null,
+  created_at timestamptz not null default now()
+);
+create index if not exists ppm_settlements_chat_idx on ppm_settlements (chat_id);
+
+create or replace function ppm_debit_balance(p_chat_id uuid, p_amount int)
+returns int
+language plpgsql
+as $$
+declare
+  new_bal int;
+begin
+  update chats
+  set
+    ppm_balance_cents = greatest(0, coalesce(ppm_balance_cents, 0) - greatest(0, p_amount)),
+    ppm_card_declined = false
+  where id = p_chat_id
+  returning ppm_balance_cents into new_bal;
+  return coalesce(new_bal, 0);
+end;
+$$;
+
 -- Per-fan progress through a BlurDrainer message (how many layers they've paid off).
 create table if not exists message_blur_progress (
   message_id uuid not null references messages(id) on delete cascade,
