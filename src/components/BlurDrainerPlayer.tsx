@@ -303,11 +303,13 @@ export default function BlurDrainerPlayer({
     setCardNote(null);
   }
 
+  // Free drains before verification show a two-line prompt on the blur.
+  const freePrompt = free && cleared === 0;
   const blurLabel =
     remaining <= 0
       ? "Tap to unblur"
-      : free && cleared === 0
-        ? "Unblur this video for FREE - Card verification required"
+      : freePrompt
+        ? "To watch this video for free, please add your payment details"
         : `Tap ${remaining} time${remaining === 1 ? "" : "s"} to unblur the video`;
 
   return (
@@ -380,6 +382,15 @@ export default function BlurDrainerPlayer({
                     />
                     <span className="text-white/75 text-sm font-thin tracking-wide drop-shadow-lg select-none">
                       One moment…
+                    </span>
+                  </span>
+                ) : freePrompt ? (
+                  <span className="flex flex-col items-center gap-2">
+                    <span className="text-white/85 text-xl sm:text-2xl font-thin tracking-wide drop-shadow-lg select-none leading-snug">
+                      {blurLabel}
+                    </span>
+                    <span className="text-white/60 text-sm font-thin tracking-wide drop-shadow-lg select-none">
+                      Tap here
                     </span>
                   </span>
                 ) : (
