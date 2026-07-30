@@ -5,7 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { formatTime, messagePreviewText } from "@/lib/utils";
+import { formatTime } from "@/lib/utils";
+import { chatPreviewLabel, type ChatPreview } from "@/lib/chatPreview";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
 import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
@@ -23,9 +24,17 @@ type ChatRow = {
   /** Card on file → the fan can one-tap purchase (credit-card icon). */
   stripe_payment_method_id: string | null;
   invites: { label: string | null; code: string } | null;
-  preview: { content: string | null; media_type: string | null } | null;
+  preview: ChatPreview | null;
   unread: number;
   categories: string[];
+};
+
+type InboxMessagePayload = {
+  chatId?: string;
+  content?: string | null;
+  media_type?: string | null;
+  created_at?: string;
+  sender?: string;
 };
 
 type Category = { id: string; name: string };
@@ -53,7 +62,7 @@ function readStoredInbox(): { chats: ChatRow[]; ownerId: string; categories: Cat
 // forbids two subscriptions to the same channel topic on one client.
 let inboxChannel: RealtimeChannel | null = null;
 let inboxChannelOwner: string | null = null;
-const inboxListeners = new Set<() => void>();
+const inboxListeners = new Set<(payload?: InboxMessagePayload) => void>();
 const typingListeners = new Set<(chatId: string) => void>();
 
 function ensureInboxChannel(ownerId: string) {
@@ -68,8 +77,10 @@ function ensureInboxChannel(ownerId: string) {
       { event: "INSERT", schema: "public", table: "messages" },
       () => inboxListeners.forEach((listener) => listener())
     )
-    .on("broadcast", { event: "new-message" }, () =>
-      inboxListeners.forEach((listener) => listener())
+    .on("broadcast", { event: "new-message" }, ({ payload }) =>
+      inboxListeners.forEach((listener) =>
+        listener(payload as InboxMessagePayload | undefined)
+      )
     )
     // Fans typing in their chat → animated dots on the chat list row.
     .on("broadcast", { event: "typing" }, ({ payload }) => {
@@ -96,7 +107,10 @@ function ensureInboxChannel(ownerId: string) {
     });
 }
 
-function subscribeInbox(ownerId: string, onEvent: () => void): () => void {
+function subscribeInbox(
+  ownerId: string,
+  onEvent: (payload?: InboxMessagePayload) => void
+): () => void {
   ensureInboxChannel(ownerId);
   inboxListeners.add(onEvent);
   return () => {
@@ -179,6 +193,43 @@ export default function ChatList() {
     }, 250);
   }
 
+  /** Instant preview bump so rows don't stick on "New chat" while /api/chats runs. */
+  function applyInboxPreview(payload?: InboxMessagePayload) {
+    const chatId = payload?.chatId;
+    if (!chatId) return;
+    const preview: ChatPreview = {
+      content: payload.content ?? null,
+      media_type: payload.media_type ?? null,
+    };
+    const hasPreview =
+      !!(preview.content && preview.content.trim()) || !!preview.media_type;
+    const at = payload.created_at || new Date().toISOString();
+    const bump = (list: ChatRow[] | null) => {
+      if (!list) return list;
+      const idx = list.findIndex((c) => c.id === chatId);
+      if (idx < 0) return list;
+      const current = list[idx];
+      const next: ChatRow = {
+        ...current,
+        last_message_at: at,
+        preview: hasPreview ? preview : current.preview,
+        unread:
+          payload.sender === "guest" && !pathname?.includes(chatId)
+            ? (current.unread || 0) + 1
+            : current.unread,
+      };
+      const copy = list.slice();
+      copy.splice(idx, 1);
+      copy.unshift(next);
+      return copy;
+    };
+    setChats((prev) => {
+      const next = bump(prev);
+      if (next) chatsCache = next;
+      return next;
+    });
+  }
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -221,12 +272,16 @@ export default function ChatList() {
   // Instant updates, two independent paths (shared across all mounted lists):
   // 1. postgres_changes: the database itself streams every INSERT on messages
   //    (RLS limits events to this owner's chats) — fires on every message, always.
-  // 2. broadcast: pushed by the API route as a low-latency extra.
+  // 2. broadcast: pushed by the API route as a low-latency extra (also carries
+  //    a preview so the row updates before the full /api/chats refetch).
   useEffect(() => {
     if (!ownerId) return;
-    return subscribeInbox(ownerId, scheduleLoad);
+    return subscribeInbox(ownerId, (payload) => {
+      applyInboxPreview(payload);
+      scheduleLoad();
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ownerId]);
+  }, [ownerId, pathname]);
 
   useEffect(() => {
     return () => {
@@ -642,14 +697,7 @@ export default function ChatList() {
                       <p className={`text-[13px] truncate ${
                         chat.unread > 0 && !active ? "text-fg font-medium" : "text-muted"
                       }`}>
-                        {(chat.preview?.content && messagePreviewText(chat.preview.content)) ||
-                          (chat.preview?.media_type === "image"
-                            ? "Photo"
-                            : chat.preview?.media_type === "video"
-                            ? "Video"
-                            : chat.preview?.media_type === "audio"
-                            ? "Voice note"
-                            : "New chat")}
+                        {chatPreviewLabel(chat.preview)}
                       </p>
                     )}
                   </div>

@@ -118,9 +118,29 @@ returns table (
     coalesce(u.cnt, 0)
   from chats c
   left join lateral (
-    select content, media_type, sender, created_at
+    -- Prefer the latest message that actually has something to show.
+    -- media_type falls back to the first media_items entry so carousel /
+    -- BlurDrainer sends still preview correctly.
+    select
+      nullif(trim(content), '') as content,
+      coalesce(
+        media_type,
+        media_items -> 0 ->> 'type'
+      ) as media_type,
+      sender,
+      created_at
     from messages
     where chat_id = c.id
+      and (
+        coalesce(nullif(trim(content), ''), '') <> ''
+        or media_type is not null
+        or media_path is not null
+        or (
+          media_items is not null
+          and jsonb_typeof(media_items) = 'array'
+          and jsonb_array_length(media_items) > 0
+        )
+      )
     order by created_at desc
     limit 1
   ) m on true

@@ -180,7 +180,13 @@ export async function postTipMessage(opts: {
   await Promise.all([
     db.from("chats").update({ last_message_at: now }).eq("id", opts.chatId),
     broadcast(`chat:${opts.chatId}`, "new-message", message),
-    broadcast(`inbox:${opts.ownerId}`, "new-message", { chatId: opts.chatId }),
+    broadcast(`inbox:${opts.ownerId}`, "new-message", {
+      chatId: opts.chatId,
+      content: message.content ?? null,
+      media_type: message.media_type ?? null,
+      created_at: message.created_at,
+      sender: message.sender,
+    }),
   ]);
   return message;
 }
@@ -469,7 +475,13 @@ export async function fulfillCheckout(session: Stripe.Checkout.Session) {
       // Clients strip the receipt token for display via messagePreviewText / render
       content: base,
     }),
-    broadcast(`inbox:${chat.owner_id}`, "new-message", { chatId }),
+    broadcast(`inbox:${chat.owner_id}`, "new-message", {
+      chatId,
+      content: base,
+      media_type: null,
+      created_at: message.created_at,
+      sender: "guest",
+    }),
   ]);
 
   return { ok: true as const, kind: "tip" as const, messageId: message.id as string };

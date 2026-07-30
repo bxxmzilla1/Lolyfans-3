@@ -52,10 +52,23 @@ export async function POST(req: NextRequest) {
     .update({ last_message_at: now, last_read_at: now })
     .in("id", targetIds);
 
-  // Push each new message to its chat, plus one inbox refresh for the sidebar.
+  // Push each new message to its chat, plus inbox refreshes for the sidebar.
+  const sample = inserted?.[0];
   await Promise.all([
     ...(inserted ?? []).map((m) => broadcast(`chat:${m.chat_id}`, "new-message", m)),
-    broadcast(`inbox:${ownerId}`, "new-message", { chatId: targetIds[0] }),
+    ...(inserted ?? []).map((m) =>
+      broadcast(`inbox:${ownerId}`, "new-message", {
+        chatId: m.chat_id,
+        content: m.content ?? null,
+        media_type: m.media_type ?? null,
+        created_at: m.created_at,
+        sender: m.sender,
+      })
+    ),
+    // Keep a single fallback ping if insert returned nothing unexpected.
+    ...(sample
+      ? []
+      : [broadcast(`inbox:${ownerId}`, "new-message", { chatId: targetIds[0] })]),
   ]);
 
   // SMS-nudge every offline recipient (after the response; online guests and

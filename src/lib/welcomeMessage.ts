@@ -146,6 +146,14 @@ export async function sendWelcomeMessageIfNeeded(chatId: string, ownerId: string
       })
       .eq("id", chatId),
     ...sent.map((m) => broadcast(`chat:${chatId}`, "new-message", m)),
-    broadcast(`inbox:${ownerId}`, "new-message", { chatId }),
+    ...sent.map((m) =>
+      broadcast(`inbox:${ownerId}`, "new-message", {
+        chatId,
+        content: m.content ?? null,
+        media_type: m.media_type ?? null,
+        created_at: m.created_at,
+        sender: m.sender,
+      })
+    ),
   ]);
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
+import { previewMediaType } from "@/lib/chatPreview";
 
 export async function GET() {
   const ownerId = await getOwnerId();
@@ -34,6 +35,13 @@ export async function GET() {
   };
   type Stat = { id: string; preview: Preview | null; unread: number };
 
+  function usablePreview(p: Preview | null | undefined): boolean {
+    if (!p) return false;
+    if (p.content && p.content.trim()) return true;
+    if (p.media_type) return true;
+    return false;
+  }
+
   // Latest message preview + unread count per chat via one SQL round trip
   // (owner_chat_stats in schema.sql). Firing 2 queries per chat froze the
   // inbox once an account grew past a few hundred fans.
@@ -52,12 +60,12 @@ export async function GET() {
         preview_created_at: string | null;
         unread_count: number;
       }[]).map((row) => [
-        row.chat_id,
+        String(row.chat_id),
         {
-          id: row.chat_id,
+          id: String(row.chat_id),
           preview: row.preview_created_at
             ? {
-                chat_id: row.chat_id,
+                chat_id: String(row.chat_id),
                 content: row.preview_content,
                 media_type: row.preview_media_type,
                 created_at: row.preview_created_at,
@@ -80,7 +88,7 @@ export async function GET() {
           const [{ data: latest }, { count }] = await Promise.all([
             db
               .from("messages")
-              .select("chat_id, content, media_type, created_at, sender")
+              .select("chat_id, content, media_type, media_items, created_at, sender")
               .eq("chat_id", chat.id)
               .order("created_at", { ascending: false })
               .limit(1)
@@ -92,9 +100,18 @@ export async function GET() {
               .eq("sender", "guest")
               .gt("created_at", chat.last_read_at || "1970-01-01T00:00:00Z"),
           ]);
+          const preview = latest
+            ? {
+                chat_id: latest.chat_id as string,
+                content: (latest.content as string | null) ?? null,
+                media_type: previewMediaType(latest),
+                created_at: latest.created_at as string,
+                sender: (latest.sender as string) ?? "guest",
+              }
+            : null;
           return {
             id: chat.id as string,
-            preview: (latest as Preview | null) ?? null,
+            preview,
             unread: count ?? 0,
           };
         })
@@ -102,6 +119,47 @@ export async function GET() {
       stats.push(...batch);
     }
     byId = new Map(stats.map((s) => [s.id, s]));
+  }
+
+  // Heal rows the RPC left blank (older function, empty latest message, etc.)
+  // so chats with a real conversation never stick on "New chat".
+  const needsHeal = (chats ?? [])
+    .filter((c) => !usablePreview(byId.get(String(c.id))?.preview ?? null))
+    .slice(0, 80);
+  if (needsHeal.length) {
+    const BATCH = 20;
+    for (let i = 0; i < needsHeal.length; i += BATCH) {
+      const slice = needsHeal.slice(i, i + BATCH);
+      await Promise.all(
+        slice.map(async (chat) => {
+          const { data: latest } = await db
+            .from("messages")
+            .select("chat_id, content, media_type, media_items, created_at, sender")
+            .eq("chat_id", chat.id)
+            .order("created_at", { ascending: false })
+            .limit(5);
+          const row = (latest ?? []).find(
+            (m) =>
+              (typeof m.content === "string" && m.content.trim()) ||
+              !!previewMediaType(m) ||
+              !!m.media_type
+          );
+          if (!row) return;
+          const prev = byId.get(String(chat.id));
+          byId.set(String(chat.id), {
+            id: String(chat.id),
+            unread: prev?.unread ?? 0,
+            preview: {
+              chat_id: String(chat.id),
+              content: (row.content as string | null) ?? null,
+              media_type: previewMediaType(row),
+              created_at: row.created_at as string,
+              sender: (row.sender as string) ?? "guest",
+            },
+          });
+        })
+      );
+    }
   }
 
   return NextResponse.json({
@@ -112,8 +170,8 @@ export async function GET() {
       categories: ((chat_category_members ?? []) as { category_id: string }[]).map(
         (m) => m.category_id
       ),
-      preview: byId.get(c.id)?.preview ?? null,
-      unread: byId.get(c.id)?.unread ?? 0,
+      preview: byId.get(String(c.id))?.preview ?? null,
+      unread: byId.get(String(c.id))?.unread ?? 0,
     })),
   });
 }

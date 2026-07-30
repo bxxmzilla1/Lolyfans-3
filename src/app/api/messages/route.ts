@@ -196,7 +196,13 @@ export async function POST(req: NextRequest) {
     db.from("chats").update(chatUpdate).eq("id", chatId),
     broadcast(`chat:${chatId}`, "new-message", message),
     // Owner's chat list updates instantly on any new message.
-    broadcast(`inbox:${auth.chatOwnerId}`, "new-message", { chatId }),
+    broadcast(`inbox:${auth.chatOwnerId}`, "new-message", {
+      chatId,
+      content: message.content ?? null,
+      media_type: message.media_type ?? null,
+      created_at: message.created_at,
+      sender: message.sender,
+    }),
   ]);
 
   // Offline guest? Nudge them by SMS (after the response, never blocking).

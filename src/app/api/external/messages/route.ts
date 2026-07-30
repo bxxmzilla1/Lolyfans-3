@@ -105,7 +105,13 @@ export async function POST(req: NextRequest) {
       .update({ last_message_at: now, last_read_at: now, bot_replied_at: now })
       .eq("id", chatId),
     broadcast(`chat:${chatId}`, "new-message", message),
-    broadcast(`inbox:${ownerId}`, "new-message", { chatId }),
+    broadcast(`inbox:${ownerId}`, "new-message", {
+      chatId,
+      content: message.content ?? null,
+      media_type: message.media_type ?? null,
+      created_at: message.created_at,
+      sender: message.sender,
+    }),
   ]);
 
   // Offline guest? Nudge them by SMS. Orion sends `notify: false` on every
