@@ -120,10 +120,12 @@ export default function BlurDrainerPlayer({
   }, [messageId]);
 
   /** Instant unblur: peel the layer now, settle the charge in the background.
-   *  If the payment fails, the layer fogs back and the card form explains. */
+   *  If the payment fails, the layer fogs back and the card form explains.
+   *  Free drains skip the optimistic peel: the blur must stay in place until
+   *  the card verification actually succeeds. */
   async function tap() {
     if (card || cleared + inflightRef.current >= config.layers) return;
-    setCleared((c) => Math.min(config.layers, c + 1));
+    if (!free) setCleared((c) => Math.min(config.layers, c + 1));
     inflightRef.current += 1;
     try {
       const res = await fetch("/api/payments/blur-drain", {
@@ -133,11 +135,11 @@ export default function BlurDrainerPlayer({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && typeof data.layersCleared === "number") {
+        if (free) setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
       } else if (res.ok && data.setupClientSecret) {
-        // Free drain, no verified card yet — refog and show the verification
-        // sheet (SetupIntent, no charge) under the still-playing video.
-        setCleared((c) => Math.max(0, c - 1));
+        // Free drain, no verified card yet — the blur never peeled, just show
+        // the verification sheet (SetupIntent, no charge) under the video.
         setCardNote("Verify your card below to unblur the video for free.");
         setCard({
           clientSecret: data.setupClientSecret,
@@ -149,7 +151,7 @@ export default function BlurDrainerPlayer({
       } else if (res.ok && data.clientSecret) {
         // No saved card (or charge failed) — refog and show the card sheet
         // under the still-playing video.
-        setCleared((c) => Math.max(0, c - 1));
+        if (!free) setCleared((c) => Math.max(0, c - 1));
         const needsCard = !!data.needsCard;
         setCardNote(
           needsCard
@@ -163,10 +165,10 @@ export default function BlurDrainerPlayer({
           needsCard,
         });
       } else {
-        setCleared((c) => Math.max(0, c - 1));
+        if (!free) setCleared((c) => Math.max(0, c - 1));
       }
     } catch {
-      setCleared((c) => Math.max(0, c - 1));
+      if (!free) setCleared((c) => Math.max(0, c - 1));
     } finally {
       inflightRef.current = Math.max(0, inflightRef.current - 1);
     }
