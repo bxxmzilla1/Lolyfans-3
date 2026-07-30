@@ -260,7 +260,7 @@ export default function BlurDrainerPlayer({
               onClick={tap}
               disabled={!!card || checking}
               aria-label={blurLabel}
-              className="absolute z-10 border border-white/20 overflow-hidden transition-[backdrop-filter,background-color,opacity] duration-500 ease-out disabled:opacity-70"
+              className="absolute z-10 border border-white/20 overflow-hidden transition-[backdrop-filter,background-color] duration-500 ease-out"
               style={{
                 left: frame.left + config.x * frame.width,
                 top: frame.top + config.y * frame.height,
