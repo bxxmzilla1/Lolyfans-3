@@ -42,9 +42,13 @@ export default function BlurDrainerPlayer({
     mode?: "payment" | "setup";
   } | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
-  // Free drains don't peel optimistically, so show a spinner on the blur
-  // square while the tap is being checked with the server.
+  // Spinner on the blur square while a non-optimistic tap waits on the server.
   const [checking, setChecking] = useState(false);
+  // Optimistic peeling is only allowed once we KNOW the fan's card charges
+  // fine (a prior layer cleared, or one succeeded this session). Until then
+  // the blur must stay in place — a card-less fan should never see a layer
+  // flash open before the Stripe form appears.
+  const [cardKnownGood, setCardKnownGood] = useState(initialCleared > 0);
   const prevCleared = useRef(initialCleared);
   // Optimistic taps: the layer clears instantly; the charge settles in the
   // background. Track in-flight charges so a failure can revert one layer.
@@ -122,14 +126,16 @@ export default function BlurDrainerPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messageId]);
 
-  /** Instant unblur: peel the layer now, settle the charge in the background.
-   *  If the payment fails, the layer fogs back and the card form explains.
-   *  Free drains skip the optimistic peel: the blur must stay in place until
-   *  the card verification actually succeeds. */
+  /** Unblur a layer. Once the card is known good the peel is optimistic
+   *  (instant, charge settles in the background; a failure fogs it back).
+   *  Before that — free drains and first-ever paid taps — the blur stays in
+   *  place with a spinner until the server confirms, so a card-less fan only
+   *  ever sees the Stripe card form, never an unblurred layer. */
   async function tap() {
     if (card || checking || cleared + inflightRef.current >= config.layers) return;
-    if (free) setChecking(true);
-    else setCleared((c) => Math.min(config.layers, c + 1));
+    const optimistic = !free && cardKnownGood;
+    if (optimistic) setCleared((c) => Math.min(config.layers, c + 1));
+    else setChecking(true);
     inflightRef.current += 1;
     try {
       const res = await fetch("/api/payments/blur-drain", {
@@ -139,8 +145,9 @@ export default function BlurDrainerPlayer({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && typeof data.layersCleared === "number") {
-        if (free) setCleared((c) => Math.max(c, data.layersCleared));
+        setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
+        setCardKnownGood(true);
       } else if (res.ok && data.setupClientSecret) {
         // Free drain, no verified card yet — the blur never peeled, just show
         // the verification sheet (SetupIntent, no charge) under the video.
@@ -155,7 +162,7 @@ export default function BlurDrainerPlayer({
       } else if (res.ok && data.clientSecret) {
         // No saved card (or charge failed) — refog and show the card sheet
         // under the still-playing video.
-        if (!free) setCleared((c) => Math.max(0, c - 1));
+        if (optimistic) setCleared((c) => Math.max(0, c - 1));
         const needsCard = !!data.needsCard;
         setCardNote(
           needsCard
@@ -169,10 +176,10 @@ export default function BlurDrainerPlayer({
           needsCard,
         });
       } else {
-        if (!free) setCleared((c) => Math.max(0, c - 1));
+        if (optimistic) setCleared((c) => Math.max(0, c - 1));
       }
     } catch {
-      if (!free) setCleared((c) => Math.max(0, c - 1));
+      if (optimistic) setCleared((c) => Math.max(0, c - 1));
     } finally {
       inflightRef.current = Math.max(0, inflightRef.current - 1);
       setChecking(false);
@@ -195,6 +202,7 @@ export default function BlurDrainerPlayer({
       if (res.ok && typeof data.layersCleared === "number") {
         setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
+        setCardKnownGood(true);
         if (videoEl) videoEl.play().catch(() => {});
       }
     } catch {
