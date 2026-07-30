@@ -178,7 +178,9 @@ export default function BlurDrainerPlayer({
   }
 
   const blurLabel =
-    remaining > 0 ? `Tap ${remaining} to unblur full video` : "Tap to unblur";
+    remaining > 0
+      ? `Tap ${remaining} time${remaining === 1 ? "" : "s"} to unblur the video`
+      : "Tap to unblur";
 
   return (
     <Portal>
