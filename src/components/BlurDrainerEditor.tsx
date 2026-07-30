@@ -22,11 +22,15 @@ type Rect = { x: number; y: number; w: number; h: number };
  */
 export default function BlurDrainerEditor({
   videoPath,
+  videoSrc,
   initial,
   onSave,
   onCancel,
 }: {
-  videoPath: string;
+  /** Storage path resolved through mediaUrl(). */
+  videoPath?: string;
+  /** Direct URL (e.g. a blob: object URL for a not-yet-uploaded file). */
+  videoSrc?: string;
   initial?: BlurDrainerConfig | null;
   onSave: (cfg: BlurDrainerConfig) => void;
   onCancel: () => void;
@@ -139,7 +143,7 @@ export default function BlurDrainerEditor({
             >
               <video
                 ref={setVideoEl}
-                src={mediaUrl(videoPath)}
+                src={videoSrc ?? (videoPath ? mediaUrl(videoPath) : undefined)}
                 muted
                 playsInline
                 loop

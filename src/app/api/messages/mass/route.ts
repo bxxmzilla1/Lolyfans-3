@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { broadcast } from "@/lib/realtime";
 import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
+import { parseBlurDrainer } from "@/lib/blurDrainer";
 
 /**
  * Send one message (optionally with media) to many of the owner's chats at
@@ -13,7 +14,8 @@ export async function POST(req: NextRequest) {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { chatIds, content, mediaPath, mediaType, locked } = await req.json();
+  const { chatIds, content, mediaPath, mediaType, locked, blurDrainer } =
+    await req.json();
   if (!Array.isArray(chatIds) || chatIds.length === 0) {
     return NextResponse.json({ error: "Pick at least one recipient" }, { status: 400 });
   }
@@ -33,6 +35,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No valid recipients" }, { status: 400 });
   }
 
+  // BlurDrainer (paid per-tap or free + card verify) only applies to videos.
+  const drain =
+    mediaPath && mediaType === "video" ? parseBlurDrainer(blurDrainer) : null;
+
   const now = new Date().toISOString();
   const rows = targetIds.map((chat_id) => ({
     chat_id,
@@ -42,6 +48,7 @@ export async function POST(req: NextRequest) {
     media_type: mediaType || null,
     locked: !!locked && !!mediaPath,
     created_at: now,
+    ...(drain ? { blur_drainer: drain } : {}),
   }));
 
   const { data: inserted, error } = await db.from("messages").insert(rows).select();

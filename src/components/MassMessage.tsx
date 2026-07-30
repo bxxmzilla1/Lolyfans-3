@@ -4,7 +4,9 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { fileKind, mediaUrl } from "@/lib/utils";
 import Portal from "./Portal";
-import { IconCheck, IconFolder, IconPlay, IconSend } from "./Icons";
+import BlurDrainerEditor from "./BlurDrainerEditor";
+import { type BlurDrainerConfig } from "@/lib/blurDrainer";
+import { IconCheck, IconEye, IconFolder, IconPlay, IconSend } from "./Icons";
 
 type ChatRow = {
   id: string;
@@ -38,6 +40,9 @@ export default function MassMessage({
   const [vaultOpen, setVaultOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  // BlurDrainer config attached to a video send (paid per-tap or free + card verify).
+  const [blurDrainer, setBlurDrainer] = useState<BlurDrainerConfig | null>(null);
+  const [blurEditorOpen, setBlurEditorOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const nameOf = (c: ChatRow) => c.custom_name || c.guest_name;
@@ -122,6 +127,7 @@ export default function MassMessage({
           content: text,
           mediaPath,
           mediaType,
+          blurDrainer: mediaType === "video" ? blurDrainer : null,
         }),
       });
       if (!res.ok) {
@@ -144,6 +150,11 @@ export default function MassMessage({
       return { url: mediaUrl(vaultPick.path), type: vaultPick.type };
     }
     return null;
+  }, [file, vaultPick]);
+
+  // A BlurDrainer belongs to one specific video — drop it when media changes.
+  useEffect(() => {
+    setBlurDrainer(null);
   }, [file, vaultPick]);
 
   return (
@@ -358,6 +369,42 @@ export default function MassMessage({
                   {vaultPick ? "Change vault pick" : "+ Choose from vault"}
                 </button>
               </div>
+              {mediaPreview?.type === "video" && (
+                <div className="flex items-center gap-2 flex-wrap rounded-xl border border-accent/30 bg-accent/5 px-2.5 py-2">
+                  <button
+                    type="button"
+                    onClick={() => setBlurEditorOpen(true)}
+                    className={`text-xs font-bold px-2.5 py-1 rounded-lg border inline-flex items-center gap-1.5 ${
+                      blurDrainer
+                        ? "bg-accent text-white border-accent"
+                        : "bg-bg border-accent/40 text-fg"
+                    }`}
+                  >
+                    <IconEye className="w-3.5 h-3.5" />
+                    BlurDrainer
+                  </button>
+                  {blurDrainer ? (
+                    <>
+                      <span className="text-[11px] text-fg/80">
+                        {blurDrainer.priceCents > 0
+                          ? `${blurDrainer.layers} layers · $${(blurDrainer.priceCents / 100).toFixed(2).replace(/\.00$/, "")}/tap`
+                          : "FREE (card verify)"}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setBlurDrainer(null)}
+                        className="text-[11px] text-red-400 font-semibold"
+                      >
+                        Remove
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-muted">
+                      Pay-per-tap or free (card verify) unblur on this video
+                    </span>
+                  )}
+                </div>
+              )}
               {error && <p className="text-red-400 text-sm">{error}</p>}
             </section>
           </div>
@@ -388,6 +435,18 @@ export default function MassMessage({
               setVaultOpen(false);
             }}
             onClose={() => setVaultOpen(false)}
+          />
+        )}
+
+        {blurEditorOpen && mediaPreview?.type === "video" && (
+          <BlurDrainerEditor
+            videoSrc={mediaPreview.url}
+            initial={blurDrainer}
+            onSave={(cfg) => {
+              setBlurDrainer(cfg);
+              setBlurEditorOpen(false);
+            }}
+            onCancel={() => setBlurEditorOpen(false)}
           />
         )}
       </div>
