@@ -200,7 +200,7 @@ export default function BlurDrainerPlayer({
             >
               Close
             </button>
-            <p className="text-white/35 text-sm font-thin tracking-wide tabular-nums">
+            <p className="text-white/80 text-sm font-light tracking-wide drop-shadow tabular-nums">
               {blurDrainPriceLabel(config.priceCents)} / tap
             </p>
           </div>
