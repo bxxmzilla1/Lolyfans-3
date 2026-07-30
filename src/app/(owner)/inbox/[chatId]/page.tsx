@@ -1,4 +1,4 @@
-import { notFound, redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getOwnerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -51,7 +51,9 @@ export default async function OwnerChatPage({
         .eq("id", chatId)
         .eq("owner_id", ownerId),
     ]);
-  if (!chat) notFound();
+  // Chat gone (e.g. deleted via guest exit) — back to the inbox instead of
+  // stranding the creator on a 404.
+  if (!chat) redirect("/inbox");
 
   const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id as string));
   const drainMap = new Map(
