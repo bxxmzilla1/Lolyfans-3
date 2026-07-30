@@ -529,8 +529,10 @@ export default function MessageBubble({
                 drainCleared > 0 ? "bg-emerald-500/90" : "bg-accent/90"
               }`}
             >
-              BlurDrainer · {drainCleared}/{drainCfg.layers} tapped · $
-              {(drainCfg.priceCents / 100).toFixed(2).replace(/\.00$/, "")}/tap
+              BlurDrainer · {drainCleared}/{drainCfg.layers} tapped ·{" "}
+              {drainCfg.priceCents > 0
+                ? `$${(drainCfg.priceCents / 100).toFixed(2).replace(/\.00$/, "")}/tap`
+                : "FREE (card verify)"}
             </span>
           </div>
         )}

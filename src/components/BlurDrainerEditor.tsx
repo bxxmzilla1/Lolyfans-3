@@ -40,8 +40,12 @@ export default function BlurDrainerEditor({
       : { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }
   );
   const [layers, setLayers] = useState(String(initial?.layers ?? 8));
+  // Free mode: taps cost nothing but the fan must verify their card first.
+  const [free, setFree] = useState(initial ? initial.priceCents === 0 : false);
   const [price, setPrice] = useState(
-    initial ? ((initial.priceCents / 100).toFixed(2).replace(/\.00$/, "")) : "0.99"
+    initial && initial.priceCents > 0
+      ? (initial.priceCents / 100).toFixed(2).replace(/\.00$/, "")
+      : "0.99"
   );
   const dragRef = useRef<{
     mode: "move" | "resize";
@@ -87,18 +91,19 @@ export default function BlurDrainerEditor({
 
   function save() {
     const layerN = Math.max(1, Math.min(40, Math.round(parseFloat(layers) || 0)));
-    const cents = Math.max(
-      1,
-      Math.round((parseFloat(price.replace(/[^\d.]/g, "")) || 0) * 100)
-    );
-    if (layerN < 1 || cents < 1) {
+    const cents = free
+      ? 0
+      : Math.max(1, Math.round((parseFloat(price.replace(/[^\d.]/g, "")) || 0) * 100));
+    if (layerN < 1 || (!free && cents < 1)) {
       alert("Set layers and a price per tap");
       return;
     }
     onSave({ ...rect, layers: layerN, priceCents: cents });
   }
 
-  const priceCents = Math.round((parseFloat(price.replace(/[^\d.]/g, "")) || 0) * 100);
+  const priceCents = free
+    ? 0
+    : Math.round((parseFloat(price.replace(/[^\d.]/g, "")) || 0) * 100);
 
   return (
     <Portal>
@@ -185,20 +190,32 @@ export default function BlurDrainerEditor({
                   className="w-14 bg-bg border border-line rounded-lg px-2 py-1.5 text-xs focus:border-accent"
                 />
               </label>
-              <label className="flex items-center gap-1.5 text-xs">
-                <span className="text-muted">Per tap</span>
-                <span className="font-bold text-accent">$</span>
+              {!free && (
+                <label className="flex items-center gap-1.5 text-xs">
+                  <span className="text-muted">Per tap</span>
+                  <span className="font-bold text-accent">$</span>
+                  <input
+                    value={price}
+                    onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))}
+                    inputMode="decimal"
+                    className="w-16 bg-bg border border-line rounded-lg px-2 py-1.5 text-xs focus:border-accent"
+                  />
+                </label>
+              )}
+              <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
                 <input
-                  value={price}
-                  onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))}
-                  inputMode="decimal"
-                  className="w-16 bg-bg border border-line rounded-lg px-2 py-1.5 text-xs focus:border-accent"
+                  type="checkbox"
+                  checked={free}
+                  onChange={(e) => setFree(e.target.checked)}
+                  className="accent-accent"
                 />
+                <span className="text-muted">Free · card verify</span>
               </label>
             </div>
             <p className="text-[11px] text-muted">
-              Fans pay {priceCents > 0 ? blurDrainPriceLabel(priceCents) : "$—"} each
-              tap · {Math.max(1, parseInt(layers, 10) || 1)} taps to fully clear
+              {free
+                ? `Fans unblur for free, but must verify their card first · ${Math.max(1, parseInt(layers, 10) || 1)} taps to fully clear`
+                : `Fans pay ${priceCents > 0 ? blurDrainPriceLabel(priceCents) : "$—"} each tap · ${Math.max(1, parseInt(layers, 10) || 1)} taps to fully clear`}
             </p>
 
             <button

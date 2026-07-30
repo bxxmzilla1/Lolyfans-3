@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
   }
 
-  const { messageId, embedded, paymentIntentId } = await req.json();
+  const { messageId, embedded, paymentIntentId, setupIntentId } = await req.json();
   if (!messageId) return NextResponse.json({ error: "messageId required" }, { status: 400 });
 
   const db = supabaseAdmin();
@@ -78,6 +78,36 @@ export async function POST(req: NextRequest) {
   const cleared = prog?.layers_cleared ?? 0;
   if (cleared >= cfg.layers) {
     return NextResponse.json({ ok: true, layersCleared: cleared, done: true });
+  }
+
+  // Free BlurDrainer: completing the card-verification SetupIntent unlocks
+  // the tapped layer without any charge.
+  if (typeof setupIntentId === "string" && setupIntentId) {
+    const si = await stripe().setupIntents.retrieve(setupIntentId);
+    if (si.status !== "succeeded") {
+      return NextResponse.json({ error: "Verification not complete" }, { status: 400 });
+    }
+    if (si.metadata?.kind !== "blur-drain-verify" || si.metadata.messageId !== messageId) {
+      return NextResponse.json({ error: "Invalid verification" }, { status: 400 });
+    }
+    const customerId =
+      typeof si.customer === "string" ? si.customer : si.customer?.id ?? null;
+    const pmId =
+      typeof si.payment_method === "string"
+        ? si.payment_method
+        : si.payment_method?.id ?? null;
+    await saveStripePaymentMethod(message.chat_id, customerId, pmId);
+    const layersCleared = await recordBlurDrainTap({
+      messageId,
+      chatId: message.chat_id,
+      layers: cfg.layers,
+      paymentIntentId: `free_${si.id}`,
+    });
+    return NextResponse.json({
+      ok: true,
+      layersCleared,
+      done: layersCleared >= cfg.layers,
+    });
   }
 
   // Completing an embedded PaymentIntent after the wizard succeeds.
@@ -122,6 +152,41 @@ export async function POST(req: NextRequest) {
     messageId: message.id,
   };
   const price = cfg.priceCents;
+
+  // Free BlurDrainer: no charge per tap, but the fan needs a verified card.
+  if (price <= 0) {
+    if (chat?.stripe_customer_id && chat?.stripe_payment_method_id) {
+      const layersCleared = await recordBlurDrainTap({
+        messageId: message.id,
+        chatId: message.chat_id,
+        layers: cfg.layers,
+        paymentIntentId: `free_${message.id}_${cleared + 1}`,
+      });
+      return NextResponse.json({
+        ok: true,
+        layersCleared,
+        done: layersCleared >= cfg.layers,
+      });
+    }
+    if (embedded === true) {
+      const customerId = await ensureStripeCustomer(message.chat_id);
+      const si = await s.setupIntents.create({
+        customer: customerId,
+        payment_method_types: ["card"],
+        usage: "off_session",
+        metadata: { ...metadata, kind: "blur-drain-verify" },
+      });
+      return NextResponse.json({
+        setupClientSecret: si.client_secret,
+        country: await visitorCountryCode(req.headers),
+        needsCard: true,
+      });
+    }
+    return NextResponse.json(
+      { error: "Verify your card to continue unblurring" },
+      { status: 402 }
+    );
+  }
 
   if (chat?.stripe_customer_id && chat?.stripe_payment_method_id) {
     try {

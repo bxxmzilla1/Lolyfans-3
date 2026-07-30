@@ -38,6 +38,8 @@ export default function BlurDrainerPlayer({
     amountCents: number;
     country: string | null;
     needsCard?: boolean;
+    /** "setup" = free drain: verify + save the card, no charge. */
+    mode?: "payment" | "setup";
   } | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
   const prevCleared = useRef(initialCleared);
@@ -50,6 +52,7 @@ export default function BlurDrainerPlayer({
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const frame = useVideoContentBox(containerEl, videoEl);
 
+  const free = config.priceCents <= 0;
   const remaining = Math.max(0, config.layers - cleared);
   // How fogged the region still is (1 = untouched, 0 = fully paid off).
   const fog = remaining <= 0 ? 0 : Math.pow(remaining / config.layers, 0.85);
@@ -131,6 +134,18 @@ export default function BlurDrainerPlayer({
       const data = await res.json().catch(() => ({}));
       if (res.ok && typeof data.layersCleared === "number") {
         onProgress?.(data.layersCleared);
+      } else if (res.ok && data.setupClientSecret) {
+        // Free drain, no verified card yet — refog and show the verification
+        // sheet (SetupIntent, no charge) under the still-playing video.
+        setCleared((c) => Math.max(0, c - 1));
+        setCardNote("Verify your card below to unblur the video for free.");
+        setCard({
+          clientSecret: data.setupClientSecret,
+          amountCents: 0,
+          country: data.country ?? null,
+          needsCard: true,
+          mode: "setup",
+        });
       } else if (res.ok && data.clientSecret) {
         // No saved card (or charge failed) — refog and show the card sheet
         // under the still-playing video.
@@ -157,12 +172,17 @@ export default function BlurDrainerPlayer({
     }
   }
 
-  async function completeCard(paymentIntentId: string) {
+  async function completeCard(intentId: string) {
+    const isSetup = card?.mode === "setup";
     try {
       const res = await fetch("/api/payments/blur-drain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId, paymentIntentId }),
+        body: JSON.stringify(
+          isSetup
+            ? { messageId, setupIntentId: intentId }
+            : { messageId, paymentIntentId: intentId }
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && typeof data.layersCleared === "number") {
@@ -178,9 +198,11 @@ export default function BlurDrainerPlayer({
   }
 
   const blurLabel =
-    remaining > 0
-      ? `Tap ${remaining} time${remaining === 1 ? "" : "s"} to unblur the video`
-      : "Tap to unblur";
+    remaining <= 0
+      ? "Tap to unblur"
+      : free && cleared === 0
+        ? "Unblur this video for FREE - Card verification required"
+        : `Tap ${remaining} time${remaining === 1 ? "" : "s"} to unblur the video`;
 
   return (
     <Portal>
@@ -198,7 +220,7 @@ export default function BlurDrainerPlayer({
               Close
             </button>
             <p className="text-white/80 text-sm font-light tracking-wide drop-shadow tabular-nums">
-              {blurDrainPriceLabel(config.priceCents)} / tap
+              {free ? "FREE" : `${blurDrainPriceLabel(config.priceCents)} / tap`}
             </p>
           </div>
         </div>
@@ -285,6 +307,7 @@ export default function BlurDrainerPlayer({
               )}
               <EmbeddedCardTopup
                 clientSecret={card.clientSecret}
+                mode={card.mode ?? "payment"}
                 amountCents={card.amountCents}
                 presentAsVerify
                 countryGuess={card.country}
