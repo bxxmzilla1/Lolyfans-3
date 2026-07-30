@@ -78,7 +78,22 @@ function ensureInboxChannel(ownerId: string) {
         typingListeners.forEach((listener) => listener(p.chatId!));
       }
     })
-    .subscribe();
+    .subscribe((status) => {
+      // Recreate the channel if Realtime drops — otherwise new-message
+      // signals stop forever until a full page reload.
+      if (
+        (status === "CHANNEL_ERROR" || status === "TIMED_OUT") &&
+        inboxChannelOwner === ownerId
+      ) {
+        const dead = inboxChannel;
+        inboxChannel = null;
+        inboxChannelOwner = null;
+        if (dead) supabase.removeChannel(dead);
+        if (inboxListeners.size > 0 || typingListeners.size > 0) {
+          setTimeout(() => ensureInboxChannel(ownerId), 1000);
+        }
+      }
+    });
 }
 
 function subscribeInbox(ownerId: string, onEvent: () => void): () => void {
@@ -124,30 +139,52 @@ export default function ChatList() {
   const typingTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const pathname = usePathname();
   const router = useRouter();
-  const cancelledRef = useRef(false);
+  const mountedRef = useRef(true);
+  const loadRef = useRef<() => Promise<void>>(async () => {});
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   async function load() {
-    const chatsRes = await fetch("/api/chats");
-    if (cancelledRef.current) return;
+    const chatsRes = await fetch("/api/chats").catch(() => null);
+    if (!chatsRes) return;
     if (chatsRes.ok) {
       const { chats, ownerId, categories } = await chatsRes.json();
+      // Always refresh the module cache — even if this instance is mid-navigation
+      // or unmounting — so the next mount / sibling sidebar paints fresh data.
       chatsCache = chats;
       ownerIdCache = ownerId;
       categoriesCache = categories;
-      setChats(chats);
-      setOwnerId(ownerId);
-      setCategories(categories);
       try {
         localStorage.setItem(INBOX_CACHE_KEY, JSON.stringify({ chats, ownerId, categories }));
       } catch {
         // Storage full or unavailable; the app still works, just without instant paint.
       }
+      if (!mountedRef.current) return;
+      setChats(chats);
+      setOwnerId(ownerId);
+      setCategories(categories);
     } else if (chatsRes.status === 401) {
       try {
         localStorage.removeItem(INBOX_CACHE_KEY);
       } catch {}
     }
   }
+  loadRef.current = load;
+
+  /** Coalesce bursts of realtime events into one refetch. */
+  function scheduleLoad() {
+    if (reloadTimerRef.current) return;
+    reloadTimerRef.current = setTimeout(() => {
+      reloadTimerRef.current = null;
+      loadRef.current();
+    }, 250);
+  }
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   // Paint instantly from the last persisted inbox on a fresh launch, then let
   // the network refresh replace it.
@@ -161,14 +198,22 @@ export default function ChatList() {
     }
   }, []);
 
-  // Refetch on mount and on navigation (opening a chat clears its badge server-side).
+  // Refetch on mount / navigation, and keep polling while the tab is visible
+  // so previews never go stale if a realtime signal is missed.
   useEffect(() => {
-    cancelledRef.current = false;
-    load();
-    const interval = setInterval(load, 15000);
+    loadRef.current();
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") loadRef.current();
+    }, 2000);
+    function onVisible() {
+      if (document.visibilityState === "visible") loadRef.current();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
     return () => {
-      cancelledRef.current = true;
       clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
@@ -179,9 +224,15 @@ export default function ChatList() {
   // 2. broadcast: pushed by the API route as a low-latency extra.
   useEffect(() => {
     if (!ownerId) return;
-    return subscribeInbox(ownerId, load);
+    return subscribeInbox(ownerId, scheduleLoad);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ownerId]);
+
+  useEffect(() => {
+    return () => {
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current);
+    };
+  }, []);
 
   // Live online status for guests (green dots + the "Online" filter).
   useEffect(() => {

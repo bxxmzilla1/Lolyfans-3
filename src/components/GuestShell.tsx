@@ -24,9 +24,13 @@ type Bootstrap = GuestBootstrap;
 // Survives navigating away to /chat or /p/... and back — no cold reload.
 let inflight: Promise<Bootstrap | null> | null = null;
 
-async function loadBootstrap(): Promise<Bootstrap | null> {
-  const cached = getGuestBootstrapCache();
-  if (cached) return cached;
+async function loadBootstrap(opts?: { force?: boolean }): Promise<Bootstrap | null> {
+  if (!opts?.force) {
+    const cached = getGuestBootstrapCache();
+    if (cached) return cached;
+  } else {
+    setGuestBootstrapCache(null);
+  }
   if (inflight) return inflight;
   inflight = fetch("/api/guest/bootstrap")
     .then(async (res) => {
@@ -164,8 +168,7 @@ export default function GuestShell() {
   }, [data]);
 
   const refresh = useCallback(() => {
-    setGuestBootstrapCache(null);
-    loadBootstrap().then((next) => {
+    loadBootstrap({ force: true }).then((next) => {
       if (next) setData(next);
     });
   }, []);
@@ -201,6 +204,24 @@ export default function GuestShell() {
     refresh
   );
 
+  // Fallback poll + focus refresh so the chat list doesn't go stale if a
+  // realtime signal is missed.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      if (document.visibilityState === "visible") refresh();
+    }, 3000);
+    function onVisible() {
+      if (document.visibilityState === "visible") refresh();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [refresh]);
+
   useEffect(() => {
     let alive = true;
     const cached = getGuestBootstrapCache();
@@ -208,8 +229,7 @@ export default function GuestShell() {
       setData(cached);
       setLoading(false);
       // Quiet background refresh — UI stays instant from cache.
-      setGuestBootstrapCache(null);
-      loadBootstrap().then((next) => {
+      loadBootstrap({ force: true }).then((next) => {
         if (alive && next) setData(next);
       });
       return () => {
@@ -217,7 +237,7 @@ export default function GuestShell() {
       };
     }
     setLoading(true);
-    loadBootstrap().then((next) => {
+    loadBootstrap({ force: true }).then((next) => {
       if (!alive) return;
       if (!next) {
         router.replace("/login");
