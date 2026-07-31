@@ -148,17 +148,37 @@ export default function PayPerMessageSettings() {
         <p className="text-xs font-semibold text-muted uppercase tracking-wide">
           Popup preview
         </p>
-        <div className="rounded-3xl border border-line bg-card2 px-5 py-6 text-center space-y-2">
-          <p className="text-3xl font-extrabold leading-tight">
-            {formatPpmMoney(freeCreditCents)} FREE
+        <div
+          className="relative overflow-hidden rounded-[1.75rem] border border-white/20 px-5 py-7 text-center space-y-3 shadow-lg"
+          style={{
+            background:
+              "linear-gradient(160deg, color-mix(in oklab, var(--accent) 28%, #1e293b) 0%, #312e81 45%, #9d174d 100%)",
+          }}
+        >
+          <div
+            className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full opacity-50 blur-2xl"
+            style={{ background: "radial-gradient(circle, #fbbf24, transparent 70%)" }}
+          />
+          <div
+            className="pointer-events-none absolute -bottom-14 -left-10 h-36 w-36 rounded-full opacity-40 blur-2xl"
+            style={{ background: "radial-gradient(circle, #38bdf8, transparent 70%)" }}
+          />
+          <p className="relative text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/90">
+            Welcome gift
           </p>
-          <p className="text-xs text-muted">
-            Added to your balance · then {formatPpmMoney(priceCents)} per
-            message
+          <p className="relative text-4xl font-extrabold leading-none text-white">
+            {formatPpmMoney(freeCreditCents)}
+            <span className="ml-2 text-xl font-bold text-amber-300">FREE</span>
           </p>
-          <span className="inline-block mt-2 bg-accent text-white text-xs font-semibold rounded-xl px-6 py-2.5">
+          <p className="relative text-xs text-white/75">
+            Added to your balance to start chatting
+          </p>
+          <span className="relative inline-block bg-white text-indigo-900 text-xs font-bold rounded-xl px-6 py-2.5">
             Accept &amp; start chatting
           </span>
+          <p className="relative text-[11px] text-white/50">
+            {formatPpmMoney(priceCents)} per message after
+          </p>
         </div>
       </div>
 

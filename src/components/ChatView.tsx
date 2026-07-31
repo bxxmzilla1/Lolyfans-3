@@ -2102,24 +2102,46 @@ export default function ChatView({
           chatting. Free amount big, price per message small and muted. */}
       {role === "guest" && ppm?.enabled && !ppm.accepted && (
         <Portal>
-          <div className="fixed inset-0 z-[95] bg-black/85 backdrop-blur-sm flex items-center justify-center p-6">
-            <div className="w-full max-w-sm rounded-3xl bg-card border border-line px-7 py-8 text-center space-y-4 fade-up">
-              <p className="text-4xl font-extrabold leading-tight">
-                ${(ppm.freeCreditCents / 100).toFixed(2).replace(/\.00$/, "")} FREE
+          <div className="fixed inset-0 z-[95] bg-gradient-to-br from-sky-950/90 via-fuchsia-950/80 to-amber-950/90 backdrop-blur-md flex items-center justify-center p-6">
+            <div
+              className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-white/20 px-7 py-8 text-center space-y-4 fade-up shadow-2xl shadow-fuchsia-900/40"
+              style={{
+                background:
+                  "linear-gradient(160deg, color-mix(in oklab, var(--accent) 28%, #1e293b) 0%, #312e81 45%, #9d174d 100%)",
+              }}
+            >
+              <div
+                className="pointer-events-none absolute -top-16 -right-16 h-40 w-40 rounded-full opacity-50 blur-2xl"
+                style={{ background: "radial-gradient(circle, #fbbf24, transparent 70%)" }}
+              />
+              <div
+                className="pointer-events-none absolute -bottom-20 -left-12 h-44 w-44 rounded-full opacity-40 blur-2xl"
+                style={{ background: "radial-gradient(circle, #38bdf8, transparent 70%)" }}
+              />
+              <p className="relative text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200/90">
+                Welcome gift
               </p>
-              <p className="text-xs text-muted leading-relaxed">
-                Added to your balance · then $
-                {(ppm.priceCents / 100).toFixed(2)} per message
+              <p className="relative text-5xl font-extrabold leading-none text-white drop-shadow-sm">
+                ${(ppm.freeCreditCents / 100).toFixed(2).replace(/\.00$/, "")}
+                <span className="ml-2 text-2xl font-bold text-amber-300">
+                  FREE
+                </span>
+              </p>
+              <p className="relative text-sm text-white/75 leading-relaxed">
+                Added to your balance to start chatting
               </p>
               <button
                 type="button"
                 onClick={() => void acceptPpm()}
                 disabled={acceptingPpm}
-                className="w-full bg-accent text-white font-semibold rounded-2xl py-3 text-sm disabled:opacity-60 active:opacity-80 transition-opacity"
+                className="relative w-full bg-white text-indigo-900 font-bold rounded-2xl py-3.5 text-sm shadow-lg shadow-black/20 disabled:opacity-60 active:opacity-80 transition-opacity"
               >
                 {acceptingPpm ? "One moment…" : "Accept & start chatting"}
               </button>
-              <p className="text-[10px] text-muted">
+              <p className="relative text-[11px] text-white/50">
+                ${(ppm.priceCents / 100).toFixed(2)} per message after
+              </p>
+              <p className="relative text-[10px] text-white/35">
                 By accepting you agree to the Terms of Service.
               </p>
             </div>
