@@ -588,11 +588,11 @@ export default function ChatList() {
           Mass message
         </button>
 
-        {/* Always-visible actions: never scroll away with the category tabs */}
-        <div className="flex items-center gap-1.5">
+        {/* Actions row: swipe/scroll sideways when pills don't fit */}
+        <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none touch-pan-x">
           <button
             onClick={() => setNewCatOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted hover:text-fg transition-colors"
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted hover:text-fg transition-colors"
           >
             <IconPlus className="w-3.5 h-3.5" />
             New category
@@ -600,7 +600,7 @@ export default function ChatList() {
           <button
             onClick={() => setOnlineOnly((v) => !v)}
             title="Show only guests who are online"
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+            className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
               onlineOnly
                 ? "bg-green-500/20 border border-green-500/40 text-green-400"
                 : "bg-card2 border border-line text-muted hover:text-fg"
@@ -614,7 +614,7 @@ export default function ChatList() {
           </button>
           <label
             title="How many recent chats to display (empty = all)"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted"
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted"
           >
             Show
             <input
@@ -630,7 +630,7 @@ export default function ChatList() {
               setSelectMode((v) => !v);
               setSelected(new Set());
             }}
-            className={`ml-auto px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
               selectMode
                 ? "bg-accent text-white"
                 : "bg-card2 border border-line text-muted hover:text-fg"
