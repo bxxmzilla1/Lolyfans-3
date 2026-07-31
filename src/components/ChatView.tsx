@@ -118,6 +118,7 @@ export default function ChatView({
   // until the wallet endpoint answers, so nothing gates prematurely.
   const [ppm, setPpm] = useState<{
     enabled: boolean;
+    showPopup: boolean;
     priceCents: number;
     freeCreditCents: number;
     accepted: boolean;
@@ -126,6 +127,7 @@ export default function ChatView({
     balanceCents: number;
     declined: boolean;
   } | null>(null);
+  const [acceptingPpm, setAcceptingPpm] = useState(false);
   // Auto-open the card wizard only once per gating episode — a failed start
   // falls back to the manual "Add payment details" button (no retry loop).
   const ppmVerifyStartedRef = useRef(false);
@@ -499,6 +501,7 @@ export default function ChatView({
   const ppmNeedsCard =
     role === "guest" &&
     !!ppm?.enabled &&
+    ppm.accepted &&
     elementsEnabled() &&
     (ppm.declined || (ppm.creditCents < ppm.priceCents && !hasCard));
 
@@ -822,6 +825,37 @@ export default function ChatView({
     void refreshWallet();
   }
 
+  /** Pay per Message: the fan accepted the mandatory terms popup. */
+  async function acceptPpm() {
+    if (acceptingPpm) return;
+    setAcceptingPpm(true);
+    try {
+      const res = await fetch("/api/chats/ppm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, action: "accept" }),
+      });
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        setPpm((p) =>
+          p
+            ? {
+                ...p,
+                accepted: true,
+                creditCents:
+                  typeof data?.creditCents === "number"
+                    ? data.creditCents
+                    : p.freeCreditCents,
+              }
+            : p
+        );
+        void refreshWallet();
+      }
+    } finally {
+      setAcceptingPpm(false);
+    }
+  }
+
   async function send() {
     // Ref guard must run before any await — React state hasn't cleared yet on
     // a double Enter / double-tap, so both calls would otherwise POST.
@@ -908,7 +942,7 @@ export default function ChatView({
             : [...withoutTemp, message];
         });
         // Pay per Message: spend free credit first, then accrue owed balance.
-        if (role === "guest" && ppm?.enabled) {
+        if (role === "guest" && ppm?.enabled && ppm.accepted) {
           const fromCredit = Math.min(ppm.creditCents, ppm.priceCents);
           const billable = ppm.priceCents - fromCredit;
           const next = {
@@ -928,8 +962,11 @@ export default function ChatView({
         setText(caption);
         setAttachments(usedAttachments);
         if (usedLink) setLinkAttachment(usedLink);
-        // Pay per Message: refresh gating so the card wizard takes over.
-        if (errData?.ppm) {
+        // Pay per Message rejections: re-show the terms popup or refresh the
+        // gating state so the card wizard takes over the composer.
+        if (errData?.ppm === "accept") {
+          setPpm((p) => (p ? { ...p, accepted: false } : p));
+        } else if (errData?.ppm) {
           void refreshWallet();
         }
       }
@@ -2065,6 +2102,60 @@ export default function ChatView({
         );
       })()}
 
+      {/* Pay per Message terms: shown once per fan, and there is deliberately
+          no close button — accepting is the only way to start or keep
+          chatting. Free amount big, price per message small and muted. */}
+      {role === "guest" &&
+        ppm?.enabled &&
+        ppm.showPopup !== false &&
+        !ppm.accepted && (
+        <Portal>
+          <div className="fixed inset-0 z-[95] bg-gradient-to-br from-sky-100/90 via-fuchsia-100/80 to-amber-100/90 backdrop-blur-md flex items-center justify-center p-6">
+            <div
+              className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-black/10 px-7 py-8 text-center space-y-4 fade-up shadow-2xl shadow-fuchsia-200/60"
+              style={{
+                background:
+                  "linear-gradient(160deg, #ffffff 0%, #eff6ff 45%, #fdf2f8 100%)",
+              }}
+            >
+              <div
+                className="pointer-events-none absolute -top-16 -right-16 h-40 w-40 rounded-full opacity-40 blur-2xl"
+                style={{ background: "radial-gradient(circle, #fcd34d, transparent 70%)" }}
+              />
+              <div
+                className="pointer-events-none absolute -bottom-20 -left-12 h-44 w-44 rounded-full opacity-35 blur-2xl"
+                style={{ background: "radial-gradient(circle, #7dd3fc, transparent 70%)" }}
+              />
+              <p className="relative text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-600">
+                Welcome gift
+              </p>
+              <p className="relative text-5xl font-extrabold leading-none text-slate-900">
+                ${(ppm.freeCreditCents / 100).toFixed(2).replace(/\.00$/, "")}
+                <span className="ml-2 text-2xl font-bold text-amber-500">
+                  FREE
+                </span>
+              </p>
+              <p className="relative text-sm text-slate-600 leading-relaxed">
+                Added to your balance to start chatting
+              </p>
+              <button
+                type="button"
+                onClick={() => void acceptPpm()}
+                disabled={acceptingPpm}
+                className="relative w-full bg-slate-900 text-white font-bold rounded-2xl py-3.5 text-sm shadow-lg shadow-slate-400/40 disabled:opacity-60 active:opacity-80 transition-opacity"
+              >
+                {acceptingPpm ? "One moment…" : "Accept & start chatting"}
+              </button>
+              <p className="relative text-[11px] text-slate-500">
+                ${(ppm.priceCents / 100).toFixed(2)} per message after
+              </p>
+              <p className="relative text-[10px] text-slate-400">
+                By accepting you agree to the Terms of Service.
+              </p>
+            </div>
+          </div>
+        </Portal>
+      )}
     </div>
   );
 }

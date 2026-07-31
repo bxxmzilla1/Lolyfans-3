@@ -41,8 +41,8 @@ export async function GET(req: NextRequest) {
       freeCreditCents: ppm.freeCreditCents,
       priceCents: ppm.priceCents,
       chat,
-      // Always grant free credit silently — there is no terms popup.
-      silentAccept: true,
+      // Popup off → grant credit silently so chatting isn't blocked.
+      silentAccept: !ppm.showPopup,
     });
     creditCents = granted.creditCents;
     accepted = granted.accepted;
@@ -57,6 +57,7 @@ export async function GET(req: NextRequest) {
     verifyPopup: verifyPopupFromMetadata(ownerMeta),
     ppm: {
       enabled: ppm.enabled,
+      showPopup: ppm.showPopup,
       priceCents: ppm.priceCents,
       freeCreditCents: ppm.freeCreditCents,
       accepted,

@@ -172,14 +172,26 @@ export async function POST(req: NextRequest) {
       if (!chatRow) {
         return NextResponse.json({ error: "Chat not found" }, { status: 404 });
       }
-      // Free credit is granted automatically — no terms popup.
+      // Popup on: fan must accept first. Popup off: grant credit silently.
+      if (!chatRow.ppm_accepted_at && ppm.showPopup) {
+        return NextResponse.json(
+          { error: "Accept the chat terms to start messaging", ppm: "accept" },
+          { status: 402 }
+        );
+      }
       const granted = await ensurePpmCredit({
         chatId,
         freeCreditCents: ppm.freeCreditCents,
         priceCents: ppm.priceCents,
         chat: chatRow,
-        silentAccept: true,
+        silentAccept: !ppm.showPopup,
       });
+      if (!granted.accepted) {
+        return NextResponse.json(
+          { error: "Accept the chat terms to start messaging", ppm: "accept" },
+          { status: 402 }
+        );
+      }
       let credit = granted.creditCents;
       const price = ppm.priceCents;
       const fromCredit = Math.min(credit, price);
