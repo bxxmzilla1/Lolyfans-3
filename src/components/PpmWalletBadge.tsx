@@ -4,12 +4,12 @@ import { useEffect, useRef, useState } from "react";
 
 /**
  * Fan "Balance" button (top-right of the chat header). Tapping it pops the
- * accrued Pay per Message amount in the same animated bubble that used to
- * show the token wallet — pops in, holds, then hides on its own. State
- * arrives via "loly-ppm" window events from ChatView's wallet polling.
+ * amount in the same animated bubble as the old token wallet. While free
+ * credit remains, that is shown; after it runs out, the owed balance (auto-
+ * charged hourly) is shown instead.
  */
 export default function PpmWalletBadge() {
-  const [balanceCents, setBalanceCents] = useState<number | null>(null);
+  const [displayCents, setDisplayCents] = useState<number | null>(null);
   const [showBubble, setShowBubble] = useState(false);
   const [bubbleKey, setBubbleKey] = useState(0);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -18,14 +18,18 @@ export default function PpmWalletBadge() {
     const onPpm = (e: Event) => {
       const d = (e as CustomEvent).detail as {
         enabled?: boolean;
+        creditCents?: number;
         balanceCents?: number;
       } | null;
       if (!d?.enabled) {
-        setBalanceCents(null);
+        setDisplayCents(null);
         setShowBubble(false);
         return;
       }
-      setBalanceCents(Math.max(0, d.balanceCents ?? 0));
+      const credit = Math.max(0, d.creditCents ?? 0);
+      const owed = Math.max(0, d.balanceCents ?? 0);
+      // Free credit first (money they can still use); then owed amount.
+      setDisplayCents(credit > 0 ? credit : owed);
     };
     window.addEventListener("loly-ppm", onPpm);
     return () => {
@@ -34,11 +38,10 @@ export default function PpmWalletBadge() {
     };
   }, []);
 
-  if (balanceCents === null) return null;
+  if (displayCents === null) return null;
 
   function reveal() {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
-    // Bump the key so the CSS animation restarts even on a re-tap.
     setBubbleKey((k) => k + 1);
     setShowBubble(true);
     hideTimerRef.current = setTimeout(() => setShowBubble(false), 2800);
@@ -62,7 +65,7 @@ export default function PpmWalletBadge() {
             Balance
           </span>
           <span className="text-sm font-bold tabular-nums">
-            ${(balanceCents / 100).toFixed(2)}
+            ${(displayCents / 100).toFixed(2)}
           </span>
         </span>
       )}

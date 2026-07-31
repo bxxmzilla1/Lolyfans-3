@@ -155,9 +155,9 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Pay per Message: meter guest messages. Free allowance first; after that
-  // each message adds its price to the chat's balance (auto-charged hourly).
-  // Terms must be accepted, and billing requires a working card on file.
+  // Pay per Message: spend free credit first; after that each message adds
+  // its price to the owed balance (auto-charged hourly). Terms must be
+  // accepted, and billing requires a working card on file.
   if (auth.role === "guest") {
     const { data: ownerUser } = await db.auth.admin.getUserById(auth.chatOwnerId);
     const ppm = payPerMessageFromMetadata(ownerUser?.user?.user_metadata ?? {});
@@ -165,7 +165,7 @@ export async function POST(req: NextRequest) {
       const { data: chatRow } = await db
         .from("chats")
         .select(
-          "ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_card_declined, stripe_payment_method_id"
+          "ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_credit_cents, ppm_credit_granted, ppm_card_declined, stripe_payment_method_id"
         )
         .eq("id", chatId)
         .maybeSingle();
@@ -175,15 +175,26 @@ export async function POST(req: NextRequest) {
           { status: 402 }
         );
       }
-      const used = chatRow.ppm_messages_used ?? 0;
-      const billable = used + 1 > ppm.freeMessages;
-      if (billable && !chatRow.stripe_payment_method_id) {
+      let credit = chatRow.ppm_credit_cents ?? 0;
+      // One-time heal for fans who accepted under the old free-messages model.
+      if (!chatRow.ppm_credit_granted) {
+        const usedCost = (chatRow.ppm_messages_used ?? 0) * ppm.priceCents;
+        credit = Math.max(0, ppm.freeCreditCents - usedCost);
+        await db
+          .from("chats")
+          .update({ ppm_credit_cents: credit, ppm_credit_granted: true })
+          .eq("id", chatId);
+      }
+      const price = ppm.priceCents;
+      const fromCredit = Math.min(credit, price);
+      const billable = price - fromCredit;
+      if (billable > 0 && !chatRow.stripe_payment_method_id) {
         return NextResponse.json(
           { error: "Add your card to keep chatting", ppm: "card" },
           { status: 402 }
         );
       }
-      if (billable && chatRow.ppm_card_declined) {
+      if (billable > 0 && chatRow.ppm_card_declined) {
         return NextResponse.json(
           { error: "Payment failed. Please add another payment detail", ppm: "declined" },
           { status: 402 }
@@ -192,14 +203,14 @@ export async function POST(req: NextRequest) {
       await db
         .from("chats")
         .update({
-          ppm_messages_used: used + 1,
-          ...(billable
-            ? { ppm_balance_cents: (chatRow.ppm_balance_cents ?? 0) + ppm.priceCents }
+          ppm_messages_used: (chatRow.ppm_messages_used ?? 0) + 1,
+          ppm_credit_cents: credit - fromCredit,
+          ...(billable > 0
+            ? { ppm_balance_cents: (chatRow.ppm_balance_cents ?? 0) + billable }
             : {}),
         })
         .eq("id", chatId);
-      // Hourly auto-charge, attempted after the response (never blocks a send).
-      if (billable) after(() => settlePpmBalance(chatId));
+      if (billable > 0) after(() => settlePpmBalance(chatId));
     }
   }
 

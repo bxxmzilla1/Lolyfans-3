@@ -563,6 +563,8 @@ alter table messages add column if not exists blur_drainer jsonb;
 alter table chats add column if not exists ppm_accepted_at timestamptz;
 alter table chats add column if not exists ppm_messages_used int not null default 0;
 alter table chats add column if not exists ppm_balance_cents int not null default 0;
+alter table chats add column if not exists ppm_credit_cents int not null default 0;
+alter table chats add column if not exists ppm_credit_granted boolean not null default false;
 alter table chats add column if not exists ppm_last_settle_at timestamptz;
 alter table chats add column if not exists ppm_card_declined boolean not null default false;
 

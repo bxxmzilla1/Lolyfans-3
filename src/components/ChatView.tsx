@@ -119,9 +119,10 @@ export default function ChatView({
   const [ppm, setPpm] = useState<{
     enabled: boolean;
     priceCents: number;
-    freeMessages: number;
+    freeCreditCents: number;
     accepted: boolean;
     messagesUsed: number;
+    creditCents: number;
     balanceCents: number;
     declined: boolean;
   } | null>(null);
@@ -331,13 +332,20 @@ export default function ChatView({
       // update the Balance popup immediately without waiting for the poll.
       .on("broadcast", { event: "ppm-balance" }, ({ payload }) => {
         if (role !== "guest") return;
-        const p = payload as { balanceCents?: number; declined?: boolean } | null;
+        const p = payload as {
+          balanceCents?: number;
+          creditCents?: number;
+          declined?: boolean;
+        } | null;
         setPpm((prev) => {
           if (!prev?.enabled) return prev;
           const next = {
             ...prev,
             ...(typeof p?.balanceCents === "number"
               ? { balanceCents: Math.max(0, p.balanceCents) }
+              : {}),
+            ...(typeof p?.creditCents === "number"
+              ? { creditCents: Math.max(0, p.creditCents) }
               : {}),
             ...(typeof p?.declined === "boolean" ? { declined: p.declined } : {}),
           };
@@ -377,8 +385,8 @@ export default function ChatView({
           hasCard?: boolean;
           ppmAccepted?: boolean;
           ppmEnabled?: boolean;
-          ppmFreeMessages?: number;
-          ppmMessagesUsed?: number;
+          ppmFreeCreditCents?: number;
+          ppmCreditCents?: number;
           media?: {
             id: string;
             fan_decision: "accepted" | "rejected" | null;
@@ -392,9 +400,9 @@ export default function ChatView({
               chatId,
               hasCard: data.hasCard,
               ppmAccepted: data.ppmAccepted,
-              ppmEnabled: data.ppmEnabled,
-              ppmFreeMessages: data.ppmFreeMessages,
-              ppmMessagesUsed: data.ppmMessagesUsed,
+          ppmEnabled: data.ppmEnabled,
+          ppmFreeCreditCents: data.ppmFreeCreditCents,
+          ppmCreditCents: data.ppmCreditCents,
             },
           })
         );
@@ -484,12 +492,13 @@ export default function ChatView({
   // Pay per Message composer gating: after the free messages are spent the
   // fan needs a working card — the chat input swaps for the card wizard.
   // Also engages when the hourly balance charge was declined.
+  // Card required once free credit can't cover the next message (or a charge declined).
   const ppmNeedsCard =
     role === "guest" &&
     !!ppm?.enabled &&
     ppm.accepted &&
     elementsEnabled() &&
-    (ppm.declined || (ppm.messagesUsed >= ppm.freeMessages && !hasCard));
+    (ppm.declined || (ppm.creditCents < ppm.priceCents && !hasCard));
 
   useEffect(() => {
     if (!ppmNeedsCard) {
@@ -821,7 +830,22 @@ export default function ChatView({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chatId, action: "accept" }),
       });
-      if (res.ok) setPpm((p) => (p ? { ...p, accepted: true } : p));
+      if (res.ok) {
+        const data = await res.json().catch(() => null);
+        setPpm((p) =>
+          p
+            ? {
+                ...p,
+                accepted: true,
+                creditCents:
+                  typeof data?.creditCents === "number"
+                    ? data.creditCents
+                    : p.freeCreditCents,
+              }
+            : p
+        );
+        void refreshWallet();
+      }
     } finally {
       setAcceptingPpm(false);
     }
@@ -912,15 +936,15 @@ export default function ChatView({
             ? withoutTemp
             : [...withoutTemp, message];
         });
-        // Pay per Message: bump the local counters so the wallet badge and
-        // composer gating react instantly (the 5s poll reconciles later).
+        // Pay per Message: spend free credit first, then accrue owed balance.
         if (role === "guest" && ppm?.enabled && ppm.accepted) {
-          const used = ppm.messagesUsed + 1;
-          const billable = used > ppm.freeMessages;
+          const fromCredit = Math.min(ppm.creditCents, ppm.priceCents);
+          const billable = ppm.priceCents - fromCredit;
           const next = {
             ...ppm,
-            messagesUsed: used,
-            balanceCents: ppm.balanceCents + (billable ? ppm.priceCents : 0),
+            messagesUsed: ppm.messagesUsed + 1,
+            creditCents: ppm.creditCents - fromCredit,
+            balanceCents: ppm.balanceCents + billable,
           };
           setPpm(next);
           window.dispatchEvent(
@@ -2081,13 +2105,11 @@ export default function ChatView({
           <div className="fixed inset-0 z-[95] bg-black/85 backdrop-blur-sm flex items-center justify-center p-6">
             <div className="w-full max-w-sm rounded-3xl bg-card border border-line px-7 py-8 text-center space-y-4 fade-up">
               <p className="text-4xl font-extrabold leading-tight">
-                {ppm.freeMessages} FREE
-                <br />
-                message{ppm.freeMessages === 1 ? "" : "s"}
+                ${(ppm.freeCreditCents / 100).toFixed(2).replace(/\.00$/, "")} FREE
               </p>
               <p className="text-xs text-muted leading-relaxed">
-                Then ${(ppm.priceCents / 100).toFixed(2)} per message — billed
-                automatically to your card
+                Added to your balance · then $
+                {(ppm.priceCents / 100).toFixed(2)} per message
               </p>
               <button
                 type="button"

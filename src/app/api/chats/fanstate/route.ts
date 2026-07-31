@@ -20,7 +20,9 @@ export async function GET(req: NextRequest) {
     const db = supabaseAdmin();
     const { data: chat, error: chatErr } = await db
       .from("chats")
-      .select("stripe_payment_method_id, ppm_accepted_at, ppm_messages_used")
+      .select(
+        "stripe_payment_method_id, ppm_accepted_at, ppm_messages_used, ppm_credit_cents"
+      )
       .eq("id", chatId)
       .eq("owner_id", ownerId)
       .maybeSingle();
@@ -81,8 +83,8 @@ export async function GET(req: NextRequest) {
       hasCard: !!chat.stripe_payment_method_id,
       ppmAccepted: !!chat.ppm_accepted_at,
       ppmEnabled: ppm.enabled,
-      ppmFreeMessages: ppm.freeMessages,
-      ppmMessagesUsed: chat.ppm_messages_used ?? 0,
+      ppmFreeCreditCents: ppm.freeCreditCents,
+      ppmCreditCents: chat.ppm_credit_cents ?? 0,
       media,
     });
   } catch (err) {

@@ -174,7 +174,7 @@ export async function GET() {
     // So the inbox can show "X free left" next to each fan's name.
     ppm: {
       enabled: ppm.enabled,
-      freeMessages: ppm.freeMessages,
+      freeCreditCents: ppm.freeCreditCents,
       priceCents: ppm.priceCents,
     },
     chats: (chats ?? []).map(({ chat_category_members, ...c }) => ({

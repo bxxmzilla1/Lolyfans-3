@@ -7,11 +7,9 @@ import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
 import { settlePpmBalance } from "@/lib/payments";
 
 /**
- * Fan payment state: whether a card is saved (one-tap unlocks), the creator's
- * Card Verify setting, and the Pay per Message config + this chat's state
- * (terms accepted, free messages used, accrued balance, declined card).
- * Polled by the fan's chat — also the lazy trigger for the hourly balance
- * settlement.
+ * Fan payment state: card on file, Card Verify setting, and Pay per Message
+ * (terms, free credit remaining, owed balance, declined). Also the lazy
+ * trigger for the hourly owed-balance settlement.
  */
 export async function GET(req: NextRequest) {
   const chatId = req.nextUrl.searchParams.get("chatId");
@@ -25,7 +23,7 @@ export async function GET(req: NextRequest) {
   const { data: chat } = await db
     .from("chats")
     .select(
-      "owner_id, stripe_payment_method_id, ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_card_declined"
+      "owner_id, stripe_payment_method_id, ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_credit_cents, ppm_credit_granted, ppm_card_declined"
     )
     .eq("id", chatId)
     .maybeSingle();
@@ -35,7 +33,21 @@ export async function GET(req: NextRequest) {
   const ownerMeta = ownerUser?.user?.user_metadata ?? {};
   const ppm = payPerMessageFromMetadata(ownerMeta);
 
-  // Hourly auto-charge, attempted after the response so polls stay fast.
+  let creditCents = chat?.ppm_credit_cents ?? 0;
+  // One-time heal for fans who accepted under the old free-messages model.
+  if (
+    ppm.enabled &&
+    chat?.ppm_accepted_at &&
+    chat.ppm_credit_granted === false
+  ) {
+    const usedCost = (chat.ppm_messages_used ?? 0) * ppm.priceCents;
+    creditCents = Math.max(0, ppm.freeCreditCents - usedCost);
+    await db
+      .from("chats")
+      .update({ ppm_credit_cents: creditCents, ppm_credit_granted: true })
+      .eq("id", chatId);
+  }
+
   if (ppm.enabled && (chat?.ppm_balance_cents ?? 0) > 0) {
     after(() => settlePpmBalance(chatId));
   }
@@ -46,9 +58,10 @@ export async function GET(req: NextRequest) {
     ppm: {
       enabled: ppm.enabled,
       priceCents: ppm.priceCents,
-      freeMessages: ppm.freeMessages,
+      freeCreditCents: ppm.freeCreditCents,
       accepted: !!chat?.ppm_accepted_at,
       messagesUsed: chat?.ppm_messages_used ?? 0,
+      creditCents,
       balanceCents: chat?.ppm_balance_cents ?? 0,
       declined: !!chat?.ppm_card_declined,
     },

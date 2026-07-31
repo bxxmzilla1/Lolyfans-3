@@ -118,8 +118,7 @@ export default async function OwnerChatPage({
           <PpmFreeLeft
             chatId={chatId}
             initialEnabled={ppm.enabled}
-            initialFree={ppm.freeMessages}
-            initialUsed={chat.ppm_messages_used ?? 0}
+            initialCreditCents={chat.ppm_credit_cents ?? 0}
           />
         </p>
         <p className="text-muted text-xs truncate flex items-center gap-1.5">

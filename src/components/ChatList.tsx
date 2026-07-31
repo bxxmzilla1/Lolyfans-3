@@ -8,6 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { chatPreviewLabel, type ChatPreview } from "@/lib/chatPreview";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
+import { formatPpmMoney } from "@/lib/payPerMessage";
 import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconShieldCheck, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
@@ -25,8 +26,10 @@ type ChatRow = {
   stripe_payment_method_id: string | null;
   /** Fan accepted the Pay per Message terms popup (checkmark by their name). */
   ppm_accepted_at?: string | null;
-  /** Fan messages counted against the free allowance. */
+  /** Fan messages counted (legacy + analytics). */
   ppm_messages_used?: number | null;
+  /** Remaining free credit on the fan's balance, in cents. */
+  ppm_credit_cents?: number | null;
   invites: { label: string | null; code: string } | null;
   preview: ChatPreview | null;
   unread: number;
@@ -35,7 +38,7 @@ type ChatRow = {
 
 type PpmConfig = {
   enabled: boolean;
-  freeMessages: number;
+  freeCreditCents: number;
   priceCents: number;
 };
 
@@ -267,11 +270,18 @@ export default function ChatList() {
           payload.sender === "guest" && !pathname?.includes(chatId)
             ? (current.unread || 0) + 1
             : current.unread,
-        // Guest send counts against their free-message allowance.
+        // Guest send spends free credit (approx. — poll reconciles exact amount).
         ppm_messages_used:
           payload.sender === "guest"
             ? (current.ppm_messages_used ?? 0) + 1
             : current.ppm_messages_used,
+        ppm_credit_cents:
+          payload.sender === "guest" && ppmCache?.enabled
+            ? Math.max(
+                0,
+                (current.ppm_credit_cents ?? 0) - (ppmCache.priceCents || 0)
+              )
+            : current.ppm_credit_cents,
       };
       const copy = list.slice();
       copy.splice(idx, 1);
@@ -793,10 +803,10 @@ export default function ChatList() {
                       <span className="truncate">{displayName}</span>
                       {ppm?.enabled && (
                         <span
-                          title={`${Math.max(0, ppm.freeMessages - (chat.ppm_messages_used ?? 0))} free messages left`}
+                          title={`${formatPpmMoney(chat.ppm_credit_cents ?? 0)} free credit left`}
                           className="shrink-0 text-[11px] font-semibold text-muted tabular-nums"
                         >
-                          {Math.max(0, ppm.freeMessages - (chat.ppm_messages_used ?? 0))} left
+                          {formatPpmMoney(chat.ppm_credit_cents ?? 0)} left
                         </span>
                       )}
                       {chat.custom_name && (
