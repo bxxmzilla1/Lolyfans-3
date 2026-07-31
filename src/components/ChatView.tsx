@@ -339,6 +339,7 @@ export default function ChatView({
           declined?: boolean;
         } | null;
         setPpm((prev) => {
+          // Feature off → ignore balance updates (UI stays pre-PPM).
           if (!prev?.enabled) return prev;
           const next = {
             ...prev,
@@ -458,10 +459,14 @@ export default function ChatView({
         if (data.verifyPopup) setVerifyCfg(data.verifyPopup);
         if (typeof data.hasCard === "boolean") setHasCard(data.hasCard);
         if (data.ppm) {
-          setPpm(data.ppm);
-          // The wallet badge in the chat header listens for this.
+          setPpm(data.ppm.enabled ? data.ppm : null);
+          // The wallet badge hides itself when enabled is false.
           window.dispatchEvent(
-            new CustomEvent("loly-ppm", { detail: { chatId, ...data.ppm } })
+            new CustomEvent("loly-ppm", {
+              detail: data.ppm.enabled
+                ? { chatId, ...data.ppm }
+                : { chatId, enabled: false },
+            })
           );
         }
       }
@@ -474,15 +479,14 @@ export default function ChatView({
     refreshWallet();
   }, [refreshWallet]);
 
-  // Pay per Message: keep the balance / declined state fresh while the fan
-  // has the chat open (the hourly charge can flip the card to declined).
+  // Keep wallet / PPM state fresh (enable/disable, credit, declines).
   useEffect(() => {
-    if (role !== "guest" || !ppm?.enabled) return;
+    if (role !== "guest") return;
     const timer = setInterval(() => {
       if (!document.hidden) refreshWallet();
     }, 5000);
     return () => clearInterval(timer);
-  }, [role, ppm?.enabled, refreshWallet]);
+  }, [role, refreshWallet]);
 
   // Card Verify: while the fan has no card on file, every photo/video from
   // the creator renders locked ("Verify to view"). Tapping one opens the

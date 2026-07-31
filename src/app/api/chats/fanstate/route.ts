@@ -82,9 +82,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       hasCard: !!chat.stripe_payment_method_id,
       ppmAccepted: !!chat.ppm_accepted_at,
+      // When Pay per Message is off, the chat header hides the free-credit badge.
       ppmEnabled: ppm.enabled,
-      ppmFreeCreditCents: ppm.freeCreditCents,
-      ppmCreditCents: chat.ppm_credit_cents ?? 0,
+      ppmFreeCreditCents: ppm.enabled ? ppm.freeCreditCents : 0,
+      ppmCreditCents: ppm.enabled ? chat.ppm_credit_cents ?? 0 : 0,
       media,
     });
   } catch (err) {

@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { formatPpmMoney } from "@/lib/payPerMessage";
 
 /**
- * Remaining free credit next to a fan's name. Updates from ChatView's
- * fanstate poll (loly-fanstate).
+ * Remaining free credit next to a fan's name on the open chat page only.
+ * Hidden when Pay per Message is off. Updates from ChatView's fanstate poll.
  */
 export default function PpmFreeLeft({
   chatId,
@@ -17,7 +17,9 @@ export default function PpmFreeLeft({
   initialCreditCents: number;
 }) {
   const [enabled, setEnabled] = useState(initialEnabled);
-  const [creditCents, setCreditCents] = useState(initialCreditCents);
+  const [creditCents, setCreditCents] = useState(
+    initialEnabled ? initialCreditCents : 0
+  );
 
   useEffect(() => {
     const onFanstate = (e: Event) => {

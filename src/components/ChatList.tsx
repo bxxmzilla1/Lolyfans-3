@@ -8,7 +8,6 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { chatPreviewLabel, type ChatPreview } from "@/lib/chatPreview";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
-import { formatPpmMoney } from "@/lib/payPerMessage";
 import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
@@ -26,20 +25,10 @@ type ChatRow = {
   stripe_payment_method_id: string | null;
   /** Fan accepted the Pay per Message terms popup (checkmark by their name). */
   ppm_accepted_at?: string | null;
-  /** Fan messages counted (legacy + analytics). */
-  ppm_messages_used?: number | null;
-  /** Remaining free credit on the fan's balance, in cents. */
-  ppm_credit_cents?: number | null;
   invites: { label: string | null; code: string } | null;
   preview: ChatPreview | null;
   unread: number;
   categories: string[];
-};
-
-type PpmConfig = {
-  enabled: boolean;
-  freeCreditCents: number;
-  priceCents: number;
 };
 
 type InboxMessagePayload = {
@@ -57,7 +46,6 @@ type Category = { id: string; name: string };
 let chatsCache: ChatRow[] | null = null;
 let ownerIdCache: string | null = null;
 let categoriesCache: Category[] | null = null;
-let ppmCache: PpmConfig | null = null;
 
 // Persisted copy so a fresh app launch paints instantly from the last known
 // inbox while the network request runs. Cleared on logout / auth failure.
@@ -181,7 +169,6 @@ export default function ChatList() {
   const [chats, setChats] = useState<ChatRow[] | null>(chatsCache);
   const [ownerId, setOwnerId] = useState<string | null>(ownerIdCache);
   const [categories, setCategories] = useState<Category[]>(categoriesCache ?? []);
-  const [ppm, setPpm] = useState<PpmConfig | null>(ppmCache);
   // "all" or a category id
   const [activeCat, setActiveCat] = useState<string>("all");
   const [selectMode, setSelectMode] = useState(false);
@@ -212,13 +199,12 @@ export default function ChatList() {
     const chatsRes = await fetch("/api/chats").catch(() => null);
     if (!chatsRes) return;
     if (chatsRes.ok) {
-      const { chats, ownerId, categories, ppm: ppmCfg } = await chatsRes.json();
+      const { chats, ownerId, categories } = await chatsRes.json();
       // Always refresh the module cache — even if this instance is mid-navigation
       // or unmounting — so the next mount / sibling sidebar paints fresh data.
       chatsCache = chats;
       ownerIdCache = ownerId;
       categoriesCache = categories;
-      if (ppmCfg) ppmCache = ppmCfg;
       try {
         localStorage.setItem(INBOX_CACHE_KEY, JSON.stringify({ chats, ownerId, categories }));
       } catch {
@@ -228,7 +214,6 @@ export default function ChatList() {
       setChats(chats);
       setOwnerId(ownerId);
       setCategories(categories);
-      if (ppmCfg) setPpm(ppmCfg);
     } else if (chatsRes.status === 401) {
       try {
         localStorage.removeItem(INBOX_CACHE_KEY);
@@ -270,18 +255,6 @@ export default function ChatList() {
           payload.sender === "guest" && !pathname?.includes(chatId)
             ? (current.unread || 0) + 1
             : current.unread,
-        // Guest send spends free credit (approx. — poll reconciles exact amount).
-        ppm_messages_used:
-          payload.sender === "guest"
-            ? (current.ppm_messages_used ?? 0) + 1
-            : current.ppm_messages_used,
-        ppm_credit_cents:
-          payload.sender === "guest" && ppmCache?.enabled
-            ? Math.max(
-                0,
-                (current.ppm_credit_cents ?? 0) - (ppmCache.priceCents || 0)
-              )
-            : current.ppm_credit_cents,
       };
       const copy = list.slice();
       copy.splice(idx, 1);
@@ -793,14 +766,6 @@ export default function ChatList() {
                         </span>
                       )}
                       <span className="truncate">{displayName}</span>
-                      {ppm?.enabled && (
-                        <span
-                          title={`${formatPpmMoney(chat.ppm_credit_cents ?? 0)} free credit left`}
-                          className="shrink-0 text-[11px] font-semibold text-muted tabular-nums"
-                        >
-                          {formatPpmMoney(chat.ppm_credit_cents ?? 0)} left
-                        </span>
-                      )}
                       {chat.custom_name && (
                         <span className="text-muted text-[11px] font-normal truncate">
                           {chat.guest_name}
