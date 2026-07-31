@@ -61,6 +61,10 @@ const PPM_SETTLE_INTERVAL_MS = 60 * 60 * 1000;
 /**
  * Ensure a chat has free credit granted. Used when the fan accepts the popup
  * or when the creator has the popup turned off (silent grant).
+ *
+ * The free-money model grants the full configured credit once — we do NOT
+ * subtract historical free-message counts (that incorrectly zeroed balances
+ * after the switch from "free messages" to "free money").
  */
 export async function ensurePpmCredit(opts: {
   chatId: string;
@@ -78,19 +82,27 @@ export async function ensurePpmCredit(opts: {
   const db = supabaseAdmin();
   let credit = opts.chat.ppm_credit_cents ?? 0;
   let accepted = !!opts.chat.ppm_accepted_at;
-  const granted = !!opts.chat.ppm_credit_granted;
+  let granted = !!opts.chat.ppm_credit_granted;
+
+  // Repair: granted under the old conversion with $0 and no money spent yet.
+  if (
+    granted &&
+    credit === 0 &&
+    (opts.chat.ppm_messages_used ?? 0) === 0 &&
+    opts.freeCreditCents > 0
+  ) {
+    credit = opts.freeCreditCents;
+    await db
+      .from("chats")
+      .update({ ppm_credit_cents: credit })
+      .eq("id", opts.chatId);
+  }
 
   if (!granted) {
     if (!accepted && !opts.silentAccept) {
       return { creditCents: credit, accepted: false };
     }
-    if (accepted) {
-      // Legacy free-messages → remaining credit.
-      const usedCost = (opts.chat.ppm_messages_used ?? 0) * opts.priceCents;
-      credit = Math.max(0, opts.freeCreditCents - usedCost);
-    } else {
-      credit = opts.freeCreditCents;
-    }
+    credit = opts.freeCreditCents;
     await db
       .from("chats")
       .update({
@@ -100,6 +112,7 @@ export async function ensurePpmCredit(opts: {
       })
       .eq("id", opts.chatId);
     accepted = true;
+    granted = true;
   } else if (opts.silentAccept && !accepted) {
     await db
       .from("chats")

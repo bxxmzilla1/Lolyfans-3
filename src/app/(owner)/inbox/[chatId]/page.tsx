@@ -112,7 +112,12 @@ export default async function OwnerChatPage({
           <PpmFreeLeft
             chatId={chatId}
             initialEnabled={ppm.enabled}
-            initialCreditCents={chat.ppm_credit_cents ?? 0}
+            // Until credit is granted, show the free amount they will get.
+            initialCreditCents={
+              chat.ppm_credit_granted
+                ? chat.ppm_credit_cents ?? 0
+                : ppm.freeCreditCents
+            }
           />
         </p>
         <p className="text-muted text-xs truncate flex items-center gap-1.5">

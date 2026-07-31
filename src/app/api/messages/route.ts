@@ -208,16 +208,27 @@ export async function POST(req: NextRequest) {
           { status: 402 }
         );
       }
+      const nextCredit = credit - fromCredit;
+      const nextBalance =
+        billable > 0
+          ? (chatRow.ppm_balance_cents ?? 0) + billable
+          : (chatRow.ppm_balance_cents ?? 0);
       await db
         .from("chats")
         .update({
           ppm_messages_used: (chatRow.ppm_messages_used ?? 0) + 1,
-          ppm_credit_cents: credit - fromCredit,
-          ...(billable > 0
-            ? { ppm_balance_cents: (chatRow.ppm_balance_cents ?? 0) + billable }
-            : {}),
+          ppm_credit_cents: nextCredit,
+          ...(billable > 0 ? { ppm_balance_cents: nextBalance } : {}),
         })
         .eq("id", chatId);
+      // Creator + fan headers update the remaining free money immediately.
+      after(() =>
+        broadcast(`chat:${chatId}`, "ppm-balance", {
+          creditCents: nextCredit,
+          balanceCents: nextBalance,
+          declined: false,
+        })
+      );
       if (billable > 0) after(() => settlePpmBalance(chatId));
     }
   }

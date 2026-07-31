@@ -51,28 +51,29 @@ export async function POST(req: NextRequest) {
         }),
       ]);
     } else if (!chat.ppm_credit_granted) {
-      // Already accepted under the old free-messages model — grant remaining
-      // credit once so they aren't stranded at $0.
-      const { data: row } = await db
-        .from("chats")
-        .select("ppm_messages_used")
-        .eq("id", chatId)
-        .maybeSingle();
-      const usedCost = (row?.ppm_messages_used ?? 0) * ppm.priceCents;
-      const credit = Math.max(0, ppm.freeCreditCents - usedCost);
+      // Already accepted under the old free-messages model — grant the full
+      // free-money credit once (don't subtract past message counts).
       await db
         .from("chats")
-        .update({ ppm_credit_cents: credit, ppm_credit_granted: true })
+        .update({
+          ppm_credit_cents: ppm.freeCreditCents,
+          ppm_credit_granted: true,
+        })
         .eq("id", chatId);
       await broadcast(`chat:${chatId}`, "ppm-balance", {
-        creditCents: credit,
+        creditCents: ppm.freeCreditCents,
         declined: false,
       });
     }
+    const { data: fresh } = await db
+      .from("chats")
+      .select("ppm_credit_cents")
+      .eq("id", chatId)
+      .maybeSingle();
     return NextResponse.json({
       ok: true,
       accepted: true,
-      creditCents: ppm.freeCreditCents,
+      creditCents: fresh?.ppm_credit_cents ?? ppm.freeCreditCents,
     });
   }
 

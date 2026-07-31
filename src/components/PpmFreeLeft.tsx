@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatPpmMoney } from "@/lib/payPerMessage";
 
 /**
- * Remaining free credit next to a fan's name on the open chat page only.
- * Hidden when Pay per Message is off. Updates from ChatView's fanstate poll.
+ * Remaining free money next to a fan's name on the open chat page.
+ * Hidden when Pay per Message is off. Updates from the fanstate poll and
+ * live "ppm-balance" broadcasts whenever the fan spends credit.
  */
 export default function PpmFreeLeft({
   chatId,
@@ -35,7 +37,22 @@ export default function PpmFreeLeft({
       }
     };
     window.addEventListener("loly-fanstate", onFanstate);
-    return () => window.removeEventListener("loly-fanstate", onFanstate);
+
+    const supabase = supabaseBrowser();
+    const channel = supabase
+      .channel(`chat:${chatId}:ppm-credit`)
+      .on("broadcast", { event: "ppm-balance" }, ({ payload }) => {
+        const p = payload as { creditCents?: number } | null;
+        if (typeof p?.creditCents === "number") {
+          setCreditCents(Math.max(0, p.creditCents));
+        }
+      });
+    channel.subscribe();
+
+    return () => {
+      window.removeEventListener("loly-fanstate", onFanstate);
+      supabase.removeChannel(channel);
+    };
   }, [chatId]);
 
   if (!enabled) return null;
