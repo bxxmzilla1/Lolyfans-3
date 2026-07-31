@@ -4,7 +4,7 @@ import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
-import { visitorLocation } from "@/lib/geo";
+import { applyUserGeoTokens, visitorGeoParts, visitorLocation } from "@/lib/geo";
 import { formatCount, mediaUrl } from "@/lib/utils";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import GuestPage from "@/components/GuestPage";
@@ -29,7 +29,7 @@ export default async function CreatorProfilePage({
   const requestHeaders = await headers();
   const db = supabaseAdmin();
 
-  const [profiles, chats, { data: posts }, { count: realFollowers }, location] =
+  const [profiles, chats, { data: posts }, { count: realFollowers }, location, geo] =
     await Promise.all([
       ownerProfiles([ownerId]),
       guestChats(requestHeaders),
@@ -44,10 +44,13 @@ export default async function CreatorProfilePage({
         .select("chat_id", { count: "exact", head: true })
         .eq("owner_id", ownerId),
       visitorLocation(requestHeaders),
+      visitorGeoParts(requestHeaders),
     ]);
 
   const profile = profiles.get(ownerId);
   if (!profile) notFound();
+  // CITYUSER / COUNTRYUSER in the bio become this visitor's own location.
+  const bio = profile.bio ? applyUserGeoTokens(profile.bio, geo) : null;
 
   const chatIds = chats.map((c) => c.id);
   const postIds = (posts ?? []).map((p) => p.id);
@@ -142,8 +145,8 @@ export default async function CreatorProfilePage({
               </p>
             </div>
 
-            {profile.bio && (
-              <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
+            {bio && (
+              <p className="text-sm whitespace-pre-wrap break-words">{bio}</p>
             )}
             {profile.showLocation && location && (
               <p className="flex items-center gap-1 text-xs text-muted">

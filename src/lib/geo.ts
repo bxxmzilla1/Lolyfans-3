@@ -99,6 +99,17 @@ export async function visitorGeoParts(h: Headers): Promise<GeoParts> {
 }
 
 /**
+ * Profile-bio tokens: CITYUSER → the visitor's city, COUNTRYUSER → their
+ * country (via ipinfo). Each visitor reads the bio as if it were written
+ * about their own location.
+ */
+export function applyUserGeoTokens(text: string, geo: GeoParts): string {
+  return text
+    .replace(/COUNTRYUSER/g, geo.country || "your country")
+    .replace(/CITYUSER/g, geo.city || "your city");
+}
+
+/**
  * The visitor's ISO country code ("PH") via ipinfo, falling back to Vercel's
  * geo header — used to pre-select the country in embedded payment forms.
  */

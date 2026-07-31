@@ -277,6 +277,10 @@ function ProfileSection() {
           placeholder="Tell your fans about yourself…"
           className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none resize-none"
         />
+        <p className="text-xs text-muted">
+          Write <b>CITYUSER</b> or <b>COUNTRYUSER</b> anywhere in the bio and
+          each visitor sees their own city / country there (from their IP).
+        </p>
 
         <div className="flex items-center justify-between rounded-xl border border-line bg-card2 px-3 py-2.5">
           <div>

@@ -8,7 +8,7 @@ import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invit
 import { recordInviteEvent } from "@/lib/inviteEvents";
 import { ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
-import { visitorLocation } from "@/lib/geo";
+import { applyUserGeoTokens, visitorGeoParts, visitorLocation } from "@/lib/geo";
 import { formatCount, mediaUrl } from "@/lib/utils";
 import CreatorBanner from "@/components/CreatorBanner";
 import { resumeHrefForChatId } from "@/lib/guestResume";
@@ -104,7 +104,7 @@ export default async function InviteProfilePreviewPage({
   const ownerId = invite!.owner_id;
   // Only image posts in the locked preview — they blur nicely and load much
   // faster than videos.
-  const [profiles, { data: imagePosts }, { count: postCount }, { count: realFollowers }, location] =
+  const [profiles, { data: imagePosts }, { count: postCount }, { count: realFollowers }, location, geo] =
     await Promise.all([
       ownerProfiles([ownerId]),
       db
@@ -123,10 +123,13 @@ export default async function InviteProfilePreviewPage({
         .select("chat_id", { count: "exact", head: true })
         .eq("owner_id", ownerId),
       visitorLocation(requestHeaders),
+      visitorGeoParts(requestHeaders),
     ]);
 
   const profile = profiles.get(ownerId);
   if (!profile) redirect(`/i/${code}`);
+  // CITYUSER / COUNTRYUSER in the bio become this visitor's own location.
+  const bio = profile.bio ? applyUserGeoTokens(profile.bio, geo) : null;
 
   const teasers = imagePosts ?? [];
   const stats = await postStats(teasers.map((p) => p.id), []);
@@ -161,8 +164,8 @@ export default async function InviteProfilePreviewPage({
               </p>
             </div>
 
-            {profile.bio && (
-              <p className="text-sm whitespace-pre-wrap break-words">{profile.bio}</p>
+            {bio && (
+              <p className="text-sm whitespace-pre-wrap break-words">{bio}</p>
             )}
             {profile.showLocation && location && (
               <p className="flex items-center gap-1 text-xs text-muted">
