@@ -4,6 +4,7 @@ import {
   applyPpmSettlement,
   creditTokens,
   fulfillCheckout,
+  markPaidSubPaid,
   recordBlurDrainTap,
   recordLifetimeSubscription,
   recordUnlock,
@@ -77,6 +78,10 @@ export async function POST(req: NextRequest) {
         chatId,
         priceCents: pi.amount ?? 0,
       });
+    } else if (pi.metadata?.kind === "paidsub") {
+      // One-time unlimited-messaging purchase (idempotent with /complete).
+      await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+      await markPaidSubPaid(chatId);
     } else if (pi.metadata?.kind === "blur-drain" && pi.metadata.messageId) {
       await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
       const { data: msg } = await supabaseAdmin()

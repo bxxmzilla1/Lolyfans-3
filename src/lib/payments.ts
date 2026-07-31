@@ -449,6 +449,32 @@ export async function saveStripePaymentMethod(
   await supabaseAdmin().from("chats").update(patch).eq("id", chatId);
 }
 
+/**
+ * PaidSub: mark a chat as paid for unlimited messaging (idempotent) and tell
+ * both sides instantly — the fan's blocking popup closes, the creator's chat
+ * shows the paid state. Skipped Pay per Message metering follows from the
+ * paidsub_paid_at column.
+ */
+export async function markPaidSubPaid(chatId: string) {
+  const db = supabaseAdmin();
+  const { data: chat } = await db
+    .from("chats")
+    .select("owner_id, paidsub_paid_at")
+    .eq("id", chatId)
+    .maybeSingle();
+  if (!chat) return;
+  if (!chat.paidsub_paid_at) {
+    await db
+      .from("chats")
+      .update({ paidsub_paid_at: new Date().toISOString() })
+      .eq("id", chatId);
+  }
+  await Promise.all([
+    broadcast(`chat:${chatId}`, "paidsub", { paid: true, offered: false }),
+    broadcast(`inbox:${chat.owner_id}`, "paidsub", { chatId, paid: true }),
+  ]);
+}
+
 /** Record a paid lifetime subscription (idempotent) and keep the fan following. */
 export async function recordLifetimeSubscription(opts: {
   chatId: string;

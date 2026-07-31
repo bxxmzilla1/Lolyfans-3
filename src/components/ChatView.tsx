@@ -19,6 +19,7 @@ import BlurDrainerPlayer from "./BlurDrainerPlayer";
 import { elementsEnabled, getStripe } from "@/lib/stripeClient";
 import { parseBlurDrainer, type BlurDrainerConfig } from "@/lib/blurDrainer";
 import { type VerifyPopup } from "@/lib/popupOffer";
+import { paidSubPriceLabel } from "@/lib/paidSub";
 import {
   IconBack,
   IconChat,
@@ -31,6 +32,7 @@ import {
   IconMic,
   IconPlus,
   IconSend,
+  IconTip,
   IconUnlock,
 } from "./Icons";
 
@@ -134,6 +136,29 @@ export default function ChatView({
   // Auto-open the card wizard only once per gating episode — a failed start
   // falls back to the manual "Add payment details" button (no retry loop).
   const ppmVerifyStartedRef = useRef(false);
+  // PaidSub (guest side): creator-sent offer — one-time payment for unlimited
+  // messaging. While offered && !paid, a full-screen popup blurs and blocks
+  // the whole chat; the only way through is the embedded card wizard.
+  const [paidSub, setPaidSub] = useState<{
+    offered: boolean;
+    paid: boolean;
+    priceCents: number;
+  } | null>(null);
+  const [paidSubCard, setPaidSubCard] = useState<{
+    clientSecret: string;
+    country: string | null;
+    amountCents: number;
+  } | null>(null);
+  const [startingPaidSub, setStartingPaidSub] = useState(false);
+  // PaidSub (owner side): the composer sheet to send/remove the offer.
+  const [paidSubDialog, setPaidSubDialog] = useState<{
+    loading: boolean;
+    busy?: boolean;
+    enabled?: boolean;
+    priceCents?: number;
+    offered?: boolean;
+    paid?: boolean;
+  } | null>(null);
   // Voice notes: recording state + the moment between stop and message sent.
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -365,6 +390,21 @@ export default function ChatView({
           return next;
         });
       })
+      // PaidSub offer pushed / removed / paid — swap the blocking popup live.
+      .on("broadcast", { event: "paidsub" }, ({ payload }) => {
+        if (role !== "guest") return;
+        const p = payload as {
+          offered?: boolean;
+          paid?: boolean;
+          priceCents?: number;
+        } | null;
+        setPaidSub((prev) => ({
+          offered: p?.offered ?? prev?.offered ?? false,
+          paid: p?.paid ?? prev?.paid ?? false,
+          priceCents: p?.priceCents ?? prev?.priceCents ?? 0,
+        }));
+        if (p?.paid || p?.offered === false) setPaidSubCard(null);
+      })
       .subscribe();
     channelRef.current = channel;
 
@@ -474,6 +514,13 @@ export default function ChatView({
           );
         }
         if (typeof data.hasCard === "boolean") setHasCard(data.hasCard);
+        if (data.paidSub) {
+          setPaidSub((prev) =>
+            JSON.stringify(prev) === JSON.stringify(data.paidSub)
+              ? prev
+              : data.paidSub
+          );
+        }
         if (data.ppm) {
           const nextPpm = data.ppm.enabled ? data.ppm : null;
           setPpm((prev) =>
@@ -855,6 +902,91 @@ export default function ChatView({
       } catch {}
     }
     void refreshWallet();
+  }
+
+  /** PaidSub "Pay Now": start the one-time PaymentIntent for the wizard. */
+  async function startPaidSubPay() {
+    if (startingPaidSub) return;
+    setStartingPaidSub(true);
+    try {
+      const res = await fetch("/api/payments/paidsub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.paid) {
+        setPaidSub((p) => (p ? { ...p, paid: true } : p));
+      } else if (res.ok && data.clientSecret) {
+        setPaidSubCard({
+          clientSecret: data.clientSecret,
+          country: data.country ?? null,
+          amountCents: Number(data.amountCents ?? 0),
+        });
+      } else {
+        alert(data.error || "Could not start the payment");
+      }
+    } catch {
+      alert("Could not start the payment");
+    }
+    setStartingPaidSub(false);
+  }
+
+  /** The wizard confirmed the PaidSub payment: unblock the chat for good. */
+  async function completePaidSub(paymentIntentId: string) {
+    try {
+      await fetch("/api/payments/paidsub/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, paymentIntentId }),
+      });
+    } catch {
+      // The webhook marks the chat paid; the wallet refresh catches up.
+    }
+    setPaidSubCard(null);
+    setPaidSub((p) => (p ? { ...p, paid: true, offered: false } : p));
+    setHasCard(true);
+    void refreshWallet();
+  }
+
+  /** Owner: open the PaidSub sheet with this chat's live state. */
+  async function openPaidSubDialog() {
+    setPaidSubDialog({ loading: true });
+    try {
+      const res = await fetch(`/api/chats/paidsub?chatId=${chatId}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setPaidSubDialog({ loading: false, ...data });
+      } else {
+        setPaidSubDialog(null);
+        alert(data.error || "Could not load PaidSub state");
+      }
+    } catch {
+      setPaidSubDialog(null);
+      alert("Could not load PaidSub state");
+    }
+  }
+
+  /** Owner: push the offer popup into the fan's chat, or take it down. */
+  async function paidSubAction(action: "offer" | "cancel") {
+    setPaidSubDialog((d) => (d ? { ...d, busy: true } : d));
+    try {
+      const res = await fetch("/api/chats/paidsub", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, action }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setPaidSubDialog(null);
+      } else {
+        setPaidSubDialog((d) => (d ? { ...d, busy: false } : d));
+        alert(data.error || "Could not update the offer");
+      }
+    } catch {
+      setPaidSubDialog((d) => (d ? { ...d, busy: false } : d));
+      alert("Could not update the offer");
+    }
   }
 
   /** Pay per Message: the fan accepted the mandatory terms popup. */
@@ -1820,6 +1952,17 @@ export default function ChatView({
               <IconEye className="w-4.5 h-4.5" />
             </button>
           )}
+          {role === "owner" && (
+            <button
+              type="button"
+              onClick={() => void openPaidSubDialog()}
+              className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-transparent border border-line text-muted hover:text-fg transition-colors"
+              aria-label="PaidSub offer"
+              title="PaidSub — one-time payment for unlimited messaging"
+            >
+              <IconTip className="w-4.5 h-4.5" />
+            </button>
+          )}
           <button
             onClick={startRecording}
             disabled={uploading || sendingVoice}
@@ -2188,6 +2331,128 @@ export default function ChatView({
               <p className="relative text-[10px] text-slate-400">
                 By accepting you agree to the Terms of Service.
               </p>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {/* PaidSub (fan): the creator pushed an offer — the whole chat blurs
+          and can't be scrolled or closed. Pay Now swaps the popup for the
+          embedded Stripe card input; paying is the only way through. */}
+      {role === "guest" && paidSub?.offered && !paidSub.paid && (
+        <Portal>
+          <div className="fixed inset-0 z-[97] bg-black/50 backdrop-blur-xl overflow-hidden touch-none overscroll-none flex items-center justify-center p-5">
+            {paidSubCard ? (
+              <div className="w-full max-w-sm space-y-2.5 fade-up">
+                <p className="text-center text-sm font-semibold text-white drop-shadow">
+                  One-time payment of {paidSubPriceLabel(paidSubCard.amountCents)}{" "}
+                  for unlimited messaging
+                </p>
+                <EmbeddedCardTopup
+                  clientSecret={paidSubCard.clientSecret}
+                  amountCents={paidSubCard.amountCents}
+                  label="Unlimited messaging"
+                  countryGuess={paidSubCard.country}
+                  onSuccess={completePaidSub}
+                  onCancel={() => setPaidSubCard(null)}
+                />
+              </div>
+            ) : (
+              <div
+                className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-blue-200 px-7 py-8 text-center space-y-4 fade-up shadow-2xl shadow-blue-900/40"
+                style={{
+                  background:
+                    "linear-gradient(160deg, #ffffff 0%, #eff6ff 45%, #dbeafe 100%)",
+                }}
+              >
+                <div
+                  className="pointer-events-none absolute -top-16 -right-16 h-40 w-40 rounded-full opacity-40 blur-2xl"
+                  style={{ background: "radial-gradient(circle, #60a5fa, transparent 70%)" }}
+                />
+                <p className="relative text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-600">
+                  Unlimited messaging
+                </p>
+                <p className="relative text-5xl font-extrabold leading-none text-blue-950">
+                  {paidSubPriceLabel(paidSub.priceCents)}
+                  <span className="ml-2 text-2xl font-bold text-blue-500">
+                    ONCE
+                  </span>
+                </p>
+                <p className="relative text-sm text-slate-600 leading-relaxed">
+                  One-time payment of {paidSubPriceLabel(paidSub.priceCents)} for
+                  unlimited messaging
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void startPaidSubPay()}
+                  disabled={startingPaidSub}
+                  className="relative w-full bg-blue-600 text-white font-bold rounded-2xl py-3.5 text-sm shadow-lg shadow-blue-400/40 disabled:opacity-60 active:opacity-80 transition-opacity"
+                >
+                  {startingPaidSub ? "One moment…" : "Pay Now"}
+                </button>
+              </div>
+            )}
+          </div>
+        </Portal>
+      )}
+
+      {/* PaidSub (creator): send or remove the offer for this fan. */}
+      {paidSubDialog && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+            onClick={() => !paidSubDialog.busy && setPaidSubDialog(null)}
+          >
+            <div
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <p className="font-bold">PaidSub</p>
+              {paidSubDialog.loading ? (
+                <p className="text-sm text-muted">Loading…</p>
+              ) : !paidSubDialog.enabled ? (
+                <p className="text-sm text-muted leading-relaxed">
+                  Turn on PaidSub in Settings → PaidSub first, then come back
+                  here to send the offer.
+                </p>
+              ) : paidSubDialog.paid ? (
+                <p className="text-sm text-muted leading-relaxed">
+                  This fan already paid for unlimited messaging.
+                </p>
+              ) : paidSubDialog.offered ? (
+                <>
+                  <p className="text-sm text-muted leading-relaxed">
+                    The offer popup is showing in their chat — one-time payment
+                    of {paidSubPriceLabel(paidSubDialog.priceCents ?? 0)} for
+                    unlimited messaging. Their chat stays blurred and blocked
+                    until they pay.
+                  </p>
+                  <button
+                    onClick={() => void paidSubAction("cancel")}
+                    disabled={paidSubDialog.busy}
+                    className="w-full bg-card2 border border-line text-fg font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
+                  >
+                    {paidSubDialog.busy ? "Removing…" : "Remove offer"}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="text-sm text-muted leading-relaxed">
+                    Send a popup that blurs and blocks this fan&apos;s chat:
+                    one-time payment of{" "}
+                    {paidSubPriceLabel(paidSubDialog.priceCents ?? 0)} for
+                    unlimited messaging. The only way through is Pay Now with
+                    the Stripe card input.
+                  </p>
+                  <button
+                    onClick={() => void paidSubAction("offer")}
+                    disabled={paidSubDialog.busy}
+                    className="w-full bg-accent text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
+                  >
+                    {paidSubDialog.busy ? "Sending…" : "Send offer"}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </Portal>

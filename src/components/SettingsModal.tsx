@@ -11,6 +11,7 @@ import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
 import PayPerMessageSettings from "./PayPerMessageSettings";
+import PaidSubSettings from "./PaidSubSettings";
 import VerifyPopupSettings from "./VerifyPopupSettings";
 import WelcomeMessageEditor from "./WelcomeMessageEditor";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
@@ -34,6 +35,7 @@ type Section =
   | "social"
   | "subscriptions"
   | "paypermessage"
+  | "paidsub"
   | "verify"
   | "welcome"
   | "links"
@@ -412,6 +414,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconSend className="w-3.5 h-3.5" /> Pay per Message
         </button>
         <button
+          onClick={() => setSection("paidsub")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "paidsub"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconTip className="w-3.5 h-3.5" /> PaidSub
+        </button>
+        <button
           onClick={() => setSection("verify")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "verify"
@@ -487,6 +499,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             section === "welcome" ||
             section === "subscriptions" ||
             section === "paypermessage" ||
+            section === "paidsub" ||
             section === "verify"
               ? "max-w-2xl"
               : section === "editor" || section === "posts"
@@ -504,6 +517,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <SubscriptionSettings />
           ) : section === "paypermessage" ? (
             <PayPerMessageSettings />
+          ) : section === "paidsub" ? (
+            <PaidSubSettings />
           ) : section === "verify" ? (
             <VerifyPopupSettings />
           ) : section === "welcome" ? (

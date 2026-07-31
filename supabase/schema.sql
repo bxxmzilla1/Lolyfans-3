@@ -568,6 +568,12 @@ alter table chats add column if not exists ppm_credit_granted boolean not null d
 alter table chats add column if not exists ppm_last_settle_at timestamptz;
 alter table chats add column if not exists ppm_card_declined boolean not null default false;
 
+-- PaidSub: creator-triggered popup offering unlimited messaging for a
+-- one-time payment. Offer pending = popup blocks the fan's chat; paid =
+-- unlimited messaging (Pay per Message metering is skipped).
+alter table chats add column if not exists paidsub_offer_at timestamptz;
+alter table chats add column if not exists paidsub_paid_at timestamptz;
+
 -- Idempotent ledger for Pay per Message auto-charges (one PI = one debit).
 create table if not exists ppm_settlements (
   stripe_payment_intent_id text primary key,

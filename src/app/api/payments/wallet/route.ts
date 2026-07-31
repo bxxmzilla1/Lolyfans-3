@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { verifyPopupFromMetadata } from "@/lib/popupOffer";
 import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
+import { paidSubFromMetadata } from "@/lib/paidSub";
 import { ensurePpmCredit, settlePpmBalance } from "@/lib/payments";
 
 /**
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
   const { data: chat } = await db
     .from("chats")
     .select(
-      "owner_id, stripe_payment_method_id, ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_credit_cents, ppm_credit_granted, ppm_card_declined"
+      "owner_id, stripe_payment_method_id, ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_credit_cents, ppm_credit_granted, ppm_card_declined, paidsub_offer_at, paidsub_paid_at"
     )
     .eq("id", chatId)
     .maybeSingle();
@@ -32,6 +33,10 @@ export async function GET(req: NextRequest) {
     : { data: null };
   const ownerMeta = ownerUser?.user?.user_metadata ?? {};
   const ppm = payPerMessageFromMetadata(ownerMeta);
+  const paidSub = paidSubFromMetadata(ownerMeta);
+  // PaidSub paid = unlimited messaging: all Pay per Message gating disappears.
+  const paidSubPaid = !!chat?.paidsub_paid_at;
+  if (paidSubPaid) ppm.enabled = false;
 
   let creditCents = chat?.ppm_credit_cents ?? 0;
   let accepted = !!chat?.ppm_accepted_at;
@@ -65,6 +70,11 @@ export async function GET(req: NextRequest) {
       creditCents,
       balanceCents: chat?.ppm_balance_cents ?? 0,
       declined: !!chat?.ppm_card_declined,
+    },
+    paidSub: {
+      offered: paidSub.enabled && !!chat?.paidsub_offer_at,
+      paid: paidSubPaid,
+      priceCents: paidSub.priceCents,
     },
   });
 }

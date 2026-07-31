@@ -165,13 +165,16 @@ export async function POST(req: NextRequest) {
       const { data: chatRow } = await db
         .from("chats")
         .select(
-          "ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_credit_cents, ppm_credit_granted, ppm_card_declined, stripe_payment_method_id"
+          "ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_credit_cents, ppm_credit_granted, ppm_card_declined, stripe_payment_method_id, paidsub_paid_at"
         )
         .eq("id", chatId)
         .maybeSingle();
       if (!chatRow) {
         return NextResponse.json({ error: "Chat not found" }, { status: 404 });
       }
+      // PaidSub: a one-time payment bought unlimited messaging — skip all
+      // metering (no credit spend, no billing, no gating).
+      if (!chatRow.paidsub_paid_at) {
       // Popup on: fan must accept first. Popup off: grant credit silently.
       if (!chatRow.ppm_accepted_at && ppm.showPopup) {
         return NextResponse.json(
@@ -230,6 +233,7 @@ export async function POST(req: NextRequest) {
         })
       );
       if (billable > 0) after(() => settlePpmBalance(chatId));
+      }
     }
   }
 
