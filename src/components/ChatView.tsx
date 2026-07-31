@@ -2369,8 +2369,11 @@ export default function ChatView({
                   className="pointer-events-none absolute -top-16 -right-16 h-40 w-40 rounded-full opacity-40 blur-2xl"
                   style={{ background: "radial-gradient(circle, #60a5fa, transparent 70%)" }}
                 />
+                <p className="relative text-xl font-extrabold tracking-tight ig-gradient-text select-none">
+                  LolyFans
+                </p>
                 <p className="relative text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-600">
-                  Unlimited messaging
+                  Your free trial has ended
                 </p>
                 <p className="relative text-5xl font-extrabold leading-none text-blue-950">
                   {paidSubPriceLabel(paidSub.priceCents)}

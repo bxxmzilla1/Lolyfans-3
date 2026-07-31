@@ -113,8 +113,11 @@ export default function PaidSubSettings() {
               "linear-gradient(160deg, #ffffff 0%, #eff6ff 45%, #dbeafe 100%)",
           }}
         >
+          <p className="relative text-lg font-extrabold tracking-tight ig-gradient-text select-none">
+            LolyFans
+          </p>
           <p className="relative text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600">
-            Unlimited messaging
+            Your free trial has ended
           </p>
           <p className="relative text-4xl font-extrabold leading-none text-blue-950">
             {paidSubPriceLabel(priceCents || 500)}
