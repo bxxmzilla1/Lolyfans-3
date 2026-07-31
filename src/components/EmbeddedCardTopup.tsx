@@ -158,10 +158,7 @@ function CardWizard({
         <div className="flex-1 min-w-0">
           {mode === "setup" ? (
             <p className="text-sm font-extrabold leading-tight">
-              Card verification{" "}
-              <span className="text-xs font-semibold text-emerald-500">
-                — no charge
-              </span>
+              Add Payment Details
             </p>
           ) : presentAsVerify ? (
             <p className="text-sm font-extrabold leading-tight">

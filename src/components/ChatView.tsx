@@ -16,7 +16,7 @@ import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import IncomingMediaGate from "./IncomingMediaGate";
 import BlurDrainerEditor from "./BlurDrainerEditor";
 import BlurDrainerPlayer from "./BlurDrainerPlayer";
-import { elementsEnabled } from "@/lib/stripeClient";
+import { elementsEnabled, getStripe } from "@/lib/stripeClient";
 import { parseBlurDrainer, type BlurDrainerConfig } from "@/lib/blurDrainer";
 import { type VerifyPopup } from "@/lib/popupOffer";
 import {
@@ -86,6 +86,9 @@ export default function ChatView({
     messageId: string;
   } | null>(null);
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
+  // In-flight guards readable from memoized bubbles' older closures.
+  const unlockingRef = useRef(false);
+  const startingVerifyRef = useRef(false);
   // Incoming-media gate (guest side): accept/reject in flight + the
   // countdown remaining for the media currently on screen.
   const [deciding, setDeciding] = useState(false);
@@ -351,8 +354,13 @@ export default function ChatView({
               : {}),
             ...(typeof p?.declined === "boolean" ? { declined: p.declined } : {}),
           };
-          window.dispatchEvent(
-            new CustomEvent("loly-ppm", { detail: { chatId, ...next } })
+          // Deferred: dispatching synchronously here would run listeners'
+          // setState during React's render phase (updaters run while
+          // rendering), which stalls the page under a burst of broadcasts.
+          queueMicrotask(() =>
+            window.dispatchEvent(
+              new CustomEvent("loly-ppm", { detail: { chatId, ...next } })
+            )
           );
           return next;
         });
@@ -456,10 +464,21 @@ export default function ChatView({
       const res = await fetch(`/api/payments/wallet?chatId=${chatId}`);
       if (res.ok) {
         const data = await res.json();
-        if (data.verifyPopup) setVerifyCfg(data.verifyPopup);
+        // Only swap state when the payload actually changed — this runs on a
+        // 5s poll and a fresh-but-equal object re-renders the whole chat.
+        if (data.verifyPopup) {
+          setVerifyCfg((prev) =>
+            JSON.stringify(prev) === JSON.stringify(data.verifyPopup)
+              ? prev
+              : data.verifyPopup
+          );
+        }
         if (typeof data.hasCard === "boolean") setHasCard(data.hasCard);
         if (data.ppm) {
-          setPpm(data.ppm.enabled ? data.ppm : null);
+          const nextPpm = data.ppm.enabled ? data.ppm : null;
+          setPpm((prev) =>
+            JSON.stringify(prev) === JSON.stringify(nextPpm) ? prev : nextPpm
+          );
           // The wallet badge hides itself when enabled is false.
           window.dispatchEvent(
             new CustomEvent("loly-ppm", {
@@ -478,6 +497,15 @@ export default function ChatView({
   useEffect(() => {
     refreshWallet();
   }, [refreshWallet]);
+
+  // Preload Stripe.js while the fan still has credit: parsing the script and
+  // mounting its iframes at the exact moment the card wizard swaps in is what
+  // used to freeze phones. Idle-time load keeps the swap instant.
+  useEffect(() => {
+    if (role !== "guest" || !elementsEnabled()) return;
+    const idle = window.setTimeout(() => void getStripe(), 1500);
+    return () => window.clearTimeout(idle);
+  }, [role]);
 
   // Keep wallet / PPM state fresh (enable/disable, credit, declines).
   useEffect(() => {
@@ -774,7 +802,10 @@ export default function ChatView({
 
   /** "Verify to view": start a SetupIntent and open the card wizard (no charge). */
   async function startVerify() {
-    if (startingVerify) return;
+    // Ref guard: memoized bubbles may call an older closure of this function,
+    // so the in-flight check can't rely on state.
+    if (startingVerifyRef.current) return;
+    startingVerifyRef.current = true;
     setStartingVerify(true);
     try {
       const res = await fetch("/api/payments/verify", {
@@ -794,6 +825,7 @@ export default function ChatView({
     } catch {
       alert("Could not start verification");
     }
+    startingVerifyRef.current = false;
     setStartingVerify(false);
   }
 
@@ -1100,7 +1132,10 @@ export default function ChatView({
   // the composer for the embedded 3-step card wizard (which saves the card
   // so every later unlock is truly one tap).
   async function unlockById(messageId: string) {
-    if (unlockingId) return;
+    // Ref guard: memoized bubbles may hold an older closure of this function,
+    // so the in-flight check can't rely on state.
+    if (unlockingRef.current) return;
+    unlockingRef.current = true;
     setUnlockingId(messageId);
     try {
       const res = await fetch("/api/payments/unlock", {
@@ -1137,6 +1172,7 @@ export default function ChatView({
     } catch {
       alert("Could not unlock");
     }
+    unlockingRef.current = false;
     setUnlockingId(null);
   }
 

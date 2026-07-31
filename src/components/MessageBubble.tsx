@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import {
   mediaUrl,
   formatTime,
@@ -138,7 +138,7 @@ function renderContent(
   return nodes;
 }
 
-export default function MessageBubble({
+function MessageBubble({
   message,
   mine,
   repliedTo,
@@ -665,3 +665,21 @@ export default function MessageBubble({
     </div>
   );
 }
+
+// Long chats: without memo, every ChatView state change (typing, polls, PPM
+// updates, the composer→card-wizard swap) re-renders every bubble, which lags
+// or freezes phones. Callback props are recreated each render but only close
+// over setters/refs (or guard via refs), so their identity is safely ignored.
+export default memo(
+  MessageBubble,
+  (prev, next) =>
+    prev.message === next.message &&
+    prev.mine === next.mine &&
+    prev.repliedTo === next.repliedTo &&
+    prev.unlocking === next.unlocking &&
+    prev.highlighted === next.highlighted &&
+    prev.selectMode === next.selectMode &&
+    prev.selected === next.selected &&
+    prev.peerName === next.peerName &&
+    prev.verifyLock === next.verifyLock
+);
