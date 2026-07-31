@@ -2,17 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { formatPpmMoney } from "@/lib/payPerMessage";
 
 /**
  * Pay per Message tab: every message a fan sends costs a set price. Each fan
- * gets a free credit (dollar amount) on their balance when they accept the
- * terms; messages spend that first. After it runs out they must verify a card.
- * Further costs accrue and are charged to their card about once an hour.
+ * gets a free credit on their balance automatically; messages spend that
+ * first. After it runs out they must verify a card. Further costs accrue and
+ * are charged to their card about once an hour.
  */
 export default function PayPerMessageSettings() {
   const [enabled, setEnabled] = useState(false);
-  const [showPopup, setShowPopup] = useState(true);
   const [price, setPrice] = useState("0.50");
   const [freeCredit, setFreeCredit] = useState("5.00");
   const [saving, setSaving] = useState(false);
@@ -24,14 +22,12 @@ export default function PayPerMessageSettings() {
       .then(({ data }) => {
         const meta = data.user?.user_metadata ?? {};
         setEnabled(meta.ppm_enabled === true);
-        setShowPopup(meta.ppm_show_popup !== false);
         const cents = Math.round(Number(meta.ppm_price_cents)) || 0;
         if (cents > 0) setPrice((cents / 100).toFixed(2).replace(/\.00$/, ""));
         if (meta.ppm_free_credit_cents != null && meta.ppm_free_credit_cents !== "") {
           const credit = Math.round(Number(meta.ppm_free_credit_cents)) || 0;
           setFreeCredit((credit / 100).toFixed(2).replace(/\.00$/, ""));
         } else {
-          // Migrate old free-messages setting into a dollar credit preview.
           const freeMessages = Math.round(Number(meta.ppm_free_messages)) || 0;
           const migrated = freeMessages * (cents || 50);
           if (migrated > 0) {
@@ -57,7 +53,7 @@ export default function PayPerMessageSettings() {
       await supabaseBrowser().auth.updateUser({
         data: {
           ppm_enabled: enabled && priceCents > 0,
-          ppm_show_popup: showPopup,
+          ppm_show_popup: false,
           ppm_price_cents: priceCents,
           ppm_free_credit_cents: freeCreditCents,
         },
@@ -76,11 +72,10 @@ export default function PayPerMessageSettings() {
         <p className="text-xs text-muted mt-1 leading-relaxed">
           Every message a fan sends costs the price you set — for new and
           existing fans. Each fan gets the free credit below on their balance
-          (via the optional popup, or silently if the popup is off). Messages
-          spend that credit first; after it runs out, fans without a verified
-          card lose the chat input until they add one. Further costs stack on
-          their balance and are charged to their card automatically about once
-          an hour — never per message.
+          automatically. Messages spend that credit first; after it runs out,
+          fans without a verified card lose the chat input until they add one.
+          Further costs stack on their balance and are charged to their card
+          automatically about once an hour — never per message.
         </p>
       </div>
 
@@ -103,31 +98,6 @@ export default function PayPerMessageSettings() {
           <span
             className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
               enabled ? "translate-x-[22px]" : "translate-x-0.5"
-            }`}
-          />
-        </button>
-      </div>
-
-      <div className="flex items-center justify-between gap-4 rounded-xl bg-card2 border border-line px-4 py-3">
-        <div>
-          <p className="text-sm font-semibold">Show terms popup</p>
-          <p className="text-[11px] text-muted mt-0.5 leading-relaxed">
-            When off, fans never see the free-credit popup — credit is added
-            to their balance automatically.
-          </p>
-        </div>
-        <button
-          role="switch"
-          aria-checked={showPopup}
-          onClick={() => setShowPopup((v) => !v)}
-          className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
-            showPopup ? "bg-accent" : "bg-line"
-          }`}
-          aria-label="Toggle terms popup"
-        >
-          <span
-            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-              showPopup ? "translate-x-[22px]" : "translate-x-0.5"
             }`}
           />
         </button>
@@ -164,50 +134,10 @@ export default function PayPerMessageSettings() {
             />
           </div>
           <span className="text-[11px] text-muted">
-            Free money added to each fan&apos;s balance when they accept.
-            Messages spend this first. Existing fans who haven&apos;t accepted
-            yet get this amount too.
+            Free money added to each fan&apos;s balance automatically when they
+            start chatting. Messages spend this first.
           </span>
         </label>
-      </div>
-
-      {/* Preview: the one-time popup fans must accept (when enabled) */}
-      <div className={`space-y-2 ${showPopup ? "" : "opacity-45"}`}>
-        <p className="text-xs font-semibold text-muted uppercase tracking-wide">
-          Popup preview{showPopup ? "" : " · hidden"}
-        </p>
-        <div
-          className="relative overflow-hidden rounded-[1.75rem] border border-white/20 px-5 py-7 text-center space-y-3 shadow-lg"
-          style={{
-            background:
-              "linear-gradient(160deg, color-mix(in oklab, var(--accent) 28%, #1e293b) 0%, #312e81 45%, #9d174d 100%)",
-          }}
-        >
-          <div
-            className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full opacity-50 blur-2xl"
-            style={{ background: "radial-gradient(circle, #fbbf24, transparent 70%)" }}
-          />
-          <div
-            className="pointer-events-none absolute -bottom-14 -left-10 h-36 w-36 rounded-full opacity-40 blur-2xl"
-            style={{ background: "radial-gradient(circle, #38bdf8, transparent 70%)" }}
-          />
-          <p className="relative text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-200/90">
-            Welcome gift
-          </p>
-          <p className="relative text-4xl font-extrabold leading-none text-white">
-            {formatPpmMoney(freeCreditCents)}
-            <span className="ml-2 text-xl font-bold text-amber-300">FREE</span>
-          </p>
-          <p className="relative text-xs text-white/75">
-            Added to your balance to start chatting
-          </p>
-          <span className="relative inline-block bg-white text-indigo-900 text-xs font-bold rounded-xl px-6 py-2.5">
-            Accept &amp; start chatting
-          </span>
-          <p className="relative text-[11px] text-white/50">
-            {formatPpmMoney(priceCents)} per message after
-          </p>
-        </div>
       </div>
 
       <button

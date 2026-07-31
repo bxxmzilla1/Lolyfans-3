@@ -1,10 +1,9 @@
 /**
  * Pay per Message: every fan message costs a creator-set price. Each fan gets
- * a free credit (dollar amount) on their balance when they accept the terms
- * (or immediately if the terms popup is turned off); messages spend that
- * credit first. Once it's gone they must have a verified card to keep
- * chatting. Further costs accrue on a per-chat owed balance that is
- * auto-charged to their card roughly once an hour.
+ * a free credit (dollar amount) on their balance automatically when they
+ * chat; messages spend that credit first. Once it's gone they must have a
+ * verified card to keep chatting. Further costs accrue on a per-chat owed
+ * balance that is auto-charged to their card roughly once an hour.
  */
 export type PayPerMessage = {
   enabled: boolean;
@@ -12,8 +11,6 @@ export type PayPerMessage = {
   priceCents: number;
   /** Free money credited to each fan's balance when they start, in cents. */
   freeCreditCents: number;
-  /** When false, fans never see the terms popup — credit is granted silently. */
-  showPopup: boolean;
 };
 
 /** Format cents as a short dollar string ($5 / $5.50). */
@@ -41,7 +38,5 @@ export function payPerMessageFromMetadata(
     enabled: meta.ppm_enabled === true && priceCents > 0,
     priceCents,
     freeCreditCents,
-    // Default on; only an explicit false hides the popup.
-    showPopup: meta.ppm_show_popup !== false,
   };
 }
