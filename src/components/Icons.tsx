@@ -365,6 +365,16 @@ export function IconCard({ className }: IconProps) {
   );
 }
 
+/** Clock — PaidSub offer sent, waiting for the fan to pay. */
+export function IconClock({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" />
+      <path d="M12 7v5l3 3" />
+    </Svg>
+  );
+}
+
 /** Tabler filled shield-check — fan accepted the pay-per-message agreement. */
 export function IconShieldCheck({ className }: IconProps) {
   return (

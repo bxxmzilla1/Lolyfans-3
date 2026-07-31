@@ -8,7 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { chatPreviewLabel, type ChatPreview } from "@/lib/chatPreview";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
-import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
+import { IconCard, IconCheck, IconClock, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
 import MassMessage from "./MassMessage";
@@ -25,6 +25,10 @@ type ChatRow = {
   stripe_payment_method_id: string | null;
   /** Fan accepted the Pay per Message terms popup (checkmark by their name). */
   ppm_accepted_at?: string | null;
+  /** PaidSub offer sent (orange clock until they pay). */
+  paidsub_offer_at?: string | null;
+  /** PaidSub paid → unlimited messaging (normal card icon shows). */
+  paidsub_paid_at?: string | null;
   invites: { label: string | null; code: string } | null;
   preview: ChatPreview | null;
   unread: number;
@@ -114,6 +118,10 @@ function ensureInboxChannel(ownerId: string) {
       const p = payload as { chatId?: string };
       if (p.chatId) ppmListeners.forEach((listener) => listener(p.chatId!));
     })
+    // A fan paid their PaidSub offer → clock badge swaps to the card icon.
+    .on("broadcast", { event: "paidsub" }, () =>
+      inboxListeners.forEach((listener) => listener())
+    )
     .subscribe((status) => {
       // Recreate the channel if Realtime drops — otherwise new-message
       // signals stop forever until a full page reload.
@@ -186,6 +194,9 @@ export default function ChatList() {
   // How many recent chats to render (0 = all) — creator-tunable, persisted.
   const [listLimit, setListLimit] = useState<number>(readStoredListLimit);
   const [massOpen, setMassOpen] = useState(false);
+  // Mass-apply PaidSub to every current fan without a registered card.
+  const [paidSubMassConfirm, setPaidSubMassConfirm] = useState(false);
+  const [paidSubMassBusy, setPaidSubMassBusy] = useState(false);
   // Chats whose fan is typing right now (each entry auto-clears after 3s).
   const [typingIds, setTypingIds] = useState<Set<string>>(new Set());
   const typingTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -194,6 +205,31 @@ export default function ChatList() {
   const mountedRef = useRef(true);
   const loadRef = useRef<() => Promise<void>>(async () => {});
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Push the PaidSub offer into every current chat without a saved card.
+   *  New fans who join later are NOT included — apply again (or per chat). */
+  async function massApplyPaidSub() {
+    if (paidSubMassBusy) return;
+    setPaidSubMassBusy(true);
+    try {
+      const res = await fetch("/api/chats/paidsub/mass", { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setPaidSubMassConfirm(false);
+        alert(
+          `PaidSub offer sent to ${data.applied ?? 0} fan${
+            data.applied === 1 ? "" : "s"
+          } without a card.`
+        );
+        void load();
+      } else {
+        alert(data.error || "Could not apply PaidSub");
+      }
+    } catch {
+      alert("Could not apply PaidSub");
+    }
+    setPaidSubMassBusy(false);
+  }
 
   async function load() {
     const chatsRes = await fetch("/api/chats").catch(() => null);
@@ -611,6 +647,14 @@ export default function ChatList() {
           >
             {selectMode ? "Cancel" : "Select"}
           </button>
+          <button
+            onClick={() => setPaidSubMassConfirm(true)}
+            title="Send the PaidSub offer to every current fan without a registered card"
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted hover:text-fg transition-colors"
+          >
+            <IconClock className="w-3.5 h-3.5 text-orange-400" />
+            PaidSub all
+          </button>
         </div>
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
           <button
@@ -760,11 +804,16 @@ export default function ChatList() {
                     <p className={`text-[14px] flex items-center gap-1.5 min-w-0 ${
                       chat.unread > 0 && !active ? "font-bold" : "font-semibold"
                     }`}>
-                      {chat.stripe_payment_method_id && (
+                      {chat.paidsub_offer_at && !chat.paidsub_paid_at ? (
+                        // PaidSub offer showing in their chat, not paid yet.
+                        <span title="PaidSub offer pending" className="shrink-0 text-orange-400">
+                          <IconClock className="w-3.5 h-3.5" />
+                        </span>
+                      ) : chat.stripe_payment_method_id ? (
                         <span title="Card registered" className="shrink-0 text-accent">
                           <IconCard className="w-3.5 h-3.5" />
                         </span>
-                      )}
+                      ) : null}
                       <span className="truncate">{displayName}</span>
                       {chat.custom_name && (
                         <span className="text-muted text-[11px] font-normal truncate">
@@ -960,6 +1009,48 @@ export default function ChatList() {
           onlineIds={onlineIds}
           onClose={() => setMassOpen(false)}
         />
+      )}
+
+      {paidSubMassConfirm && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={() => !paidSubMassBusy && setPaidSubMassConfirm(false)}
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-xs bg-card border border-line rounded-2xl p-4 space-y-3 fade-up"
+            >
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center shrink-0">
+                  <IconClock className="w-4.5 h-4.5 text-orange-400" />
+                </div>
+                <p className="font-bold">Mass PaidSub</p>
+              </div>
+              <p className="text-sm text-muted leading-relaxed">
+                Sends the PaidSub popup to every <b>current</b> fan without a
+                registered card. Their chats stay blurred and blocked until
+                they pay. New fans who join later are not included.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setPaidSubMassConfirm(false)}
+                  disabled={paidSubMassBusy}
+                  className="flex-1 bg-card2 border border-line rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => void massApplyPaidSub()}
+                  disabled={paidSubMassBusy}
+                  className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold active:opacity-80 transition-opacity disabled:opacity-50"
+                >
+                  {paidSubMassBusy ? "Applying…" : "Apply"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Portal>
       )}
 
       {deletingChat && (

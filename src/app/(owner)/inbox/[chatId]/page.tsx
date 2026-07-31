@@ -99,6 +99,9 @@ export default async function OwnerChatPage({
           <FanWalletStatus
             chatId={chatId}
             initialHasCard={!!chat.stripe_payment_method_id}
+            initialPaidSubPending={
+              !!chat.paidsub_offer_at && !chat.paidsub_paid_at
+            }
           >
             <span className="truncate">
               {chat.custom_name || chat.guest_name}

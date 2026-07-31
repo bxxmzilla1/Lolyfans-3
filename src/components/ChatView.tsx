@@ -433,6 +433,7 @@ export default function ChatView({
         if (!res.ok || stopped) return;
         const data = (await res.json()) as {
           hasCard?: boolean;
+          paidSubPending?: boolean;
           ppmAccepted?: boolean;
           ppmEnabled?: boolean;
           ppmFreeCreditCents?: number;
@@ -449,6 +450,7 @@ export default function ChatView({
             detail: {
               chatId,
               hasCard: data.hasCard,
+              paidSubPending: data.paidSubPending,
               ppmAccepted: data.ppmAccepted,
           ppmEnabled: data.ppmEnabled,
           ppmFreeCreditCents: data.ppmFreeCreditCents,

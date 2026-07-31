@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     const { data: chat, error: chatErr } = await db
       .from("chats")
       .select(
-        "stripe_payment_method_id, ppm_accepted_at, ppm_messages_used, ppm_credit_cents, ppm_credit_granted, ppm_balance_cents"
+        "stripe_payment_method_id, ppm_accepted_at, ppm_messages_used, ppm_credit_cents, ppm_credit_granted, ppm_balance_cents, paidsub_offer_at, paidsub_paid_at"
       )
       .eq("id", chatId)
       .eq("owner_id", ownerId)
@@ -98,6 +98,8 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       hasCard: !!chat.stripe_payment_method_id,
+      // Orange clock in the header while the PaidSub offer awaits payment.
+      paidSubPending: !!chat.paidsub_offer_at && !chat.paidsub_paid_at,
       ppmAccepted: !!chat.ppm_accepted_at,
       ppmEnabled: ppm.enabled,
       ppmFreeCreditCents: ppm.enabled ? ppm.freeCreditCents : 0,
