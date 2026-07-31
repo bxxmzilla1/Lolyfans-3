@@ -7,7 +7,6 @@ import ChatView from "@/components/ChatView";
 import GuestPresenceStatus from "@/components/GuestPresenceStatus";
 import OwnerOnlineSwitch from "@/components/OwnerOnlineSwitch";
 import FanWalletStatus from "@/components/FanWalletStatus";
-import PpmAcceptedBadge from "@/components/PpmAcceptedBadge";
 import PpmFreeLeft from "@/components/PpmFreeLeft";
 import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
 import { IconBack, IconMapPin } from "@/components/Icons";
@@ -96,11 +95,6 @@ export default async function OwnerChatPage({
       </div>
       <div className="min-w-0">
         <p className="font-semibold text-[15px] truncate flex items-center gap-1.5">
-          {/* Shield: this fan accepted the pay-per-message agreement (live) */}
-          <PpmAcceptedBadge
-            chatId={chatId}
-            initialAccepted={!!chat.ppm_accepted_at}
-          />
           {/* Card icon (once registered) + name */}
           <FanWalletStatus
             chatId={chatId}

@@ -12,6 +12,7 @@ import { formatPpmMoney } from "@/lib/payPerMessage";
  */
 export default function PayPerMessageSettings() {
   const [enabled, setEnabled] = useState(false);
+  const [showPopup, setShowPopup] = useState(true);
   const [price, setPrice] = useState("0.50");
   const [freeCredit, setFreeCredit] = useState("5.00");
   const [saving, setSaving] = useState(false);
@@ -23,6 +24,7 @@ export default function PayPerMessageSettings() {
       .then(({ data }) => {
         const meta = data.user?.user_metadata ?? {};
         setEnabled(meta.ppm_enabled === true);
+        setShowPopup(meta.ppm_show_popup !== false);
         const cents = Math.round(Number(meta.ppm_price_cents)) || 0;
         if (cents > 0) setPrice((cents / 100).toFixed(2).replace(/\.00$/, ""));
         if (meta.ppm_free_credit_cents != null && meta.ppm_free_credit_cents !== "") {
@@ -55,6 +57,7 @@ export default function PayPerMessageSettings() {
       await supabaseBrowser().auth.updateUser({
         data: {
           ppm_enabled: enabled && priceCents > 0,
+          ppm_show_popup: showPopup,
           ppm_price_cents: priceCents,
           ppm_free_credit_cents: freeCreditCents,
         },
@@ -73,11 +76,11 @@ export default function PayPerMessageSettings() {
         <p className="text-xs text-muted mt-1 leading-relaxed">
           Every message a fan sends costs the price you set — for new and
           existing fans. Each fan gets the free credit below on their balance
-          when they accept a one-time popup (no way to close it without
-          accepting). Messages spend that credit first; after it runs out, fans
-          without a verified card lose the chat input until they add one.
-          Further costs stack on their balance and are charged to their card
-          automatically about once an hour — never per message.
+          (via the optional popup, or silently if the popup is off). Messages
+          spend that credit first; after it runs out, fans without a verified
+          card lose the chat input until they add one. Further costs stack on
+          their balance and are charged to their card automatically about once
+          an hour — never per message.
         </p>
       </div>
 
@@ -100,6 +103,31 @@ export default function PayPerMessageSettings() {
           <span
             className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
               enabled ? "translate-x-[22px]" : "translate-x-0.5"
+            }`}
+          />
+        </button>
+      </div>
+
+      <div className="flex items-center justify-between gap-4 rounded-xl bg-card2 border border-line px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold">Show terms popup</p>
+          <p className="text-[11px] text-muted mt-0.5 leading-relaxed">
+            When off, fans never see the free-credit popup — credit is added
+            to their balance automatically.
+          </p>
+        </div>
+        <button
+          role="switch"
+          aria-checked={showPopup}
+          onClick={() => setShowPopup((v) => !v)}
+          className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
+            showPopup ? "bg-accent" : "bg-line"
+          }`}
+          aria-label="Toggle terms popup"
+        >
+          <span
+            className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+              showPopup ? "translate-x-[22px]" : "translate-x-0.5"
             }`}
           />
         </button>
@@ -143,10 +171,10 @@ export default function PayPerMessageSettings() {
         </label>
       </div>
 
-      {/* Preview: the one-time popup fans must accept */}
-      <div className="space-y-2">
+      {/* Preview: the one-time popup fans must accept (when enabled) */}
+      <div className={`space-y-2 ${showPopup ? "" : "opacity-45"}`}>
         <p className="text-xs font-semibold text-muted uppercase tracking-wide">
-          Popup preview
+          Popup preview{showPopup ? "" : " · hidden"}
         </p>
         <div
           className="relative overflow-hidden rounded-[1.75rem] border border-white/20 px-5 py-7 text-center space-y-3 shadow-lg"

@@ -59,6 +59,59 @@ export async function recordBlurDrainTap(opts: {
 const PPM_SETTLE_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
+ * Ensure a chat has free credit granted. Used when the fan accepts the popup
+ * or when the creator has the popup turned off (silent grant).
+ */
+export async function ensurePpmCredit(opts: {
+  chatId: string;
+  freeCreditCents: number;
+  priceCents: number;
+  chat: {
+    ppm_accepted_at?: string | null;
+    ppm_credit_cents?: number | null;
+    ppm_credit_granted?: boolean | null;
+    ppm_messages_used?: number | null;
+  };
+  /** When true (popup off), mark accepted even if they never saw the popup. */
+  silentAccept?: boolean;
+}): Promise<{ creditCents: number; accepted: boolean }> {
+  const db = supabaseAdmin();
+  let credit = opts.chat.ppm_credit_cents ?? 0;
+  let accepted = !!opts.chat.ppm_accepted_at;
+  const granted = !!opts.chat.ppm_credit_granted;
+
+  if (!granted) {
+    if (!accepted && !opts.silentAccept) {
+      return { creditCents: credit, accepted: false };
+    }
+    if (accepted) {
+      // Legacy free-messages → remaining credit.
+      const usedCost = (opts.chat.ppm_messages_used ?? 0) * opts.priceCents;
+      credit = Math.max(0, opts.freeCreditCents - usedCost);
+    } else {
+      credit = opts.freeCreditCents;
+    }
+    await db
+      .from("chats")
+      .update({
+        ppm_credit_cents: credit,
+        ppm_credit_granted: true,
+        ...(!accepted ? { ppm_accepted_at: new Date().toISOString() } : {}),
+      })
+      .eq("id", opts.chatId);
+    accepted = true;
+  } else if (opts.silentAccept && !accepted) {
+    await db
+      .from("chats")
+      .update({ ppm_accepted_at: new Date().toISOString() })
+      .eq("id", opts.chatId);
+    accepted = true;
+  }
+
+  return { creditCents: credit, accepted };
+}
+
+/**
  * Apply a successful Pay per Message charge: debit the billed amount from the
  * chat balance (atomically) and push the new balance to the fan so their
  * Balance popup goes back to $0.00 when nothing else is outstanding.

@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { verifyPopupFromMetadata } from "@/lib/popupOffer";
 import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
-import { settlePpmBalance } from "@/lib/payments";
+import { ensurePpmCredit, settlePpmBalance } from "@/lib/payments";
 
 /**
  * Fan payment state: card on file, Card Verify setting, and Pay per Message
@@ -34,18 +34,18 @@ export async function GET(req: NextRequest) {
   const ppm = payPerMessageFromMetadata(ownerMeta);
 
   let creditCents = chat?.ppm_credit_cents ?? 0;
-  // One-time heal for fans who accepted under the old free-messages model.
-  if (
-    ppm.enabled &&
-    chat?.ppm_accepted_at &&
-    chat.ppm_credit_granted === false
-  ) {
-    const usedCost = (chat.ppm_messages_used ?? 0) * ppm.priceCents;
-    creditCents = Math.max(0, ppm.freeCreditCents - usedCost);
-    await db
-      .from("chats")
-      .update({ ppm_credit_cents: creditCents, ppm_credit_granted: true })
-      .eq("id", chatId);
+  let accepted = !!chat?.ppm_accepted_at;
+  if (ppm.enabled && chat) {
+    const granted = await ensurePpmCredit({
+      chatId,
+      freeCreditCents: ppm.freeCreditCents,
+      priceCents: ppm.priceCents,
+      chat,
+      // Popup off → grant credit silently so chatting isn't blocked.
+      silentAccept: !ppm.showPopup,
+    });
+    creditCents = granted.creditCents;
+    accepted = granted.accepted;
   }
 
   if (ppm.enabled && (chat?.ppm_balance_cents ?? 0) > 0) {
@@ -57,9 +57,10 @@ export async function GET(req: NextRequest) {
     verifyPopup: verifyPopupFromMetadata(ownerMeta),
     ppm: {
       enabled: ppm.enabled,
+      showPopup: ppm.showPopup,
       priceCents: ppm.priceCents,
       freeCreditCents: ppm.freeCreditCents,
-      accepted: !!chat?.ppm_accepted_at,
+      accepted,
       messagesUsed: chat?.ppm_messages_used ?? 0,
       creditCents,
       balanceCents: chat?.ppm_balance_cents ?? 0,

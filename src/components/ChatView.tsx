@@ -118,6 +118,7 @@ export default function ChatView({
   // until the wallet endpoint answers, so nothing gates prematurely.
   const [ppm, setPpm] = useState<{
     enabled: boolean;
+    showPopup: boolean;
     priceCents: number;
     freeCreditCents: number;
     accepted: boolean;
@@ -2100,7 +2101,10 @@ export default function ChatView({
       {/* Pay per Message terms: shown once per fan, and there is deliberately
           no close button — accepting is the only way to start or keep
           chatting. Free amount big, price per message small and muted. */}
-      {role === "guest" && ppm?.enabled && !ppm.accepted && (
+      {role === "guest" &&
+        ppm?.enabled &&
+        ppm.showPopup !== false &&
+        !ppm.accepted && (
         <Portal>
           <div className="fixed inset-0 z-[95] bg-gradient-to-br from-sky-950/90 via-fuchsia-950/80 to-amber-950/90 backdrop-blur-md flex items-center justify-center p-6">
             <div

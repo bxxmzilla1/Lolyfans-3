@@ -6,7 +6,7 @@ import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
 import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
-import { settlePpmBalance } from "@/lib/payments";
+import { ensurePpmCredit, settlePpmBalance } from "@/lib/payments";
 
 type ChatAuth = { role: "owner" | "guest"; chatOwnerId: string };
 
@@ -169,22 +169,30 @@ export async function POST(req: NextRequest) {
         )
         .eq("id", chatId)
         .maybeSingle();
-      if (!chatRow?.ppm_accepted_at) {
+      if (!chatRow) {
+        return NextResponse.json({ error: "Chat not found" }, { status: 404 });
+      }
+      // Popup on: fan must accept first. Popup off: grant credit silently.
+      if (!chatRow.ppm_accepted_at && ppm.showPopup) {
         return NextResponse.json(
           { error: "Accept the chat terms to start messaging", ppm: "accept" },
           { status: 402 }
         );
       }
-      let credit = chatRow.ppm_credit_cents ?? 0;
-      // One-time heal for fans who accepted under the old free-messages model.
-      if (!chatRow.ppm_credit_granted) {
-        const usedCost = (chatRow.ppm_messages_used ?? 0) * ppm.priceCents;
-        credit = Math.max(0, ppm.freeCreditCents - usedCost);
-        await db
-          .from("chats")
-          .update({ ppm_credit_cents: credit, ppm_credit_granted: true })
-          .eq("id", chatId);
+      const granted = await ensurePpmCredit({
+        chatId,
+        freeCreditCents: ppm.freeCreditCents,
+        priceCents: ppm.priceCents,
+        chat: chatRow,
+        silentAccept: !ppm.showPopup,
+      });
+      if (!granted.accepted) {
+        return NextResponse.json(
+          { error: "Accept the chat terms to start messaging", ppm: "accept" },
+          { status: 402 }
+        );
       }
+      let credit = granted.creditCents;
       const price = ppm.priceCents;
       const fromCredit = Math.min(credit, price);
       const billable = price - fromCredit;

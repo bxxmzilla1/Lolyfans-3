@@ -9,7 +9,7 @@ import { formatTime } from "@/lib/utils";
 import { chatPreviewLabel, type ChatPreview } from "@/lib/chatPreview";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
 import { formatPpmMoney } from "@/lib/payPerMessage";
-import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconShieldCheck, IconTrash } from "./Icons";
+import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
 import MassMessage from "./MassMessage";
@@ -787,14 +787,6 @@ export default function ChatList() {
                     <p className={`text-[14px] flex items-center gap-1.5 min-w-0 ${
                       chat.unread > 0 && !active ? "font-bold" : "font-semibold"
                     }`}>
-                      {chat.ppm_accepted_at && (
-                        <span
-                          title="Accepted the pay-per-message agreement"
-                          className="shrink-0 text-purple-500"
-                        >
-                          <IconShieldCheck className="w-4 h-4" />
-                        </span>
-                      )}
                       {chat.stripe_payment_method_id && (
                         <span title="Card registered" className="shrink-0 text-accent">
                           <IconCard className="w-3.5 h-3.5" />
