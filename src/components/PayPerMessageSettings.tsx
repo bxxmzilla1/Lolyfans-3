@@ -177,31 +177,31 @@ export default function PayPerMessageSettings() {
           Popup preview{showPopup ? "" : " · hidden"}
         </p>
         <div
-          className="relative overflow-hidden rounded-[1.75rem] border border-black/10 px-5 py-7 text-center space-y-3 shadow-lg"
+          className="relative overflow-hidden rounded-[1.75rem] border border-blue-200 px-5 py-7 text-center space-y-3 shadow-lg"
           style={{
             background:
-              "linear-gradient(160deg, #ffffff 0%, #eff6ff 45%, #fdf2f8 100%)",
+              "linear-gradient(160deg, #ffffff 0%, #eff6ff 45%, #dbeafe 100%)",
           }}
         >
           <div
             className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full opacity-40 blur-2xl"
-            style={{ background: "radial-gradient(circle, #fcd34d, transparent 70%)" }}
+            style={{ background: "radial-gradient(circle, #60a5fa, transparent 70%)" }}
           />
           <div
             className="pointer-events-none absolute -bottom-14 -left-10 h-36 w-36 rounded-full opacity-35 blur-2xl"
             style={{ background: "radial-gradient(circle, #7dd3fc, transparent 70%)" }}
           />
-          <p className="relative text-[10px] font-semibold uppercase tracking-[0.2em] text-amber-600">
+          <p className="relative text-[10px] font-semibold uppercase tracking-[0.2em] text-blue-600">
             Welcome gift
           </p>
-          <p className="relative text-4xl font-extrabold leading-none text-slate-900">
+          <p className="relative text-4xl font-extrabold leading-none text-blue-950">
             {formatPpmMoney(freeCreditCents)}
-            <span className="ml-2 text-xl font-bold text-amber-500">FREE</span>
+            <span className="ml-2 text-xl font-bold text-blue-500">FREE</span>
           </p>
           <p className="relative text-xs text-slate-600">
             Added to your balance to start chatting
           </p>
-          <span className="relative inline-block bg-slate-900 text-white text-xs font-bold rounded-xl px-6 py-2.5">
+          <span className="relative inline-block bg-blue-600 text-white text-xs font-bold rounded-xl px-6 py-2.5">
             Accept &amp; start chatting
           </span>
           <p className="relative text-[11px] text-slate-500">

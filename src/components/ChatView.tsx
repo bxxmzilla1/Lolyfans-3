@@ -2110,28 +2110,28 @@ export default function ChatView({
         ppm.showPopup !== false &&
         !ppm.accepted && (
         <Portal>
-          <div className="fixed inset-0 z-[95] bg-gradient-to-br from-sky-100/90 via-fuchsia-100/80 to-amber-100/90 backdrop-blur-md flex items-center justify-center p-6">
+          <div className="fixed inset-0 z-[95] bg-gradient-to-br from-sky-100/90 via-blue-100/80 to-indigo-100/90 backdrop-blur-md flex items-center justify-center p-6">
             <div
-              className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-black/10 px-7 py-8 text-center space-y-4 fade-up shadow-2xl shadow-fuchsia-200/60"
+              className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-blue-200 px-7 py-8 text-center space-y-4 fade-up shadow-2xl shadow-blue-200/70"
               style={{
                 background:
-                  "linear-gradient(160deg, #ffffff 0%, #eff6ff 45%, #fdf2f8 100%)",
+                  "linear-gradient(160deg, #ffffff 0%, #eff6ff 45%, #dbeafe 100%)",
               }}
             >
               <div
                 className="pointer-events-none absolute -top-16 -right-16 h-40 w-40 rounded-full opacity-40 blur-2xl"
-                style={{ background: "radial-gradient(circle, #fcd34d, transparent 70%)" }}
+                style={{ background: "radial-gradient(circle, #60a5fa, transparent 70%)" }}
               />
               <div
                 className="pointer-events-none absolute -bottom-20 -left-12 h-44 w-44 rounded-full opacity-35 blur-2xl"
                 style={{ background: "radial-gradient(circle, #7dd3fc, transparent 70%)" }}
               />
-              <p className="relative text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-600">
+              <p className="relative text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-600">
                 Welcome gift
               </p>
-              <p className="relative text-5xl font-extrabold leading-none text-slate-900">
+              <p className="relative text-5xl font-extrabold leading-none text-blue-950">
                 ${(ppm.freeCreditCents / 100).toFixed(2).replace(/\.00$/, "")}
-                <span className="ml-2 text-2xl font-bold text-amber-500">
+                <span className="ml-2 text-2xl font-bold text-blue-500">
                   FREE
                 </span>
               </p>
@@ -2142,7 +2142,7 @@ export default function ChatView({
                 type="button"
                 onClick={() => void acceptPpm()}
                 disabled={acceptingPpm}
-                className="relative w-full bg-slate-900 text-white font-bold rounded-2xl py-3.5 text-sm shadow-lg shadow-slate-400/40 disabled:opacity-60 active:opacity-80 transition-opacity"
+                className="relative w-full bg-blue-600 text-white font-bold rounded-2xl py-3.5 text-sm shadow-lg shadow-blue-400/40 disabled:opacity-60 active:opacity-80 transition-opacity"
               >
                 {acceptingPpm ? "One moment…" : "Accept & start chatting"}
               </button>
