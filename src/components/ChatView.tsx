@@ -2522,7 +2522,7 @@ export default function ChatView({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between gap-3">
-                <p className="font-bold">Your wallet</p>
+                <p className="font-bold">My Tokens</p>
                 <button
                   onClick={closeWallet}
                   className="text-muted text-sm px-1"
