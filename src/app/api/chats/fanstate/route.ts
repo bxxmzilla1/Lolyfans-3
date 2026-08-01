@@ -3,12 +3,11 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { mediaItemsFromMessage } from "@/lib/utils";
 import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
-import { ensurePpmCredit } from "@/lib/payments";
 
 /**
  * Live fan state for the creator's open chat. Polled while the tab is
- * visible: card-on-file, free credit remaining, plus accept/decline/unlock
- * status for each creator photo/video.
+ * visible: card-on-file, token balance, PaidSub pending, plus accept /
+ * decline / unlock status for each creator photo/video.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -22,7 +21,7 @@ export async function GET(req: NextRequest) {
     const { data: chat, error: chatErr } = await db
       .from("chats")
       .select(
-        "stripe_payment_method_id, ppm_accepted_at, ppm_messages_used, ppm_credit_cents, ppm_credit_granted, ppm_balance_cents, paidsub_offer_at, paidsub_paid_at"
+        "token_balance, stripe_payment_method_id, ppm_accepted_at, paidsub_offer_at, paidsub_paid_at"
       )
       .eq("id", chatId)
       .eq("owner_id", ownerId)
@@ -34,23 +33,6 @@ export async function GET(req: NextRequest) {
 
     const { data: ownerUser } = await db.auth.admin.getUserById(ownerId);
     const ppm = payPerMessageFromMetadata(ownerUser?.user?.user_metadata ?? {});
-
-    let creditCents = 0;
-    if (ppm.enabled) {
-      if (chat.ppm_accepted_at || chat.ppm_credit_granted) {
-        // Heal legacy / missing grants so the header shows real money left.
-        const granted = await ensurePpmCredit({
-          chatId,
-          freeCreditCents: ppm.freeCreditCents,
-          priceCents: ppm.priceCents,
-          chat,
-        });
-        creditCents = granted.creditCents;
-      } else {
-        // Fan hasn't started yet — show the free credit they will receive.
-        creditCents = ppm.freeCreditCents;
-      }
-    }
 
     // Recent owner media only — enough for the open thread, cheap to poll.
     const { data: rows, error: rowsErr } = await db
@@ -97,13 +79,11 @@ export async function GET(req: NextRequest) {
     }));
 
     return NextResponse.json({
+      balance: chat.token_balance ?? 0,
       hasCard: !!chat.stripe_payment_method_id,
-      // Orange clock in the header while the PaidSub offer awaits payment.
       paidSubPending: !!chat.paidsub_offer_at && !chat.paidsub_paid_at,
       ppmAccepted: !!chat.ppm_accepted_at,
       ppmEnabled: ppm.enabled,
-      ppmFreeCreditCents: ppm.enabled ? ppm.freeCreditCents : 0,
-      ppmCreditCents: creditCents,
       media,
     });
   } catch (err) {

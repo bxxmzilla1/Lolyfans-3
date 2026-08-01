@@ -7,8 +7,6 @@ import ChatView from "@/components/ChatView";
 import GuestPresenceStatus from "@/components/GuestPresenceStatus";
 import OwnerOnlineSwitch from "@/components/OwnerOnlineSwitch";
 import FanWalletStatus from "@/components/FanWalletStatus";
-import PpmFreeLeft from "@/components/PpmFreeLeft";
-import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
 import { IconBack, IconMapPin } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +26,6 @@ export default async function OwnerChatPage({
     { data: messages },
     { data: unlocks },
     { data: drains },
-    { data: ownerUser },
   ] = await Promise.all([
     db
       .from("chats")
@@ -51,7 +48,6 @@ export default async function OwnerChatPage({
       .from("message_blur_progress")
       .select("message_id, layers_cleared")
       .eq("chat_id", chatId),
-    db.auth.admin.getUserById(ownerId),
     // Opening the chat marks it as read (clears the sidebar badge)
     db
       .from("chats")
@@ -62,8 +58,6 @@ export default async function OwnerChatPage({
   // Chat gone (e.g. deleted via guest exit) — back to the inbox instead of
   // stranding the creator on a 404.
   if (!chat) redirect("/inbox");
-
-  const ppm = payPerMessageFromMetadata(ownerUser?.user?.user_metadata ?? {});
 
   const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id as string));
   const drainMap = new Map(
@@ -98,6 +92,7 @@ export default async function OwnerChatPage({
           {/* Card icon (once registered) + name */}
           <FanWalletStatus
             chatId={chatId}
+            initialBalance={chat.token_balance ?? 0}
             initialHasCard={!!chat.stripe_payment_method_id}
             initialPaidSubPending={
               !!chat.paidsub_offer_at && !chat.paidsub_paid_at
@@ -112,16 +107,6 @@ export default async function OwnerChatPage({
               )}
             </span>
           </FanWalletStatus>
-          <PpmFreeLeft
-            chatId={chatId}
-            initialEnabled={ppm.enabled}
-            // Until credit is granted, show the free amount they will get.
-            initialCreditCents={
-              chat.ppm_credit_granted
-                ? chat.ppm_credit_cents ?? 0
-                : ppm.freeCreditCents
-            }
-          />
         </p>
         <p className="text-muted text-xs truncate flex items-center gap-1.5">
           {guestLocation && (

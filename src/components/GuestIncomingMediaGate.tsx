@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import IncomingMediaGate from "./IncomingMediaGate";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
-import { elementsEnabled } from "@/lib/stripeClient";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
 import { useInboxSignals, type ChatOwnerPair } from "@/lib/useInboxSignals";
 import type { Message } from "./MessageBubble";
@@ -33,13 +32,6 @@ export default function GuestIncomingMediaGate({
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   const [startingSetup, setStartingSetup] = useState(false);
   const [gateLeft, setGateLeft] = useState<number | null>(null);
-  const [cardUnlock, setCardUnlock] = useState<{
-    clientSecret: string;
-    amountCents: number;
-    messageId: string;
-    chatId: string;
-    country: string | null;
-  } | null>(null);
   const [gateCardSetup, setGateCardSetup] = useState<{
     clientSecret: string;
     country: string | null;
@@ -99,7 +91,6 @@ export default function GuestIncomingMediaGate({
     deciding ||
     startingSetup ||
     unlockingId === message?.id ||
-    (!!cardUnlock && cardUnlock.messageId === message?.id) ||
     (!!gateCardSetup && gateCardSetup.messageId === message?.id);
 
   const decideGate = useCallback(
@@ -144,7 +135,7 @@ export default function GuestIncomingMediaGate({
       const res = await fetch("/api/payments/unlock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId, embedded: elementsEnabled() }),
+        body: JSON.stringify({ messageId }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.unlocked) {
@@ -153,17 +144,20 @@ export default function GuestIncomingMediaGate({
         } catch {}
         setPending(null);
         await goToChat(chatId);
-      } else if (res.ok && data.clientSecret) {
-        setCardUnlock({
-          clientSecret: data.clientSecret,
-          amountCents: Number(data.amountCents ?? 0),
-          messageId,
-          chatId,
-          country: data.country ?? null,
-        });
-      } else if (res.ok && data.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
-        return;
+      } else if (res.status === 402) {
+        // Not enough Tokens — open the chat wallet so they can top up, then
+        // the pending unlock resumes after purchase.
+        try {
+          sessionStorage.setItem("lf-pending-unlock", messageId);
+          sessionStorage.setItem(
+            "lf-open-wallet-note",
+            data.needTokens
+              ? `Accepting this costs ${Number(data.needTokens).toLocaleString("en-US")} Tokens — top up to receive it.`
+              : "Top up your wallet to unlock this content."
+          );
+        } catch {}
+        setPending(null);
+        await goToChat(chatId);
       } else if (!res.ok) {
         alert(data.error || "Could not unlock");
       }
@@ -232,28 +226,6 @@ export default function GuestIncomingMediaGate({
     }
   }
 
-  async function completeCardUnlock(paymentIntentId: string) {
-    const chatId = cardUnlock?.chatId;
-    const messageId = cardUnlock?.messageId;
-    try {
-      await fetch("/api/payments/unlock/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, paymentIntentId }),
-      });
-    } catch {
-      // Webhook still records the unlock.
-    }
-    setCardUnlock(null);
-    if (messageId) {
-      try {
-        localStorage.removeItem(`lf-decide-left:${messageId}`);
-      } catch {}
-    }
-    setPending(null);
-    if (chatId) await goToChat(chatId);
-  }
-
   useEffect(() => {
     const id = message?.id ?? null;
     if (gateIdRef.current === id) return;
@@ -315,15 +287,6 @@ export default function GuestIncomingMediaGate({
             countryGuess={gateCardSetup.country}
             onSuccess={completeGateCardSetup}
             onCancel={() => setGateCardSetup(null)}
-          />
-        ) : cardUnlock && cardUnlock.messageId === pending.message.id ? (
-          <EmbeddedCardTopup
-            clientSecret={cardUnlock.clientSecret}
-            amountCents={cardUnlock.amountCents}
-            label="Unlock content"
-            countryGuess={cardUnlock.country}
-            onSuccess={completeCardUnlock}
-            onCancel={() => setCardUnlock(null)}
           />
         ) : null
       }

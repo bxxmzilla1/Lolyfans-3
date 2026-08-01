@@ -11,10 +11,7 @@ import {
   mediaItemsFromMessage,
   type MediaItem,
 } from "@/lib/utils";
-/** "$4.99" / "$5" — dollar label for an unlock price in cents. */
-function unlockPriceLabel(cents: number): string {
-  return `$${(cents / 100).toFixed(2).replace(/\.00$/, "")}`;
-}
+import { formatTokens, tokensForCents } from "@/lib/tokens";
 import {
   IconBack,
   IconCheck,
@@ -244,7 +241,7 @@ function MessageBubble({
   const linkPrice = message.content ? linkPriceIn(message.content) : null;
   const myPriceLabel = mine
     ? price > 0
-      ? unlockPriceLabel(price)
+      ? formatTokens(tokensForCents(price))
       : linkPrice
         ? `$${linkPrice}`
         : null
@@ -290,7 +287,7 @@ function MessageBubble({
   );
 
   // Blurred locked media: lock badge, "Locked" label, and — when priced —
-  // the Unlock pill; tapping the card charges the saved card (one tap).
+  // the Unlock pill; tapping spends Tokens from the fan's wallet.
   const lockedOverlay = blurred && (
     <>
       <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-1.5 pointer-events-none">
@@ -314,7 +311,7 @@ function MessageBubble({
                   Unlock
                 </span>
                 <span className="text-white text-sm font-bold drop-shadow">
-                  {unlockPriceLabel(price)}
+                  {formatTokens(tokensForCents(price))}
                 </span>
               </>
             ) : (
@@ -325,14 +322,14 @@ function MessageBubble({
           </>
         )}
       </div>
-      {/* Priced media → one-tap card purchase */}
+      {/* Priced media → spend Tokens (opens wallet on shortfall) */}
       {payToUnlock && !unlocking ? (
         <button
           onClick={(e) => {
             e.stopPropagation();
             onUnlock?.(message);
           }}
-          aria-label={`Unlock for ${unlockPriceLabel(price)}`}
+          aria-label={`Unlock for ${formatTokens(tokensForCents(price))}`}
           className="absolute inset-0 z-[15] cursor-pointer"
         />
       ) : unlocking ? (
@@ -531,7 +528,7 @@ function MessageBubble({
             >
               BlurDrainer · {drainCleared}/{drainCfg.layers} tapped ·{" "}
               {drainCfg.priceCents > 0
-                ? `$${(drainCfg.priceCents / 100).toFixed(2).replace(/\.00$/, "")}/tap`
+                ? `${formatTokens(tokensForCents(drainCfg.priceCents))}/tap`
                 : "FREE (card verify)"}
             </span>
           </div>

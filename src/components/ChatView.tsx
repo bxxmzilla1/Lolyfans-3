@@ -18,7 +18,23 @@ import BlurDrainerEditor from "./BlurDrainerEditor";
 import BlurDrainerPlayer from "./BlurDrainerPlayer";
 import { elementsEnabled, getStripe } from "@/lib/stripeClient";
 import { parseBlurDrainer, type BlurDrainerConfig } from "@/lib/blurDrainer";
-import { type VerifyPopup } from "@/lib/popupOffer";
+import {
+  CENTS_PER_TOKEN,
+  TIP_TOKEN_PRESETS,
+  MIN_TIP_TOKENS,
+  TOKEN_PACKS,
+  FIRST_TOPUP_OFFER_PACK_ID,
+  formatTokens,
+  packTotalTokens,
+  perTokenLabel,
+} from "@/lib/tokens";
+import {
+  DEFAULT_POPUP_OFFER,
+  offerPriceLabel,
+  type PopupOffer,
+  type VerifyPopup,
+  type WelcomeOffer,
+} from "@/lib/popupOffer";
 import { paidSubPriceLabel } from "@/lib/paidSub";
 import {
   IconBack,
@@ -37,6 +53,8 @@ import {
 } from "./Icons";
 
 const MAX_ATTACHMENTS = 12;
+
+const OFFER_PACK = TOKEN_PACKS.find((p) => p.id === FIRST_TOPUP_OFFER_PACK_ID)!;
 
 export default function ChatView({
   chatId,
@@ -88,23 +106,30 @@ export default function ChatView({
     messageId: string;
   } | null>(null);
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
+  const [tipTokens, setTipTokens] = useState<number | null>(null);
+  const [tipPickerOpen, setTipPickerOpen] = useState(false);
+  const [tipCustom, setTipCustom] = useState("");
+  const [tipping, setTipping] = useState(false);
+  // Token wallet (guest side): balance, the top-up sheet, and why it opened.
+  const [balance, setBalance] = useState<number | null>(null);
+  const [walletOpen, setWalletOpen] = useState(false);
+  const [walletNote, setWalletNote] = useState<string | null>(null);
+  const [toppingUp, setToppingUp] = useState<string | null>(null);
   // In-flight guards readable from memoized bubbles' older closures.
   const unlockingRef = useRef(false);
   const startingVerifyRef = useRef(false);
-  // Incoming-media gate (guest side): accept/reject in flight + the
-  // countdown remaining for the media currently on screen.
-  const [deciding, setDeciding] = useState(false);
-  const [gateLeft, setGateLeft] = useState<number | null>(null);
-  const gateIdRef = useRef<string | null>(null);
-  // First unlock: the composer area swaps for the embedded 3-step card
-  // wizard instead of redirecting to Stripe Checkout. The card is saved so
-  // every later unlock is one tap.
-  const [cardUnlock, setCardUnlock] = useState<{
+  // First purchase: the composer area swaps for the embedded 3-step card
+  // wizard instead of redirecting to Stripe Checkout.
+  const [cardTopup, setCardTopup] = useState<{
     clientSecret: string;
     amountCents: number;
-    messageId: string;
+    tokens: number;
     country: string | null;
+    claim?: "custom" | "welcome";
   } | null>(null);
+  // The message the fan tried to accept while short on tokens — it unlocks
+  // automatically the moment their top-up lands.
+  const pendingUnlockIdRef = useRef<string | null>(null);
   // Card Verify: while there's no card on file, the creator's photos/videos
   // render locked with a "Verify to view" button that opens the embedded
   // card wizard — a SetupIntent, so nothing is charged. Both start from the
@@ -118,24 +143,51 @@ export default function ChatView({
     clientSecret: string;
     country: string | null;
   } | null>(null);
-  // Pay per Message: the creator's config + this chat's state (terms
-  // accepted, free messages used, accrued balance, declined card). null
+  // One-time offer for fans who never topped up: shown highlighted in the
+  // sheet, and as a popup after their first locked media.
+  const [firstOffer, setFirstOffer] = useState(false);
+  const [offerPopup, setOfferPopup] = useState(false);
+  const [offer, setOffer] = useState<PopupOffer>(DEFAULT_POPUP_OFFER);
+  const [welcomeOffer, setWelcomeOffer] = useState<WelcomeOffer | null>(null);
+  const [welcomeOfferPopup, setWelcomeOfferPopup] = useState(false);
+  const [customOffer, setCustomOffer] = useState<{
+    id: string;
+    tokens: number;
+    priceCents: number;
+    originalCents: number;
+  } | null>(null);
+  const [customOfferPopup, setCustomOfferPopup] = useState(false);
+  // Owner side: custom offer + Stripe payment link composers.
+  const [offerDialog, setOfferDialog] = useState<{
+    tokens: string;
+    price: string;
+    original: string;
+  } | null>(null);
+  const [sendingOffer, setSendingOffer] = useState(false);
+  const [payLinkDialog, setPayLinkDialog] = useState<{
+    tokens: string;
+    price: string;
+    url: string | null;
+  } | null>(null);
+  const [creatingLink, setCreatingLink] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
+  // Incoming-media gate (guest side): accept/reject in flight + the
+  // countdown remaining for the media currently on screen.
+  const [deciding, setDeciding] = useState(false);
+  const [gateLeft, setGateLeft] = useState<number | null>(null);
+  const gateIdRef = useRef<string | null>(null);
+  // Pay per Message: the creator's config + this chat's terms state. null
   // until the wallet endpoint answers, so nothing gates prematurely.
   const [ppm, setPpm] = useState<{
     enabled: boolean;
     showPopup: boolean;
     priceCents: number;
+    priceTokens: number;
     freeCreditCents: number;
+    freeTokens: number;
     accepted: boolean;
-    messagesUsed: number;
-    creditCents: number;
-    balanceCents: number;
-    declined: boolean;
   } | null>(null);
   const [acceptingPpm, setAcceptingPpm] = useState(false);
-  // Auto-open the card wizard only once per gating episode — a failed start
-  // falls back to the manual "Add payment details" button (no retry loop).
-  const ppmVerifyStartedRef = useRef(false);
   // PaidSub (guest side): creator-sent offer — one-time payment for unlimited
   // messaging. While offered && !paid, a full-screen popup blurs and blocks
   // the whole chat; the only way through is the embedded card wizard.
@@ -357,38 +409,10 @@ export default function ChatView({
         if (typingHideRef.current) clearTimeout(typingHideRef.current);
         typingHideRef.current = setTimeout(() => setPeerTyping(false), 3000);
       })
-      // Pay per Message auto-charge cleared (or declined) the balance —
-      // update the Balance popup immediately without waiting for the poll.
-      .on("broadcast", { event: "ppm-balance" }, ({ payload }) => {
+      // Pay per Message balance changed server-side — refresh wallet tokens.
+      .on("broadcast", { event: "ppm-balance" }, () => {
         if (role !== "guest") return;
-        const p = payload as {
-          balanceCents?: number;
-          creditCents?: number;
-          declined?: boolean;
-        } | null;
-        setPpm((prev) => {
-          // Feature off → ignore balance updates (UI stays pre-PPM).
-          if (!prev?.enabled) return prev;
-          const next = {
-            ...prev,
-            ...(typeof p?.balanceCents === "number"
-              ? { balanceCents: Math.max(0, p.balanceCents) }
-              : {}),
-            ...(typeof p?.creditCents === "number"
-              ? { creditCents: Math.max(0, p.creditCents) }
-              : {}),
-            ...(typeof p?.declined === "boolean" ? { declined: p.declined } : {}),
-          };
-          // Deferred: dispatching synchronously here would run listeners'
-          // setState during React's render phase (updaters run while
-          // rendering), which stalls the page under a burst of broadcasts.
-          queueMicrotask(() =>
-            window.dispatchEvent(
-              new CustomEvent("loly-ppm", { detail: { chatId, ...next } })
-            )
-          );
-          return next;
-        });
+        void refreshWallet();
       })
       // PaidSub offer pushed / removed / paid — swap the blocking popup live.
       .on("broadcast", { event: "paidsub" }, ({ payload }) => {
@@ -404,6 +428,16 @@ export default function ChatView({
           priceCents: p?.priceCents ?? prev?.priceCents ?? 0,
         }));
         if (p?.paid || p?.offered === false) setPaidSubCard(null);
+      })
+      .on("broadcast", { event: "custom-offer" }, ({ payload }) => {
+        if (role !== "guest") return;
+        const o = payload as {
+          id: string;
+          tokens: number;
+          priceCents: number;
+          originalCents: number;
+        };
+        if (o?.id) setCustomOffer(o);
       })
       .subscribe();
     channelRef.current = channel;
@@ -432,12 +466,11 @@ export default function ChatView({
         const res = await fetch(`/api/chats/fanstate?chatId=${chatId}`);
         if (!res.ok || stopped) return;
         const data = (await res.json()) as {
+          balance?: number;
           hasCard?: boolean;
           paidSubPending?: boolean;
           ppmAccepted?: boolean;
           ppmEnabled?: boolean;
-          ppmFreeCreditCents?: number;
-          ppmCreditCents?: number;
           media?: {
             id: string;
             fan_decision: "accepted" | "rejected" | null;
@@ -449,12 +482,11 @@ export default function ChatView({
           new CustomEvent("loly-fanstate", {
             detail: {
               chatId,
+              balance: data.balance,
               hasCard: data.hasCard,
               paidSubPending: data.paidSubPending,
               ppmAccepted: data.ppmAccepted,
-          ppmEnabled: data.ppmEnabled,
-          ppmFreeCreditCents: data.ppmFreeCreditCents,
-          ppmCreditCents: data.ppmCreditCents,
+              ppmEnabled: data.ppmEnabled,
             },
           })
         );
@@ -498,16 +530,26 @@ export default function ChatView({
     };
   }, [role, chatId]);
 
-  // Card Verify config + saved-card status (the wallet economy is gone; this
-  // endpoint now only reports the card state and the creator's verify switch).
+  // Card Verify config, token wallet, PPM + PaidSub for this chat.
   const refreshWallet = useCallback(async () => {
     if (role !== "guest") return;
     try {
       const res = await fetch(`/api/payments/wallet?chatId=${chatId}`);
       if (res.ok) {
         const data = await res.json();
-        // Only swap state when the payload actually changed — this runs on a
-        // 5s poll and a fresh-but-equal object re-renders the whole chat.
+        if (typeof data.balance === "number") {
+          setBalance(data.balance);
+          queueMicrotask(() =>
+            window.dispatchEvent(
+              new CustomEvent("loly-wallet", {
+                detail: { chatId, balance: data.balance },
+              })
+            )
+          );
+        }
+        setFirstOffer(!!data.firstTopupOffer);
+        if (data.offer) setOffer(data.offer);
+        if (data.welcomeOffer) setWelcomeOffer(data.welcomeOffer);
         if (data.verifyPopup) {
           setVerifyCfg((prev) =>
             JSON.stringify(prev) === JSON.stringify(data.verifyPopup)
@@ -516,6 +558,7 @@ export default function ChatView({
           );
         }
         if (typeof data.hasCard === "boolean") setHasCard(data.hasCard);
+        setCustomOffer(data.customOffer?.id ? data.customOffer : null);
         if (data.paidSub) {
           setPaidSub((prev) =>
             JSON.stringify(prev) === JSON.stringify(data.paidSub)
@@ -528,13 +571,14 @@ export default function ChatView({
           setPpm((prev) =>
             JSON.stringify(prev) === JSON.stringify(nextPpm) ? prev : nextPpm
           );
-          // The wallet badge hides itself when enabled is false.
-          window.dispatchEvent(
-            new CustomEvent("loly-ppm", {
-              detail: data.ppm.enabled
-                ? { chatId, ...data.ppm }
-                : { chatId, enabled: false },
-            })
+          queueMicrotask(() =>
+            window.dispatchEvent(
+              new CustomEvent("loly-ppm", {
+                detail: data.ppm.enabled
+                  ? { chatId, ...data.ppm, balance: data.balance }
+                  : { chatId, enabled: false },
+              })
+            )
           );
         }
       }
@@ -546,6 +590,59 @@ export default function ChatView({
   useEffect(() => {
     refreshWallet();
   }, [refreshWallet]);
+
+  // First locked media + never topped up → one-time offer popup once.
+  useEffect(() => {
+    if (role !== "guest" || !firstOffer || !offer.popupEnabled) return;
+    const hasLocked = messages.some(
+      (m) =>
+        m.sender === "owner" && m.locked && (m.price_cents ?? 0) > 0 && !m.unlocked
+    );
+    if (!hasLocked) return;
+    const seenKey = `lf-offer-seen:${chatId}`;
+    try {
+      if (localStorage.getItem(seenKey)) return;
+    } catch {}
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(seenKey, "1");
+      } catch {}
+      setOfferPopup(true);
+    }, offer.delaySeconds * 1000);
+    return () => clearTimeout(t);
+  }, [role, firstOffer, messages, chatId, offer.delaySeconds, offer.popupEnabled]);
+
+  // Welcome offer: greets the fan once per chat while they've never topped up.
+  useEffect(() => {
+    if (role !== "guest" || !firstOffer || !welcomeOffer?.enabled) return;
+    const seenKey = `lf-welcome-offer-seen:${chatId}`;
+    try {
+      if (localStorage.getItem(seenKey)) return;
+    } catch {}
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(seenKey, "1");
+      } catch {}
+      setWelcomeOfferPopup(true);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [role, firstOffer, welcomeOffer, chatId]);
+
+  // Creator-sent custom offer pops up once per offer.
+  useEffect(() => {
+    if (role !== "guest" || !customOffer) return;
+    const seenKey = `lf-custom-offer-seen:${customOffer.id}`;
+    try {
+      if (localStorage.getItem(seenKey)) return;
+    } catch {}
+    const t = setTimeout(() => {
+      try {
+        localStorage.setItem(seenKey, "1");
+      } catch {}
+      setCustomOfferPopup(true);
+    }, 800);
+    return () => clearTimeout(t);
+  }, [role, customOffer]);
 
   // Preload Stripe.js while the fan still has credit: parsing the script and
   // mounting its iframes at the exact moment the card wizard swaps in is what
@@ -570,28 +667,6 @@ export default function ChatView({
   // embedded card wizard directly (SetupIntent — no charge, no popup).
   const verifyLockActive =
     role === "guest" && !hasCard && !!verifyCfg?.enabled && elementsEnabled();
-
-  // Pay per Message composer gating: after the free messages are spent the
-  // fan needs a working card — the chat input swaps for the card wizard.
-  // Also engages when the hourly balance charge was declined.
-  // Card required once free credit can't cover the next message (or a charge declined).
-  const ppmNeedsCard =
-    role === "guest" &&
-    !!ppm?.enabled &&
-    ppm.accepted &&
-    elementsEnabled() &&
-    (ppm.declined || (ppm.creditCents < ppm.priceCents && !hasCard));
-
-  useEffect(() => {
-    if (!ppmNeedsCard) {
-      ppmVerifyStartedRef.current = false;
-      return;
-    }
-    if (cardVerify || startingVerify || ppmVerifyStartedRef.current) return;
-    ppmVerifyStartedRef.current = true;
-    void startVerify();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ppmNeedsCard, cardVerify, startingVerify]);
 
   // Incoming-media gate: creator photos/videos the fan hasn't decided on yet
   // show full screen (blurred) with Accept / Reject instead of in the chat.
@@ -618,8 +693,8 @@ export default function ChatView({
   const gatePaused =
     deciding ||
     unlockingId === pendingGate?.id ||
-    (!!cardUnlock && cardUnlock.messageId === pendingGate?.id) ||
-    (!!gateCardSetup && gateCardSetup.messageId === pendingGate?.id);
+    (!!gateCardSetup && gateCardSetup.messageId === pendingGate?.id) ||
+    !!cardTopup;
 
   /** Accept or reject the media currently on the gate (free/manual-lock). */
   const decideGate = useCallback(
@@ -759,14 +834,28 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gateLeft, gatePaused, pendingGate?.id]);
 
-  // Back from a hosted-Checkout unlock (the fallback when the embedded card
-  // wizard can't run): confirm the session so the unlock is recorded even if
-  // the webhook missed, then reload the thread.
+  // Home-gate shortfall: open the wallet with the note, keep pending unlock.
+  useEffect(() => {
+    if (role !== "guest") return;
+    let note: string | null = null;
+    let pendingId: string | null = null;
+    try {
+      note = sessionStorage.getItem("lf-open-wallet-note");
+      pendingId = sessionStorage.getItem("lf-pending-unlock");
+      if (note) sessionStorage.removeItem("lf-open-wallet-note");
+    } catch {}
+    if (pendingId) pendingUnlockIdRef.current = pendingId;
+    if (note) openWallet(note);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role]);
+
+  // After Stripe Checkout (token top-up): confirm the session, refresh, then
+  // finish a pending accept if the fan was short on tokens.
   useEffect(() => {
     if (role !== "guest") return;
     const params = new URLSearchParams(window.location.search);
     const sessionId = params.get("session_id");
-    const paid = params.get("paid") || params.get("topup");
+    const paid = params.get("paid") || params.get("tipped") || params.get("topup");
     if (!sessionId && !paid) return;
     window.history.replaceState({}, "", "/chat");
     (async () => {
@@ -778,6 +867,12 @@ export default function ChatView({
         }).catch(() => {});
       }
       await Promise.all([load(), refreshWallet()]);
+      let pendingId: string | null = null;
+      try {
+        pendingId = sessionStorage.getItem("lf-pending-unlock");
+        sessionStorage.removeItem("lf-pending-unlock");
+      } catch {}
+      if (pendingId) unlockById(pendingId);
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, load, refreshWallet]);
@@ -817,37 +912,228 @@ export default function ChatView({
     });
   }
 
-  /**
-   * The embedded card wizard confirmed an unlock payment: record the unlock
-   * (and the newly saved card) server-side, then reveal the media.
-   */
-  async function completeCardUnlock(paymentIntentId: string) {
-    const messageId = cardUnlock?.messageId;
+  function pickTipAmount(tokens: number) {
+    setTipTokens(tokens);
+    setTipPickerOpen(false);
+    setTipCustom("");
+    setAttachments([]);
+    setLinkAttachment(null);
+    setReplyTo(null);
+  }
+
+  /** Open the top-up sheet, optionally explaining why (e.g. short on tokens). */
+  function openWallet(note?: string) {
+    setWalletNote(note ?? null);
+    setWalletOpen(true);
+  }
+
+  /** Dismissing the sheet without paying forgets the pending auto-accept. */
+  function closeWallet() {
+    setWalletOpen(false);
+    pendingUnlockIdRef.current = null;
+  }
+
+  /** Buy a token pack: one tap with a saved card; first purchase opens the
+   *  in-chat card wizard (or Stripe Checkout as fallback). */
+  async function topUp(packId: string, claim?: "custom" | "welcome") {
+    if (toppingUp) return;
+    setToppingUp(packId);
     try {
-      await fetch("/api/payments/unlock/complete", {
+      const res = await fetch("/api/payments/topup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chatId,
+          packId,
+          claimOffer: claim,
+          embedded: elementsEnabled(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.topped) {
+        if (typeof data.balance === "number") setBalance(data.balance);
+        setFirstOffer(false);
+        setOfferPopup(false);
+        setWelcomeOfferPopup(false);
+        if (claim === "custom") setCustomOffer(null);
+        setCustomOfferPopup(false);
+        setToppingUp(null);
+        const pendingId = pendingUnlockIdRef.current;
+        if (pendingId) {
+          pendingUnlockIdRef.current = null;
+          setWalletOpen(false);
+          unlockById(pendingId);
+          return;
+        }
+        setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
+        setWalletOpen(true);
+        return;
+      }
+      if (res.ok && data.clientSecret) {
+        setWalletOpen(false);
+        setOfferPopup(false);
+        setWelcomeOfferPopup(false);
+        setCustomOfferPopup(false);
+        setCardTopup({
+          clientSecret: data.clientSecret,
+          amountCents: Number(data.amountCents ?? 0),
+          tokens: Number(data.tokens ?? 0),
+          country: data.country ?? null,
+          claim,
+        });
+        setToppingUp(null);
+        return;
+      }
+      if (res.ok && data.checkoutUrl) {
+        if (pendingUnlockIdRef.current) {
+          try {
+            sessionStorage.setItem("lf-pending-unlock", pendingUnlockIdRef.current);
+          } catch {}
+        }
+        window.location.href = data.checkoutUrl;
+        return;
+      }
+      alert(data.error || "Could not top up");
+    } catch {
+      alert("Could not top up");
+    }
+    setToppingUp(null);
+  }
+
+  async function completeCardTopup(paymentIntentId: string) {
+    const claim = cardTopup?.claim;
+    let data: { balance?: number; tokens?: number } = {};
+    try {
+      const res = await fetch("/api/payments/topup/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chatId, paymentIntentId }),
       });
+      if (res.ok) data = await res.json().catch(() => ({}));
     } catch {
-      // The webhook still records the unlock; the broadcast reveals it.
+      // The webhook still credits the payment; the balance catches up.
     }
-    setCardUnlock(null);
-    // Paying also saved the card — Card Verify is satisfied and every later
-    // unlock is one tap.
+    setCardTopup(null);
     setHasCard(true);
-    if (messageId) {
-      // Paying is also the Accept at the incoming-media gate.
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === messageId ? { ...m, unlocked: true, fan_decision: "accepted" } : m
-        )
-      );
-      try {
-        localStorage.removeItem(`lf-decide-left:${messageId}`);
-      } catch {}
+    if (typeof data.balance === "number") setBalance(data.balance);
+    setFirstOffer(false);
+    setOfferPopup(false);
+    setWelcomeOfferPopup(false);
+    if (claim === "custom") setCustomOffer(null);
+    setCustomOfferPopup(false);
+    const pendingId = pendingUnlockIdRef.current;
+    if (pendingId) {
+      pendingUnlockIdRef.current = null;
+      unlockById(pendingId);
+      return;
     }
+    setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
+    setWalletOpen(true);
   }
+
+  async function sendCustomOffer() {
+    if (!offerDialog || sendingOffer) return;
+    const tokens = Math.round(parseFloat(offerDialog.tokens));
+    const priceCents = Math.round(parseFloat(offerDialog.price) * 100);
+    const originalCents = Math.round(parseFloat(offerDialog.original) * 100);
+    if (!(tokens > 0) || !(priceCents > 0) || !(originalCents > 0)) {
+      alert("Enter the tokens, price and original price.");
+      return;
+    }
+    setSendingOffer(true);
+    try {
+      const res = await fetch("/api/chats/offer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, tokens, priceCents, originalCents }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        setOfferDialog(null);
+      } else {
+        alert(data.error || "Could not send the offer");
+      }
+    } catch {
+      alert("Could not send the offer");
+    }
+    setSendingOffer(false);
+  }
+
+  async function createPayLink() {
+    if (!payLinkDialog || creatingLink) return;
+    const tokens = Math.round(parseFloat(payLinkDialog.tokens));
+    const priceCents = Math.round(parseFloat(payLinkDialog.price) * 100);
+    if (!(tokens > 0) || !(priceCents >= 50)) {
+      alert("Enter the tokens and a price of at least $0.50.");
+      return;
+    }
+    setCreatingLink(true);
+    try {
+      const res = await fetch("/api/chats/paylink", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, tokens, priceCents }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.url) {
+        setLinkCopied(false);
+        setPayLinkDialog({ ...payLinkDialog, url: data.url });
+      } else {
+        alert(data.error || "Could not create the link");
+      }
+    } catch {
+      alert("Could not create the link");
+    }
+    setCreatingLink(false);
+  }
+
+  async function sendTip() {
+    if (role !== "guest" || !tipTokens || tipping) return;
+    const caption = text.trim();
+    setTipping(true);
+    try {
+      const res = await fetch("/api/payments/tip", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, tokens: tipTokens, caption }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.tipped && data.message) {
+        setMessages((prev) =>
+          prev.some((m) => m.id === data.message.id) ? prev : [...prev, data.message]
+        );
+        if (typeof data.balance === "number") setBalance(data.balance);
+        setText("");
+        setTipTokens(null);
+        setTipping(false);
+        return;
+      }
+      if (res.status === 402) {
+        if (typeof data.balance === "number") setBalance(data.balance);
+        openWallet(
+          `You need ${formatTokens(data.needTokens ?? tipTokens)} for this tip — top up to send it.`
+        );
+        setTipping(false);
+        return;
+      }
+      alert(data.error || "Could not send tip");
+    } catch {
+      alert("Could not send tip");
+    }
+    setTipping(false);
+  }
+
+  useEffect(() => {
+    if (role !== "guest") return;
+    const onOpen = (e: Event) => {
+      const d = (e as CustomEvent).detail as { chatId?: string; note?: string } | null;
+      if (d?.chatId && d.chatId !== chatId) return;
+      openWallet(d?.note);
+    };
+    window.addEventListener("loly-open-wallet", onOpen);
+    return () => window.removeEventListener("loly-open-wallet", onOpen);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [role, chatId]);
 
   /** "Verify to view": start a SetupIntent and open the card wizard (no charge). */
   async function startVerify() {
@@ -892,17 +1178,6 @@ export default function ChatView({
     }
     setCardVerify(null);
     setHasCard(true);
-    // Pay per Message: a declined balance retries on the new card right away,
-    // so the chat input comes back without waiting for the hourly cycle.
-    if (ppm?.declined) {
-      try {
-        await fetch("/api/chats/ppm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chatId, action: "retry" }),
-        });
-      } catch {}
-    }
     void refreshWallet();
   }
 
@@ -1002,19 +1277,6 @@ export default function ChatView({
         body: JSON.stringify({ chatId, action: "accept" }),
       });
       if (res.ok) {
-        const data = await res.json().catch(() => null);
-        setPpm((p) =>
-          p
-            ? {
-                ...p,
-                accepted: true,
-                creditCents:
-                  typeof data?.creditCents === "number"
-                    ? data.creditCents
-                    : p.freeCreditCents,
-              }
-            : p
-        );
         void refreshWallet();
       }
     } finally {
@@ -1023,6 +1285,10 @@ export default function ChatView({
   }
 
   async function send() {
+    if (tipTokens) {
+      await sendTip();
+      return;
+    }
     // Ref guard must run before any await — React state hasn't cleared yet on
     // a double Enter / double-tap, so both calls would otherwise POST.
     if (sendingRef.current || uploading) return;
@@ -1040,12 +1306,13 @@ export default function ChatView({
     if (!content && mediaItems.length === 0) return;
     sendingRef.current = true;
     setSending(true);
-    // Owner-set unlock price in dollars (only on media). A price implies the
-    // media is locked so the fan pays once to reveal it.
-    const priceCents =
+    // Owner-set unlock price in Tokens (only on media). Stored as cents
+    // (1 Token = 10¢) so revenue records stay in real money.
+    const lockTokens =
       role === "owner" && mediaItems.length > 0
-        ? Math.round((parseFloat(lockPrice.replace(/[^\d.]/g, "")) || 0) * 100)
+        ? Math.round(parseFloat(lockPrice.replace(/[^\d]/g, ""))) || 0
         : 0;
+    const priceCents = lockTokens * CENTS_PER_TOKEN;
     const locked = (sendLocked || priceCents > 0) && mediaItems.length > 0;
     // Owner-set decision countdown for the incoming-media gate (seconds).
     const decideSeconds =
@@ -1100,37 +1367,29 @@ export default function ChatView({
         }),
       });
       if (res.ok) {
-        const { message } = await res.json();
+        const data = await res.json();
+        const { message } = data;
         setMessages((prev) => {
           const withoutTemp = prev.filter((m) => m.id !== tempId);
           return withoutTemp.some((m) => m.id === message.id)
             ? withoutTemp
             : [...withoutTemp, message];
         });
-        // Pay per Message: spend free credit first, then accrue owed balance.
-        if (role === "guest" && ppm?.enabled && ppm.accepted) {
-          const fromCredit = Math.min(ppm.creditCents, ppm.priceCents);
-          const billable = ppm.priceCents - fromCredit;
-          const next = {
-            ...ppm,
-            messagesUsed: ppm.messagesUsed + 1,
-            creditCents: ppm.creditCents - fromCredit,
-            balanceCents: ppm.balanceCents + billable,
-          };
-          setPpm(next);
-          window.dispatchEvent(
-            new CustomEvent("loly-ppm", { detail: { chatId, ...next } })
-          );
-        }
+        if (typeof data.balance === "number") setBalance(data.balance);
       } else {
         const errData = await res.json().catch(() => null);
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
         setText(caption);
         setAttachments(usedAttachments);
         if (usedLink) setLinkAttachment(usedLink);
-        // Pay per Message rejections: re-show the terms popup or refresh the
-        // gating state so the card wizard takes over the composer.
-        if (errData?.ppm === "accept") {
+        if (res.status === 402 && errData?.ppm === "topup") {
+          if (typeof errData.balance === "number") setBalance(errData.balance);
+          openWallet(
+            errData.needTokens
+              ? `Each message costs ${formatTokens(errData.needTokens)} — top up to keep chatting.`
+              : "Top up your wallet to keep chatting."
+          );
+        } else if (errData?.ppm === "accept") {
           setPpm((p) => (p ? { ...p, accepted: false } : p));
         } else if (errData?.ppm) {
           void refreshWallet();
@@ -1262,12 +1521,9 @@ export default function ChatView({
     setSendingVoice(false);
   }
 
-  // One-tap unlock: charges the saved card directly. First purchase swaps
-  // the composer for the embedded 3-step card wizard (which saves the card
-  // so every later unlock is truly one tap).
+  // Instant token unlock: spends from the wallet; when the balance is short
+  // the top-up sheet opens and the message is remembered for auto-accept.
   async function unlockById(messageId: string) {
-    // Ref guard: memoized bubbles may hold an older closure of this function,
-    // so the in-flight check can't rely on state.
     if (unlockingRef.current) return;
     unlockingRef.current = true;
     setUnlockingId(messageId);
@@ -1275,31 +1531,30 @@ export default function ChatView({
       const res = await fetch("/api/payments/unlock", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId, embedded: elementsEnabled() }),
+        body: JSON.stringify({ messageId }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.unlocked) {
-        // Paying is also the Accept at the incoming-media gate.
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === messageId ? { ...m, unlocked: true, fan_decision: "accepted" } : m
+            m.id === messageId
+              ? { ...m, unlocked: true, fan_decision: m.fan_decision ?? "accepted" }
+              : m
           )
         );
-        setHasCard(true);
+        if (typeof data.balance === "number") setBalance(data.balance);
+        pendingUnlockIdRef.current = null;
         try {
           localStorage.removeItem(`lf-decide-left:${messageId}`);
         } catch {}
-      } else if (res.ok && data.clientSecret) {
-        // No saved card yet (or it was declined): collect one in-chat.
-        setCardUnlock({
-          clientSecret: data.clientSecret,
-          amountCents: Number(data.amountCents ?? 0),
-          messageId,
-          country: data.country ?? null,
-        });
-      } else if (res.ok && data.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
-        return;
+      } else if (res.status === 402) {
+        if (typeof data.balance === "number") setBalance(data.balance);
+        pendingUnlockIdRef.current = messageId;
+        openWallet(
+          data.needTokens
+            ? `Accepting this costs ${formatTokens(data.needTokens)} — top up to receive it.`
+            : "Top up your wallet to receive this."
+        );
       } else if (!res.ok) {
         alert(data.error || "Could not unlock");
       }
@@ -1635,6 +1890,35 @@ export default function ChatView({
         </div>
       )}
 
+      {tipTokens != null && (
+        <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line flex items-center gap-3 fade-up">
+          <span className="w-8 h-8 rounded-lg bg-accent/15 text-accent flex items-center justify-center shrink-0">
+            <IconTip className="w-4 h-4" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-accent">
+              Tip {formatTokens(tipTokens)}
+            </p>
+            <p className="text-xs text-muted">
+              Add an optional note below, then send
+            </p>
+          </div>
+          <button
+            onClick={() => setTipPickerOpen(true)}
+            className="text-xs font-semibold text-accent px-1"
+          >
+            Edit
+          </button>
+          <button
+            onClick={() => setTipTokens(null)}
+            className="text-muted text-sm px-1"
+            aria-label="Cancel tip"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {attachments.length > 0 && (
         <div className="mx-3 mb-1 px-3 py-2 rounded-xl bg-card2 border border-line space-y-2 fade-up">
           <div className="flex items-center gap-2">
@@ -1691,16 +1975,17 @@ export default function ChatView({
             <div className="space-y-1.5">
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-xs text-muted">Unlock price</span>
-                <span className="text-xs font-bold text-accent">$</span>
+                <IconTip className="w-3.5 h-3.5 text-accent" />
                 <input
                   value={lockPrice}
-                  onChange={(e) => setLockPrice(e.target.value.replace(/[^\d.]/g, ""))}
-                  inputMode="decimal"
-                  placeholder="0.00"
+                  onChange={(e) => setLockPrice(e.target.value.replace(/[^\d]/g, ""))}
+                  inputMode="numeric"
+                  placeholder="0"
                   className="w-16 bg-bg border border-line rounded-lg px-2 py-1 text-xs focus:border-accent"
                 />
+                <span className="text-xs text-muted">Tokens</span>
                 <span className="text-[11px] text-muted">
-                  {parseFloat(lockPrice) > 0
+                  {parseInt(lockPrice, 10) > 0
                     ? "fan pays once to unlock all"
                     : "free / manual lock"}
                 </span>
@@ -1741,7 +2026,7 @@ export default function ChatView({
                     <>
                       <span className="text-[11px] text-fg/80">
                         {blurDrainer.priceCents > 0
-                          ? `${blurDrainer.layers} layers · $${(blurDrainer.priceCents / 100).toFixed(2).replace(/\.00$/, "")}/tap`
+                          ? `${blurDrainer.layers} layers · ${formatTokens(Math.ceil(blurDrainer.priceCents / 10))}/tap`
                           : "FREE (card verify)"}
                       </span>
                       <button
@@ -1767,64 +2052,25 @@ export default function ChatView({
       )}
 
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {cardUnlock && cardUnlock.messageId !== pendingGate?.id ? (
-          // First unlock from an in-chat bubble: the composer area becomes
-          // the embedded 3-step card wizard so the fan never leaves the chat.
-          // (Gate-initiated unlocks render the wizard inside the gate.)
+        {cardTopup ? (
           <EmbeddedCardTopup
-            clientSecret={cardUnlock.clientSecret}
-            amountCents={cardUnlock.amountCents}
-            label="Unlock content"
-            countryGuess={cardUnlock.country}
-            onSuccess={completeCardUnlock}
-            onCancel={() => setCardUnlock(null)}
+            clientSecret={cardTopup.clientSecret}
+            amountCents={cardTopup.amountCents}
+            countryGuess={cardTopup.country}
+            onSuccess={completeCardTopup}
+            onCancel={() => {
+              pendingUnlockIdRef.current = null;
+              setCardTopup(null);
+            }}
           />
         ) : cardVerify ? (
-          // Card verification (SetupIntent): same wizard, no charge. When Pay
-          // per Message gates the chat, a note explains why the input is gone.
-          <div className="space-y-2">
-            {ppmNeedsCard && (
-              <p
-                className={`text-center text-xs font-semibold ${
-                  ppm?.declined ? "text-red-400" : "text-muted"
-                }`}
-              >
-                {ppm?.declined
-                  ? "Payment failed. Please add another payment detail"
-                  : "Add your payment details to keep chatting"}
-              </p>
-            )}
-            <EmbeddedCardTopup
-              clientSecret={cardVerify.clientSecret}
-              mode="setup"
-              countryGuess={cardVerify.country}
-              onSuccess={completeVerify}
-              onCancel={() => setCardVerify(null)}
-            />
-          </div>
-        ) : ppmNeedsCard ? (
-          // Pay per Message: free messages spent (or the hourly charge was
-          // declined) — no chat input until a working card is on file. The
-          // wizard opens by itself; this panel covers a failed/canceled start.
-          <div className="rounded-2xl bg-card2/80 border border-line2 px-4 py-4 text-center space-y-2.5 backdrop-blur">
-            <p
-              className={`text-xs font-semibold ${
-                ppm?.declined ? "text-red-400" : "text-muted"
-              }`}
-            >
-              {ppm?.declined
-                ? "Payment failed. Please add another payment detail"
-                : "Add your payment details to keep chatting"}
-            </p>
-            <button
-              type="button"
-              onClick={() => void startVerify()}
-              disabled={startingVerify}
-              className="bg-accent text-white text-sm font-semibold rounded-xl px-6 py-2.5 disabled:opacity-60 active:opacity-80 transition-opacity"
-            >
-              {startingVerify ? "Opening…" : "Add payment details"}
-            </button>
-          </div>
+          <EmbeddedCardTopup
+            clientSecret={cardVerify.clientSecret}
+            mode="setup"
+            countryGuess={cardVerify.country}
+            onSuccess={completeVerify}
+            onCancel={() => setCardVerify(null)}
+          />
         ) : (
         <>
         {recording ? (
@@ -1853,8 +2099,11 @@ export default function ChatView({
         ) : (
         <div className="flex items-end gap-2 bg-card2/80 border border-line2 rounded-2xl px-2 py-1.5 backdrop-blur">
           <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
+            onClick={() => {
+              setTipTokens(null);
+              fileRef.current?.click();
+            }}
+            disabled={uploading || tipping}
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-50 flex items-center justify-center active:opacity-80 transition-opacity"
             aria-label="Attach media"
           >
@@ -1956,6 +2205,40 @@ export default function ChatView({
           )}
           {role === "owner" && (
             <button
+              onClick={() =>
+                setOfferDialog({
+                  tokens: String(DEFAULT_POPUP_OFFER.tokens),
+                  price: (DEFAULT_POPUP_OFFER.priceCents / 100).toString(),
+                  original: (DEFAULT_POPUP_OFFER.originalCents / 100).toString(),
+                })
+              }
+              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold transition-colors ${
+                offerDialog
+                  ? "bg-accent text-white glow-accent"
+                  : "bg-transparent border border-line text-muted hover:text-fg"
+              }`}
+              aria-label="Send a one-time offer"
+              title="Send this fan a custom one-time offer popup"
+            >
+              %
+            </button>
+          )}
+          {role === "owner" && (
+            <button
+              onClick={() => setPayLinkDialog({ tokens: "", price: "", url: null })}
+              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold transition-colors ${
+                payLinkDialog
+                  ? "bg-accent text-white glow-accent"
+                  : "bg-transparent border border-line text-muted hover:text-fg"
+              }`}
+              aria-label="Create a payment link"
+              title="Create a Stripe payment link (custom tokens & price, any card)"
+            >
+              $
+            </button>
+          )}
+          {role === "owner" && (
+            <button
               type="button"
               onClick={() => void openPaidSubDialog()}
               className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-transparent border border-line text-muted hover:text-fg transition-colors"
@@ -1967,7 +2250,7 @@ export default function ChatView({
           )}
           <button
             onClick={startRecording}
-            disabled={uploading || sendingVoice}
+            disabled={uploading || tipping || sendingVoice}
             className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-transparent border border-line text-muted hover:text-fg transition-colors disabled:opacity-50"
             aria-label="Record a voice note"
             title="Record a voice note"
@@ -1983,35 +2266,525 @@ export default function ChatView({
             value={text}
             onChange={(e) => {
               setText(e.target.value);
-              if (e.target.value) notifyTyping();
+              if (e.target.value && tipTokens == null) notifyTyping();
             }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
-                if (!sendingRef.current) send();
+                if (tipTokens != null) sendTip();
+                else if (!sendingRef.current) send();
               }
             }}
-            placeholder="Message…"
+            placeholder={tipTokens != null ? "Add a note (optional)…" : "Message…"}
             rows={1}
-            className="flex-1 bg-transparent resize-none max-h-32 py-2 text-[15px] placeholder:text-muted"
+            disabled={tipping}
+            className="flex-1 bg-transparent resize-none max-h-32 py-2 text-[15px] placeholder:text-muted disabled:opacity-60"
           />
           <button
-            onClick={send}
+            onClick={() => (tipTokens != null ? sendTip() : send())}
             disabled={
+              tipping ||
               uploading ||
               sending ||
-              (!text.trim() && attachments.length === 0 && !linkAttachment)
+              (tipTokens == null &&
+                !text.trim() &&
+                attachments.length === 0 &&
+                !linkAttachment)
             }
             className="w-9 h-9 rounded-xl bg-accent text-white shrink-0 disabled:opacity-40 flex items-center justify-center active:opacity-80 transition-opacity"
-            aria-label="Send"
+            aria-label={tipTokens != null ? "Send tip" : "Send"}
           >
-            <IconSend className="w-4.5 h-4.5" />
+            {tipping ? (
+              <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+            ) : (
+              <IconSend className="w-4.5 h-4.5" />
+            )}
           </button>
         </div>
         )}
         </>
         )}
       </div>
+
+      {tipPickerOpen && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
+            onClick={() => setTipPickerOpen(false)}
+          >
+            <div
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-4 fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-bold">Send a tip</p>
+                <button
+                  onClick={() => setTipPickerOpen(false)}
+                  className="text-muted text-sm px-1"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+              <p className="text-sm text-muted -mt-2">
+                Pick an amount in Tokens. You can add a note in the chat box before sending.
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                {TIP_TOKEN_PRESETS.map((tokens) => (
+                  <button
+                    key={tokens}
+                    onClick={() => pickTipAmount(tokens)}
+                    className={`rounded-xl border px-3 py-3 text-sm font-semibold transition-colors ${
+                      tipTokens === tokens
+                        ? "bg-accent text-white border-accent"
+                        : "bg-card2 border-line hover:border-accent"
+                    }`}
+                  >
+                    {tokens.toLocaleString("en-US")}
+                  </button>
+                ))}
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted">Custom amount</label>
+                <div className="flex items-center gap-2">
+                  <IconTip className="w-4 h-4 text-accent shrink-0" />
+                  <input
+                    value={tipCustom}
+                    onChange={(e) => setTipCustom(e.target.value.replace(/[^\d]/g, ""))}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      const tokens = Math.round(parseFloat(tipCustom));
+                      if (tokens >= MIN_TIP_TOKENS) pickTipAmount(tokens);
+                    }}
+                    inputMode="numeric"
+                    placeholder="250"
+                    className="flex-1 bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                  />
+                  <button
+                    onClick={() => {
+                      const tokens = Math.round(parseFloat(tipCustom));
+                      if (tokens >= MIN_TIP_TOKENS) pickTipAmount(tokens);
+                    }}
+                    disabled={!(Math.round(parseFloat(tipCustom)) >= MIN_TIP_TOKENS)}
+                    className="rounded-xl bg-accent text-white px-4 py-2.5 text-sm font-semibold disabled:opacity-40"
+                  >
+                    Use
+                  </button>
+                </div>
+                <p className="text-[11px] text-muted">Minimum {MIN_TIP_TOKENS} Tokens</p>
+              </div>
+              {balance !== null && (
+                <div className="flex items-center justify-between rounded-xl bg-card2 border border-line px-3 py-2.5">
+                  <p className="text-xs text-muted">
+                    Wallet:{" "}
+                    <span className="font-bold text-fg">{formatTokens(balance)}</span>
+                  </p>
+                  <button
+                    onClick={() => {
+                      setTipPickerOpen(false);
+                      openWallet();
+                    }}
+                    className="text-xs font-semibold text-accent"
+                  >
+                    Top up
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {walletOpen && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
+            onClick={closeWallet}
+          >
+            <div
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-4 fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="font-bold">Your wallet</p>
+                <button
+                  onClick={closeWallet}
+                  className="text-muted text-sm px-1"
+                  aria-label="Close"
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="flex items-center gap-2.5 rounded-xl bg-card2 border border-line px-4 py-3">
+                <span className="w-9 h-9 rounded-full bg-accent/15 text-accent flex items-center justify-center shrink-0">
+                  <IconTip className="w-5 h-5" />
+                </span>
+                <div>
+                  <p className="text-lg font-extrabold leading-tight tabular-nums">
+                    {(balance ?? 0).toLocaleString("en-US")}{" "}
+                    <span className="text-sm font-semibold text-muted">Tokens</span>
+                  </p>
+                  <p className="text-[11px] text-muted">Spend on unlocks & tips</p>
+                </div>
+              </div>
+              {walletNote && (
+                <p className="text-sm text-accent font-semibold -mt-1">{walletNote}</p>
+              )}
+              <div className="grid grid-cols-2 gap-2">
+                {TOKEN_PACKS.map((pack) => {
+                  const busy = toppingUp === pack.id;
+                  const isOffer =
+                    firstOffer &&
+                    offer.packEnabled &&
+                    pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+                  const total = isOffer ? offer.tokens : packTotalTokens(pack);
+                  const highlight =
+                    isOffer ||
+                    (pack.tag === "Most popular" && !(firstOffer && offer.packEnabled));
+                  return (
+                    <button
+                      key={pack.id}
+                      onClick={() => topUp(pack.id)}
+                      disabled={!!toppingUp}
+                      className={`relative rounded-xl border px-3 py-3 text-left transition-colors disabled:opacity-60 ${
+                        highlight
+                          ? "border-accent bg-accent/10"
+                          : "bg-card2 border-line hover:border-accent"
+                      } ${isOffer ? "offer-pulse" : ""}`}
+                    >
+                      {(isOffer || pack.tag) && (
+                        <span className="absolute -top-2 right-2 rounded-full bg-accent text-white text-[10px] font-bold px-2 py-0.5">
+                          {isOffer ? "One-time offer" : pack.tag}
+                        </span>
+                      )}
+                      <p className="text-2xl font-extrabold leading-tight tabular-nums">
+                        {total.toLocaleString("en-US")}
+                        <span className="text-xs font-semibold text-muted"> Tokens</span>
+                      </p>
+                      <p className="mt-1 text-sm font-bold text-accent">
+                        {busy
+                          ? "Processing…"
+                          : perTokenLabel(
+                              isOffer ? offer.priceCents : pack.priceCents,
+                              total
+                            )}
+                      </p>
+                      {!busy && (
+                        <p className="text-[10px] text-muted tabular-nums">
+                          {offerPriceLabel(isOffer ? offer.priceCents : pack.priceCents)}{" "}
+                          total
+                        </p>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="text-[11px] text-muted text-center">
+                One-tap with your saved card · secured by Stripe
+              </p>
+              <p className="text-[11px] text-muted/80 text-center -mt-2">
+                All Token purchases are final and non-refundable.
+              </p>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {(offerPopup ||
+        (customOfferPopup && customOffer) ||
+        (welcomeOfferPopup && welcomeOffer)) &&
+        (() => {
+          const isWelcome = welcomeOfferPopup && !!welcomeOffer;
+          const isCustom = !isWelcome && customOfferPopup && !!customOffer;
+          const po = isWelcome ? welcomeOffer! : isCustom ? customOffer! : offer;
+          const close = () => {
+            setOfferPopup(false);
+            setCustomOfferPopup(false);
+            setWelcomeOfferPopup(false);
+          };
+          return (
+            <Portal>
+              <div
+                className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4"
+                onClick={close}
+              >
+                <div
+                  className="relative bg-card border border-accent/40 rounded-3xl p-6 pt-8 w-full max-w-sm text-center space-y-2.5 fade-up overflow-hidden"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-72 h-44 rounded-full bg-accent/25 blur-3xl pointer-events-none" />
+                  <button
+                    onClick={close}
+                    className="absolute top-3 right-3 text-muted text-sm px-1"
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
+                  <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
+                    {isWelcome
+                      ? "Welcome offer"
+                      : isCustom
+                        ? "Exclusive one-time offer"
+                        : "One-time offer"}
+                  </p>
+                  {isWelcome && (
+                    <>
+                      <p className="relative text-lg font-bold">
+                        Welcome! So happy you&apos;re here 🎉
+                      </p>
+                      <div className="relative rounded-2xl bg-accent/15 border border-accent/40 px-4 py-3">
+                        <p className="text-[15px] font-extrabold leading-snug">
+                          All photos &amp; videos here unlock with{" "}
+                          <span className="text-accent">Tokens</span> 🔓
+                        </p>
+                      </div>
+                      <p className="relative text-xs text-muted leading-relaxed">
+                        Start with a full wallet:
+                      </p>
+                    </>
+                  )}
+                  <p className="relative text-4xl font-extrabold tabular-nums leading-none">
+                    {po.tokens.toLocaleString("en-US")}
+                    <span className="text-lg font-semibold text-muted"> Tokens</span>
+                  </p>
+                  {!isCustom && !isWelcome && offer.tokens > OFFER_PACK.tokens && (
+                    <p className="relative text-xs font-semibold text-emerald-500">
+                      incl. +{(offer.tokens - OFFER_PACK.tokens).toLocaleString("en-US")} free
+                    </p>
+                  )}
+                  <p className="relative">
+                    <span className="text-3xl font-extrabold text-accent tabular-nums">
+                      {offerPriceLabel(po.priceCents)}
+                    </span>{" "}
+                    <span className="text-base font-semibold text-muted line-through tabular-nums">
+                      {offerPriceLabel(po.originalCents)}
+                    </span>
+                  </p>
+                  <p className="relative text-[11px] text-muted leading-snug">
+                    {isWelcome
+                      ? "A one-time deal for new members — it won't be shown again."
+                      : isCustom
+                        ? "Unlocked just for you — this one won't come back."
+                        : "Only on your very first top-up — once it's gone, it's gone."}
+                  </p>
+                  <button
+                    onClick={() =>
+                      topUp(
+                        OFFER_PACK.id,
+                        isWelcome ? "welcome" : isCustom ? "custom" : undefined
+                      )
+                    }
+                    disabled={!!toppingUp}
+                    className="relative w-full rounded-full ig-gradient glow-accent offer-pulse text-white text-sm font-bold py-3 disabled:opacity-60"
+                  >
+                    {toppingUp
+                      ? "Processing…"
+                      : `Claim ${po.tokens.toLocaleString("en-US")} Tokens for ${offerPriceLabel(po.priceCents)}`}
+                  </button>
+                  <p className="relative text-[10px] text-muted/80">
+                    Secured by Stripe · All Token purchases are final and
+                    non-refundable.
+                  </p>
+                </div>
+              </div>
+            </Portal>
+          );
+        })()}
+
+      {offerDialog && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setOfferDialog(null)}
+          >
+            <div
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div>
+                <p className="font-bold">Send a one-time offer</p>
+                <p className="text-xs text-muted mt-0.5">
+                  This fan gets a personal popup, shown once, presented as a
+                  platform offer — not as a message from you.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-semibold text-muted">Tokens</label>
+                <input
+                  autoFocus
+                  inputMode="numeric"
+                  value={offerDialog.tokens}
+                  onChange={(e) =>
+                    setOfferDialog({
+                      ...offerDialog,
+                      tokens: e.target.value.replace(/[^\d]/g, ""),
+                    })
+                  }
+                  placeholder="e.g. 1300"
+                  className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted">Price ($)</label>
+                  <input
+                    inputMode="decimal"
+                    value={offerDialog.price}
+                    onChange={(e) =>
+                      setOfferDialog({
+                        ...offerDialog,
+                        price: e.target.value.replace(/[^\d.]/g, ""),
+                      })
+                    }
+                    placeholder="4.99"
+                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-muted">Was ($)</label>
+                  <input
+                    inputMode="decimal"
+                    value={offerDialog.original}
+                    onChange={(e) =>
+                      setOfferDialog({
+                        ...offerDialog,
+                        original: e.target.value.replace(/[^\d.]/g, ""),
+                      })
+                    }
+                    placeholder="99.99"
+                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                  />
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setOfferDialog(null)}
+                  className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={sendCustomOffer}
+                  disabled={sendingOffer}
+                  className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
+                >
+                  {sendingOffer ? "Sending…" : "Send offer"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      {payLinkDialog && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
+            onClick={() => setPayLinkDialog(null)}
+          >
+            <div
+              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div>
+                <p className="font-bold">Create a payment link</p>
+                <p className="text-xs text-muted mt-0.5">
+                  A Stripe checkout page for a custom token amount and price.
+                  Works with any card — valid for 24 hours.
+                </p>
+              </div>
+              {!payLinkDialog.url ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted">Tokens</label>
+                      <input
+                        autoFocus
+                        inputMode="numeric"
+                        value={payLinkDialog.tokens}
+                        onChange={(e) =>
+                          setPayLinkDialog({
+                            ...payLinkDialog,
+                            tokens: e.target.value.replace(/[^\d]/g, ""),
+                          })
+                        }
+                        placeholder="e.g. 500"
+                        className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-xs font-semibold text-muted">Price ($)</label>
+                      <input
+                        inputMode="decimal"
+                        value={payLinkDialog.price}
+                        onChange={(e) =>
+                          setPayLinkDialog({
+                            ...payLinkDialog,
+                            price: e.target.value.replace(/[^\d.]/g, ""),
+                          })
+                        }
+                        placeholder="9.99"
+                        className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={() => setPayLinkDialog(null)}
+                      className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={createPayLink}
+                      disabled={creatingLink || !payLinkDialog.tokens || !payLinkDialog.price}
+                      className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
+                    >
+                      {creatingLink ? "Creating…" : "Create link"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <input
+                    readOnly
+                    value={payLinkDialog.url}
+                    onFocus={(e) => e.currentTarget.select()}
+                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-xs font-mono text-muted"
+                  />
+                  <div className="flex gap-2 pt-1">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await navigator.clipboard.writeText(payLinkDialog.url!);
+                          setLinkCopied(true);
+                          setTimeout(() => setLinkCopied(false), 1500);
+                        } catch {}
+                      }}
+                      className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
+                    >
+                      {linkCopied ? "Copied!" : "Copy link"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        setText((prev) =>
+                          prev.trim()
+                            ? `${prev.trim()} ${payLinkDialog.url}`
+                            : payLinkDialog.url!
+                        );
+                        setPayLinkDialog(null);
+                      }}
+                      className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5"
+                    >
+                      Add to message
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </Portal>
+      )}
 
       {labelDialog && (
         <Portal>
@@ -2171,18 +2944,7 @@ export default function ChatView({
                 mode="setup"
                 countryGuess={gateCardSetup.country}
                 onSuccess={completeGateCardSetup}
-                // Backing out: timer resumes; they must Reject or try Accept again.
                 onCancel={() => setGateCardSetup(null)}
-              />
-            ) : cardUnlock && cardUnlock.messageId === pendingGate.id ? (
-              <EmbeddedCardTopup
-                clientSecret={cardUnlock.clientSecret}
-                amountCents={cardUnlock.amountCents}
-                label="Unlock content"
-                countryGuess={cardUnlock.country}
-                onSuccess={completeCardUnlock}
-                // Backing out resumes the countdown where it left off.
-                onCancel={() => setCardUnlock(null)}
               />
             ) : null
           }
@@ -2203,6 +2965,11 @@ export default function ChatView({
               messageId={drainPlayer.id}
               initialCleared={drainPlayer.blur_layers_cleared ?? 0}
               onClose={() => setDrainPlayer(null)}
+              onNeedTokens={(need) =>
+                openWallet(
+                  `You need ${formatTokens(need)} to unblur — top up to continue.`
+                )
+              }
               onProgress={(n) =>
                 setMessages((prev) =>
                   prev.map((m) =>
@@ -2311,13 +3078,17 @@ export default function ChatView({
                 Welcome gift
               </p>
               <p className="relative text-5xl font-extrabold leading-none text-blue-950">
-                ${(ppm.freeCreditCents / 100).toFixed(2).replace(/\.00$/, "")}
+                {ppm.freeTokens > 0
+                  ? formatTokens(ppm.freeTokens)
+                  : `$${(ppm.freeCreditCents / 100).toFixed(2).replace(/\.00$/, "")}`}
                 <span className="ml-2 text-2xl font-bold text-blue-500">
                   FREE
                 </span>
               </p>
               <p className="relative text-sm text-slate-600 leading-relaxed">
-                Added to your balance to start chatting
+                {ppm.freeTokens > 0
+                  ? "Added to your wallet to start chatting"
+                  : "Added to your balance to start chatting"}
               </p>
               <button
                 type="button"
@@ -2328,7 +3099,9 @@ export default function ChatView({
                 {acceptingPpm ? "One moment…" : "Accept & start chatting"}
               </button>
               <p className="relative text-[11px] text-slate-500">
-                ${(ppm.priceCents / 100).toFixed(2)} per message after
+                {ppm.priceTokens > 0
+                  ? `${formatTokens(ppm.priceTokens)} per message after`
+                  : `$${(ppm.priceCents / 100).toFixed(2)} per message after`}
               </p>
               <p className="relative text-[10px] text-slate-400">
                 By accepting you agree to the Terms of Service.

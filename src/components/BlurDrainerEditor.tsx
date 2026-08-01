@@ -48,8 +48,8 @@ export default function BlurDrainerEditor({
   const [free, setFree] = useState(initial ? initial.priceCents === 0 : false);
   const [price, setPrice] = useState(
     initial && initial.priceCents > 0
-      ? (initial.priceCents / 100).toFixed(2).replace(/\.00$/, "")
-      : "0.99"
+      ? String(Math.max(1, Math.ceil(initial.priceCents / 10)))
+      : "10"
   );
   const dragRef = useRef<{
     mode: "move" | "resize";
@@ -98,11 +98,12 @@ export default function BlurDrainerEditor({
     const layerN = free
       ? 1
       : Math.max(1, Math.min(40, Math.round(parseFloat(layers) || 0)));
-    const cents = free
+    const tokens = free
       ? 0
-      : Math.max(1, Math.round((parseFloat(price.replace(/[^\d.]/g, "")) || 0) * 100));
-    if (layerN < 1 || (!free && cents < 1)) {
-      alert("Set layers and a price per tap");
+      : Math.max(1, Math.round(parseInt(price.replace(/[^\d]/g, ""), 10) || 0));
+    const cents = tokens * 10;
+    if (layerN < 1 || (!free && tokens < 1)) {
+      alert("Set layers and a Tokens price per tap");
       return;
     }
     onSave({ ...rect, layers: layerN, priceCents: cents });
@@ -110,7 +111,7 @@ export default function BlurDrainerEditor({
 
   const priceCents = free
     ? 0
-    : Math.round((parseFloat(price.replace(/[^\d.]/g, "")) || 0) * 100);
+    : Math.max(0, Math.round(parseInt(price.replace(/[^\d]/g, ""), 10) || 0)) * 10;
 
   return (
     <Portal>
@@ -202,13 +203,13 @@ export default function BlurDrainerEditor({
               {!free && (
                 <label className="flex items-center gap-1.5 text-xs">
                   <span className="text-muted">Per tap</span>
-                  <span className="font-bold text-accent">$</span>
                   <input
                     value={price}
-                    onChange={(e) => setPrice(e.target.value.replace(/[^\d.]/g, ""))}
-                    inputMode="decimal"
+                    onChange={(e) => setPrice(e.target.value.replace(/[^\d]/g, ""))}
+                    inputMode="numeric"
                     className="w-16 bg-bg border border-line rounded-lg px-2 py-1.5 text-xs focus:border-accent"
                   />
+                  <span className="text-muted">Tokens</span>
                 </label>
               )}
               <label className="flex items-center gap-1.5 text-xs cursor-pointer select-none">
@@ -224,7 +225,7 @@ export default function BlurDrainerEditor({
             <p className="text-[11px] text-muted">
               {free
                 ? "Fans unblur for free with a single tap, after verifying their card"
-                : `Fans pay ${priceCents > 0 ? blurDrainPriceLabel(priceCents) : "$—"} each tap · ${Math.max(1, parseInt(layers, 10) || 1)} taps to fully clear`}
+                : `Fans pay ${priceCents > 0 ? blurDrainPriceLabel(priceCents) : "— Tokens"} each tap · ${Math.max(1, parseInt(layers, 10) || 1)} taps to fully clear`}
             </p>
 
             <button

@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { formatPpmMoney } from "@/lib/payPerMessage";
+import { formatTokens, tokensForCents } from "@/lib/tokens";
 
 /**
- * Pay per Message tab: every message a fan sends costs a set price. Each fan
- * gets a free credit (dollar amount) on their balance when they accept the
- * terms; messages spend that first. After it runs out they must verify a card.
- * Further costs accrue and are charged to their card about once an hour.
+ * Pay per Message tab (token economy): every fan message spends Tokens from
+ * their wallet. Each fan gets a free Token grant (from the dollar credit you
+ * set) when they accept the terms — or silently if the popup is off. After
+ * free Tokens run out they top up via the wallet.
  */
 export default function PayPerMessageSettings() {
   const [enabled, setEnabled] = useState(false);
@@ -31,7 +31,6 @@ export default function PayPerMessageSettings() {
           const credit = Math.round(Number(meta.ppm_free_credit_cents)) || 0;
           setFreeCredit((credit / 100).toFixed(2).replace(/\.00$/, ""));
         } else {
-          // Migrate old free-messages setting into a dollar credit preview.
           const freeMessages = Math.round(Number(meta.ppm_free_messages)) || 0;
           const migrated = freeMessages * (cents || 50);
           if (migrated > 0) {
@@ -49,6 +48,8 @@ export default function PayPerMessageSettings() {
     0,
     Math.round(parseFloat(freeCredit.replace(/[^\d.]/g, "")) * 100) || 0
   );
+  const priceTokens = priceCents > 0 ? tokensForCents(priceCents) : 0;
+  const freeTokens = freeCreditCents > 0 ? tokensForCents(freeCreditCents) : 0;
 
   async function save() {
     if (saving) return;
@@ -74,13 +75,10 @@ export default function PayPerMessageSettings() {
       <div>
         <p className="font-semibold">Pay per Message</p>
         <p className="text-xs text-muted mt-1 leading-relaxed">
-          Every message a fan sends costs the price you set — for new and
-          existing fans. Each fan gets the free credit below on their balance
-          (via the optional popup, or silently if the popup is off). Messages
-          spend that credit first; after it runs out, fans without a verified
-          card lose the chat input until they add one. Further costs stack on
-          their balance and are charged to their card automatically about once
-          an hour — never per message.
+          Every message a fan sends spends Tokens from their wallet — for new
+          and existing fans. Each fan gets free Tokens (from the credit below)
+          via the optional popup, or silently if the popup is off. After free
+          Tokens run out they top up in the wallet to keep chatting.
         </p>
       </div>
 
@@ -112,8 +110,8 @@ export default function PayPerMessageSettings() {
         <div>
           <p className="text-sm font-semibold">Show terms popup</p>
           <p className="text-[11px] text-muted mt-0.5 leading-relaxed">
-            When off, fans never see the free-credit popup — credit is added
-            to their balance automatically.
+            When off, fans never see the free-credit popup — Tokens are added
+            to their wallet automatically.
           </p>
         </div>
         <button
@@ -147,7 +145,9 @@ export default function PayPerMessageSettings() {
             />
           </div>
           <span className="text-[11px] text-muted">
-            What each fan message costs once their free credit is used up.
+            Fans see this as{" "}
+            {priceTokens > 0 ? formatTokens(priceTokens) : "— Tokens"} per
+            message (1 Token = $0.10).
           </span>
         </label>
 
@@ -164,14 +164,14 @@ export default function PayPerMessageSettings() {
             />
           </div>
           <span className="text-[11px] text-muted">
-            Free money added to each fan&apos;s balance when they accept.
-            Messages spend this first. Existing fans who haven&apos;t accepted
-            yet get this amount too.
+            Granted as{" "}
+            {freeTokens > 0 ? formatTokens(freeTokens) : "— Tokens"} into each
+            fan&apos;s wallet when they accept (or silently if the popup is
+            off).
           </span>
         </label>
       </div>
 
-      {/* Preview: the one-time popup fans must accept (when enabled) */}
       <div className={`space-y-2 ${showPopup ? "" : "opacity-45"}`}>
         <p className="text-xs font-semibold text-muted uppercase tracking-wide">
           Popup preview{showPopup ? "" : " · hidden"}
@@ -195,17 +195,18 @@ export default function PayPerMessageSettings() {
             Welcome gift
           </p>
           <p className="relative text-4xl font-extrabold leading-none text-blue-950">
-            {formatPpmMoney(freeCreditCents)}
+            {freeTokens > 0 ? formatTokens(freeTokens) : "0 Tokens"}
             <span className="ml-2 text-xl font-bold text-blue-500">FREE</span>
           </p>
           <p className="relative text-xs text-slate-600">
-            Added to your balance to start chatting
+            Added to your wallet to start chatting
           </p>
           <span className="relative inline-block bg-blue-600 text-white text-xs font-bold rounded-xl px-6 py-2.5">
             Accept &amp; start chatting
           </span>
           <p className="relative text-[11px] text-slate-500">
-            {formatPpmMoney(priceCents)} per message after
+            {priceTokens > 0 ? formatTokens(priceTokens) : "— Tokens"} per
+            message after
           </p>
         </div>
       </div>
@@ -217,11 +218,6 @@ export default function PayPerMessageSettings() {
       >
         {saved ? "Saved!" : saving ? "Saving…" : "Save"}
       </button>
-      {enabled && priceCents <= 0 && (
-        <p className="text-[11px] text-red-400 -mt-3">
-          Set a price per message to turn this on.
-        </p>
-      )}
     </div>
   );
 }

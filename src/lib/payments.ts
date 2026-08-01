@@ -59,69 +59,83 @@ export async function recordBlurDrainTap(opts: {
 const PPM_SETTLE_INTERVAL_MS = 60 * 60 * 1000;
 
 /**
- * Ensure a chat has free credit granted. Used when the fan accepts the popup
- * or when the creator has the popup turned off (silent grant).
- *
- * The free-money model grants the full configured credit once — we do NOT
- * subtract historical free-message counts (that incorrectly zeroed balances
- * after the switch from "free messages" to "free money").
+ * Pay per Message, token economy: the free "welcome money" is granted ONCE
+ * as Tokens straight into the fan's wallet (1 Token = 10¢ of the creator-set
+ * credit). Used when the fan accepts the popup or silently when the creator
+ * has the popup turned off. Also converts any leftover cents credit from the
+ * pre-token era into wallet Tokens, exactly once.
  */
-export async function ensurePpmCredit(opts: {
+export async function grantPpmTokens(opts: {
   chatId: string;
   freeCreditCents: number;
-  priceCents: number;
   chat: {
     ppm_accepted_at?: string | null;
     ppm_credit_cents?: number | null;
     ppm_credit_granted?: boolean | null;
-    ppm_messages_used?: number | null;
   };
   /** When true (popup off), mark accepted even if they never saw the popup. */
   silentAccept?: boolean;
-}): Promise<{ creditCents: number; accepted: boolean }> {
+}): Promise<{ accepted: boolean; balance: number | null }> {
   const db = supabaseAdmin();
-  let credit = opts.chat.ppm_credit_cents ?? 0;
   let accepted = !!opts.chat.ppm_accepted_at;
-  let granted = !!opts.chat.ppm_credit_granted;
+  const granted = !!opts.chat.ppm_credit_granted;
+  let balance: number | null = null;
 
-  // Repair: granted under the old conversion with $0 and no money spent yet.
-  if (
-    granted &&
-    credit === 0 &&
-    (opts.chat.ppm_messages_used ?? 0) === 0 &&
-    opts.freeCreditCents > 0
-  ) {
-    credit = opts.freeCreditCents;
-    await db
-      .from("chats")
-      .update({ ppm_credit_cents: credit })
-      .eq("id", opts.chatId);
-  }
-
-  if (!granted) {
-    if (!accepted && !opts.silentAccept) {
-      return { creditCents: credit, accepted: false };
+  if (granted) {
+    // Legacy cents credit from the pre-token era → wallet Tokens, once.
+    // Compare-and-set on the exact value so concurrent calls can't double it.
+    const leftover = opts.chat.ppm_credit_cents ?? 0;
+    if (leftover > 0) {
+      const { data: claimed } = await db
+        .from("chats")
+        .update({ ppm_credit_cents: 0 })
+        .eq("id", opts.chatId)
+        .eq("ppm_credit_cents", leftover)
+        .select("id");
+      if (claimed?.length) {
+        const { data: bal } = await db.rpc("credit_tokens", {
+          p_chat_id: opts.chatId,
+          p_amount: Math.max(1, Math.ceil(leftover / 10)),
+        });
+        if (typeof bal === "number" && bal >= 0) balance = bal;
+      }
     }
-    credit = opts.freeCreditCents;
-    await db
-      .from("chats")
-      .update({
-        ppm_credit_cents: credit,
-        ppm_credit_granted: true,
-        ...(!accepted ? { ppm_accepted_at: new Date().toISOString() } : {}),
-      })
-      .eq("id", opts.chatId);
-    accepted = true;
-    granted = true;
-  } else if (opts.silentAccept && !accepted) {
-    await db
-      .from("chats")
-      .update({ ppm_accepted_at: new Date().toISOString() })
-      .eq("id", opts.chatId);
-    accepted = true;
+    if (opts.silentAccept && !accepted) {
+      await db
+        .from("chats")
+        .update({ ppm_accepted_at: new Date().toISOString() })
+        .eq("id", opts.chatId);
+      accepted = true;
+    }
+    return { accepted, balance };
   }
 
-  return { creditCents: credit, accepted };
+  if (!accepted && !opts.silentAccept) {
+    return { accepted: false, balance: null };
+  }
+
+  // Claim the grant flag first (compare-and-set) so two concurrent calls
+  // can't credit the free Tokens twice.
+  const { data: claimed } = await db
+    .from("chats")
+    .update({
+      ppm_credit_granted: true,
+      ppm_credit_cents: 0,
+      ...(!accepted ? { ppm_accepted_at: new Date().toISOString() } : {}),
+    })
+    .eq("id", opts.chatId)
+    .not("ppm_credit_granted", "is", true)
+    .select("id");
+  accepted = true;
+  if (claimed?.length && opts.freeCreditCents > 0) {
+    const tokens = Math.max(1, Math.ceil(opts.freeCreditCents / 10));
+    const { data: bal } = await db.rpc("credit_tokens", {
+      p_chat_id: opts.chatId,
+      p_amount: tokens,
+    });
+    if (typeof bal === "number" && bal >= 0) balance = bal;
+  }
+  return { accepted, balance };
 }
 
 /**

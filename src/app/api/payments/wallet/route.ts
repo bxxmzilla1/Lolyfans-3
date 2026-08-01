@@ -1,16 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
-import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
-import { verifyPopupFromMetadata } from "@/lib/popupOffer";
+import { grantPpmTokens, tokenBalance } from "@/lib/payments";
+import { TOKEN_PACKS, tokensForCents } from "@/lib/tokens";
+import {
+  popupOfferFromMetadata,
+  verifyPopupFromMetadata,
+  welcomeOfferFromMetadata,
+} from "@/lib/popupOffer";
 import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
 import { paidSubFromMetadata } from "@/lib/paidSub";
-import { ensurePpmCredit, settlePpmBalance } from "@/lib/payments";
 
 /**
- * Fan payment state: card on file, Card Verify setting, and Pay per Message
- * (terms, free credit remaining, owed balance, declined). Also the lazy
- * trigger for the hourly owed-balance settlement.
+ * Fan wallet: current token balance + the top-up packs on offer, plus the
+ * creator's Card Verify switch, Pay per Message config (token-priced) and
+ * PaidSub state for this chat.
  */
 export async function GET(req: NextRequest) {
   const chatId = req.nextUrl.searchParams.get("chatId");
@@ -20,61 +24,73 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // Never topped up → the one-time first-purchase offer is still available,
+  // priced per the creator's Pop up Offers settings.
   const db = supabaseAdmin();
-  const { data: chat } = await db
-    .from("chats")
-    .select(
-      "owner_id, stripe_payment_method_id, ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_credit_cents, ppm_credit_granted, ppm_card_declined, paidsub_offer_at, paidsub_paid_at"
-    )
-    .eq("id", chatId)
-    .maybeSingle();
+  const [balance, { count: topupCount }, { data: chat }] = await Promise.all([
+    tokenBalance(chatId),
+    db
+      .from("token_transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("chat_id", chatId)
+      .eq("kind", "topup"),
+    db
+      .from("chats")
+      .select(
+        "owner_id, custom_offer, stripe_payment_method_id, ppm_accepted_at, ppm_credit_cents, ppm_credit_granted, paidsub_offer_at, paidsub_paid_at"
+      )
+      .eq("id", chatId)
+      .maybeSingle(),
+  ]);
   const { data: ownerUser } = chat
     ? await db.auth.admin.getUserById(chat.owner_id)
     : { data: null };
   const ownerMeta = ownerUser?.user?.user_metadata ?? {};
+
   const ppm = payPerMessageFromMetadata(ownerMeta);
   const paidSub = paidSubFromMetadata(ownerMeta);
   // PaidSub paid = unlimited messaging: all Pay per Message gating disappears.
   const paidSubPaid = !!chat?.paidsub_paid_at;
   if (paidSubPaid) ppm.enabled = false;
 
-  let creditCents = chat?.ppm_credit_cents ?? 0;
   let accepted = !!chat?.ppm_accepted_at;
+  let freshBalance: number | null = null;
   if (ppm.enabled && chat) {
-    const granted = await ensurePpmCredit({
+    const granted = await grantPpmTokens({
       chatId,
       freeCreditCents: ppm.freeCreditCents,
-      priceCents: ppm.priceCents,
       chat,
-      // Popup off → grant credit silently so chatting isn't blocked.
+      // Popup off → grant the free Tokens silently so chatting isn't blocked.
       silentAccept: !ppm.showPopup,
     });
-    creditCents = granted.creditCents;
     accepted = granted.accepted;
-  }
-
-  if (ppm.enabled && (chat?.ppm_balance_cents ?? 0) > 0) {
-    after(() => settlePpmBalance(chatId));
+    freshBalance = granted.balance;
   }
 
   return NextResponse.json({
-    hasCard: !!chat?.stripe_payment_method_id,
+    balance: freshBalance ?? balance,
+    packs: TOKEN_PACKS,
+    firstTopupOffer: (topupCount ?? 0) === 0,
+    offer: popupOfferFromMetadata(ownerMeta),
+    welcomeOffer: welcomeOfferFromMetadata(ownerMeta),
     verifyPopup: verifyPopupFromMetadata(ownerMeta),
+    hasCard: !!chat?.stripe_payment_method_id,
+    customOffer: chat?.custom_offer ?? null,
     ppm: {
       enabled: ppm.enabled,
       showPopup: ppm.showPopup,
       priceCents: ppm.priceCents,
+      priceTokens: tokensForCents(ppm.priceCents),
       freeCreditCents: ppm.freeCreditCents,
+      freeTokens:
+        ppm.freeCreditCents > 0 ? tokensForCents(ppm.freeCreditCents) : 0,
       accepted,
-      messagesUsed: chat?.ppm_messages_used ?? 0,
-      creditCents,
-      balanceCents: chat?.ppm_balance_cents ?? 0,
-      declined: !!chat?.ppm_card_declined,
     },
     paidSub: {
-      offered: paidSub.enabled && !!chat?.paidsub_offer_at,
+      offered: paidSub.enabled && !!chat?.paidsub_offer_at && !paidSubPaid,
       paid: paidSubPaid,
       priceCents: paidSub.priceCents,
+      priceTokens: tokensForCents(paidSub.priceCents),
     },
   });
 }

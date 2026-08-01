@@ -6,7 +6,8 @@ import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
 import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
-import { ensurePpmCredit, settlePpmBalance } from "@/lib/payments";
+import { grantPpmTokens, spendTokens, tokenBalance } from "@/lib/payments";
+import { tokensForCents } from "@/lib/tokens";
 
 type ChatAuth = { role: "owner" | "guest"; chatOwnerId: string };
 
@@ -155,9 +156,10 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Pay per Message: spend free credit first; after that each message adds
-  // its price to the owed balance (auto-charged hourly). Terms must be
-  // accepted, and billing requires a working card on file.
+  // Pay per Message, token economy: every fan message spends its token price
+  // from the wallet (the free welcome Tokens land there on accept). Terms
+  // must be accepted; an empty wallet means topping up before chatting on.
+  let balanceAfterSend: number | null = null;
   if (auth.role === "guest") {
     const { data: ownerUser } = await db.auth.admin.getUserById(auth.chatOwnerId);
     const ppm = payPerMessageFromMetadata(ownerUser?.user?.user_metadata ?? {});
@@ -165,7 +167,7 @@ export async function POST(req: NextRequest) {
       const { data: chatRow } = await db
         .from("chats")
         .select(
-          "ppm_accepted_at, ppm_messages_used, ppm_balance_cents, ppm_credit_cents, ppm_credit_granted, ppm_card_declined, stripe_payment_method_id, paidsub_paid_at"
+          "ppm_accepted_at, ppm_messages_used, ppm_credit_cents, ppm_credit_granted, paidsub_paid_at"
         )
         .eq("id", chatId)
         .maybeSingle();
@@ -173,66 +175,45 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "Chat not found" }, { status: 404 });
       }
       // PaidSub: a one-time payment bought unlimited messaging — skip all
-      // metering (no credit spend, no billing, no gating).
+      // metering (no token spend, no gating).
       if (!chatRow.paidsub_paid_at) {
-      // Popup on: fan must accept first. Popup off: grant credit silently.
-      if (!chatRow.ppm_accepted_at && ppm.showPopup) {
-        return NextResponse.json(
-          { error: "Accept the chat terms to start messaging", ppm: "accept" },
-          { status: 402 }
-        );
-      }
-      const granted = await ensurePpmCredit({
-        chatId,
-        freeCreditCents: ppm.freeCreditCents,
-        priceCents: ppm.priceCents,
-        chat: chatRow,
-        silentAccept: !ppm.showPopup,
-      });
-      if (!granted.accepted) {
-        return NextResponse.json(
-          { error: "Accept the chat terms to start messaging", ppm: "accept" },
-          { status: 402 }
-        );
-      }
-      let credit = granted.creditCents;
-      const price = ppm.priceCents;
-      const fromCredit = Math.min(credit, price);
-      const billable = price - fromCredit;
-      if (billable > 0 && !chatRow.stripe_payment_method_id) {
-        return NextResponse.json(
-          { error: "Add your card to keep chatting", ppm: "card" },
-          { status: 402 }
-        );
-      }
-      if (billable > 0 && chatRow.ppm_card_declined) {
-        return NextResponse.json(
-          { error: "Payment failed. Please add another payment detail", ppm: "declined" },
-          { status: 402 }
-        );
-      }
-      const nextCredit = credit - fromCredit;
-      const nextBalance =
-        billable > 0
-          ? (chatRow.ppm_balance_cents ?? 0) + billable
-          : (chatRow.ppm_balance_cents ?? 0);
-      await db
-        .from("chats")
-        .update({
-          ppm_messages_used: (chatRow.ppm_messages_used ?? 0) + 1,
-          ppm_credit_cents: nextCredit,
-          ...(billable > 0 ? { ppm_balance_cents: nextBalance } : {}),
-        })
-        .eq("id", chatId);
-      // Creator + fan headers update the remaining free money immediately.
-      after(() =>
-        broadcast(`chat:${chatId}`, "ppm-balance", {
-          creditCents: nextCredit,
-          balanceCents: nextBalance,
-          declined: false,
-        })
-      );
-      if (billable > 0) after(() => settlePpmBalance(chatId));
+        // Popup on: fan must accept first. Popup off: grant Tokens silently.
+        if (!chatRow.ppm_accepted_at && ppm.showPopup) {
+          return NextResponse.json(
+            { error: "Accept the chat terms to start messaging", ppm: "accept" },
+            { status: 402 }
+          );
+        }
+        const granted = await grantPpmTokens({
+          chatId,
+          freeCreditCents: ppm.freeCreditCents,
+          chat: chatRow,
+          silentAccept: !ppm.showPopup,
+        });
+        if (!granted.accepted) {
+          return NextResponse.json(
+            { error: "Accept the chat terms to start messaging", ppm: "accept" },
+            { status: 402 }
+          );
+        }
+        const tokens = tokensForCents(ppm.priceCents);
+        const balance = await spendTokens({ chatId, tokens, kind: "unlock" });
+        if (balance === null) {
+          return NextResponse.json(
+            {
+              error: "Top up your wallet to keep chatting",
+              ppm: "topup",
+              needTokens: tokens,
+              balance: await tokenBalance(chatId),
+            },
+            { status: 402 }
+          );
+        }
+        balanceAfterSend = balance;
+        await db
+          .from("chats")
+          .update({ ppm_messages_used: (chatRow.ppm_messages_used ?? 0) + 1 })
+          .eq("id", chatId);
       }
     }
   }
@@ -296,7 +277,11 @@ export async function POST(req: NextRequest) {
     after(() => notifyGuestSms(chatId, origin));
   }
 
-  return NextResponse.json({ message });
+  return NextResponse.json({
+    message,
+    // Pay per Message spent Tokens — the client updates its wallet display.
+    ...(balanceAfterSend !== null ? { balance: balanceAfterSend } : {}),
+  });
 }
 
 /** Toggle the blur lock on a media message. Only the sender may do this. */

@@ -387,7 +387,7 @@ export default function MassMessage({
                     <>
                       <span className="text-[11px] text-fg/80">
                         {blurDrainer.priceCents > 0
-                          ? `${blurDrainer.layers} layers · $${(blurDrainer.priceCents / 100).toFixed(2).replace(/\.00$/, "")}/tap`
+                          ? `${blurDrainer.layers} layers · ${Math.ceil(blurDrainer.priceCents / 10)} Tokens/tap`
                           : "FREE (card verify)"}
                       </span>
                       <button
