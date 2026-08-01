@@ -112,6 +112,7 @@ export default function ChatView({
   const [tipping, setTipping] = useState(false);
   // Token wallet (guest side): balance, the top-up sheet, and why it opened.
   const [balance, setBalance] = useState<number | null>(null);
+  const balanceRef = useRef<number | null>(null);
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNote, setWalletNote] = useState<string | null>(null);
   const [toppingUp, setToppingUp] = useState<string | null>(null);
@@ -538,14 +539,21 @@ export default function ChatView({
       if (res.ok) {
         const data = await res.json();
         if (typeof data.balance === "number") {
-          setBalance(data.balance);
-          queueMicrotask(() =>
-            window.dispatchEvent(
-              new CustomEvent("loly-wallet", {
-                detail: { chatId, balance: data.balance },
-              })
-            )
-          );
+          const nextBal = data.balance as number;
+          const changed = balanceRef.current !== nextBal;
+          balanceRef.current = nextBal;
+          setBalance(nextBal);
+          // Only notify the header when the number actually changes — never
+          // on the quiet 5s poll, so the bubble doesn't keep reappearing.
+          if (changed) {
+            queueMicrotask(() =>
+              window.dispatchEvent(
+                new CustomEvent("loly-wallet", {
+                  detail: { chatId, balance: nextBal },
+                })
+              )
+            );
+          }
         }
         setFirstOffer(!!data.firstTopupOffer);
         if (data.offer) setOffer(data.offer);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { mediaUrl } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { IconMapPin, IconTip, IconUser, IconVerified } from "./Icons";
@@ -10,8 +10,8 @@ import { IconMapPin, IconTip, IconUser, IconVerified } from "./Icons";
  * creator flipped this chat's switch to "appear offline" — changes arrive
  * live over the chat's realtime channel.
  *
- * Wallet button shows a self-hiding token-balance bubble; a second tap (or
- * the "Top up" path from ChatView) opens the full wallet sheet via event.
+ * Wallet button shows a self-hiding token-balance bubble on tap only.
+ * Double-tap opens the full wallet sheet via event.
  */
 export default function GuestChatHeader({
   chatId,
@@ -33,22 +33,23 @@ export default function GuestChatHeader({
     key: number;
     balance: number | null;
   } | null>(null);
+  // Quiet cache from ChatView's wallet poll — never auto-opens the bubble.
+  const balanceCache = useRef<number | null>(null);
 
   async function showWalletBubble() {
     if (!chatId) return;
     const key = Date.now();
-    setBubble({ key, balance: null });
+    setBubble({ key, balance: balanceCache.current });
     try {
       const res = await fetch(`/api/payments/wallet?chatId=${chatId}`);
       const data = await res.json();
       if (res.ok) {
+        const bal = Number(data.balance ?? 0);
+        balanceCache.current = bal;
         const slow = Date.now() - key > 800;
         setBubble((b) =>
           b && b.key === key
-            ? {
-                key: slow ? Date.now() : key,
-                balance: Number(data.balance ?? 0),
-              }
+            ? { key: slow ? Date.now() : key, balance: bal }
             : b
         );
       }
@@ -75,8 +76,8 @@ export default function GuestChatHeader({
   useEffect(() => {
     function onWallet(e: Event) {
       const d = (e as CustomEvent).detail as { balance?: number } | null;
-      if (typeof d?.balance !== "number") return;
-      setBubble({ key: Date.now(), balance: d.balance });
+      // Cache only — the bubble is tap-to-reveal, never auto-pop from polls.
+      if (typeof d?.balance === "number") balanceCache.current = d.balance;
     }
     window.addEventListener("loly-wallet", onWallet);
     return () => window.removeEventListener("loly-wallet", onWallet);
