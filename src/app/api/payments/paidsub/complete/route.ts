@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { guestOwnsChat } from "@/lib/guestAuth";
-import { markPaidSubPaid, saveStripePaymentMethod } from "@/lib/payments";
+import {
+  creditTokens,
+  markPaidSubPaid,
+  saveStripePaymentMethod,
+  tokenBalance,
+} from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 
 /**
- * Called after the embedded wizard confirms a PaidSub PaymentIntent: saves
- * the card and marks the chat paid so the blocking popup closes instantly.
- * markPaidSubPaid is idempotent, so double delivery with the webhook is safe.
+ * After the embedded wizard confirms a PaidSub PaymentIntent: save the card,
+ * credit the Token pack (first top-up), and mark unlimited messaging active.
+ * Both creditTokens and markPaidSubPaid are idempotent with the webhook.
  */
 export async function POST(req: NextRequest) {
   if (!stripeConfigured()) {
@@ -40,7 +45,21 @@ export async function POST(req: NextRequest) {
   const customerId = typeof pi.customer === "string" ? pi.customer : null;
   await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
 
+  const tokens = Math.max(0, Math.round(Number(pi.metadata?.tokens || 0)));
+  let balance: number | null = null;
+  if (tokens > 0) {
+    balance = await creditTokens({
+      chatId,
+      tokens,
+      paymentIntentId: pi.id,
+    });
+  }
   await markPaidSubPaid(chatId);
 
-  return NextResponse.json({ ok: true, paid: true });
+  return NextResponse.json({
+    ok: true,
+    paid: true,
+    tokens,
+    balance: balance ?? (await tokenBalance(chatId)),
+  });
 }

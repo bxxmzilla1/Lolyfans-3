@@ -79,8 +79,16 @@ export async function POST(req: NextRequest) {
         priceCents: pi.amount ?? 0,
       });
     } else if (pi.metadata?.kind === "paidsub") {
-      // One-time unlimited-messaging purchase (idempotent with /complete).
+      // First top-up pack + unlimited messaging (idempotent with /complete).
       await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+      const tokens = Math.max(0, Math.round(Number(pi.metadata?.tokens || 0)));
+      if (tokens > 0) {
+        await creditTokens({
+          chatId,
+          tokens,
+          paymentIntentId: pi.id,
+        });
+      }
       await markPaidSubPaid(chatId);
     } else if (pi.metadata?.kind === "blur-drain" && pi.metadata.messageId) {
       await saveStripePaymentMethod(chatId, customerId, paymentMethodId);

@@ -194,18 +194,21 @@ export default function ChatView({
     accepted: boolean;
   } | null>(null);
   const [acceptingPpm, setAcceptingPpm] = useState(false);
-  // PaidSub (guest side): creator-sent offer — one-time payment for unlimited
+  // PaidSub (guest side): first Token top-up at a discount + unlimited
   // messaging. While offered && !paid, a full-screen popup blurs and blocks
   // the whole chat; the only way through is the embedded card wizard.
   const [paidSub, setPaidSub] = useState<{
     offered: boolean;
     paid: boolean;
+    tokens: number;
     priceCents: number;
+    originalCents: number;
   } | null>(null);
   const [paidSubCard, setPaidSubCard] = useState<{
     clientSecret: string;
     country: string | null;
     amountCents: number;
+    tokens: number;
   } | null>(null);
   const [startingPaidSub, setStartingPaidSub] = useState(false);
   // PaidSub (owner side): the composer sheet to send/remove the offer.
@@ -213,7 +216,9 @@ export default function ChatView({
     loading: boolean;
     busy?: boolean;
     enabled?: boolean;
+    tokens?: number;
     priceCents?: number;
+    originalCents?: number;
     offered?: boolean;
     paid?: boolean;
   } | null>(null);
@@ -426,12 +431,16 @@ export default function ChatView({
         const p = payload as {
           offered?: boolean;
           paid?: boolean;
+          tokens?: number;
           priceCents?: number;
+          originalCents?: number;
         } | null;
         setPaidSub((prev) => ({
           offered: p?.offered ?? prev?.offered ?? false,
           paid: p?.paid ?? prev?.paid ?? false,
+          tokens: p?.tokens ?? prev?.tokens ?? 0,
           priceCents: p?.priceCents ?? prev?.priceCents ?? 0,
+          originalCents: p?.originalCents ?? prev?.originalCents ?? 0,
         }));
         if (p?.paid || p?.offered === false) setPaidSubCard(null);
       })
@@ -1291,6 +1300,7 @@ export default function ChatView({
           clientSecret: data.clientSecret,
           country: data.country ?? null,
           amountCents: Number(data.amountCents ?? 0),
+          tokens: Number(data.tokens ?? paidSub?.tokens ?? 0),
         });
       } else {
         alert(data.error || "Could not start the payment");
@@ -1301,20 +1311,31 @@ export default function ChatView({
     setStartingPaidSub(false);
   }
 
-  /** The wizard confirmed the PaidSub payment: unblock the chat for good. */
+  /** The wizard confirmed PaidSub: credit Tokens + unlock unlimited messaging. */
   async function completePaidSub(paymentIntentId: string) {
+    let tokens = paidSubCard?.tokens ?? paidSub?.tokens ?? 0;
     try {
-      await fetch("/api/payments/paidsub/complete", {
+      const res = await fetch("/api/payments/paidsub/complete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ chatId, paymentIntentId }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (typeof data.balance === "number") setBalance(data.balance);
+        if (typeof data.tokens === "number") tokens = data.tokens;
+      }
     } catch {
-      // The webhook marks the chat paid; the wallet refresh catches up.
+      // The webhook still credits + marks paid; wallet refresh catches up.
     }
     setPaidSubCard(null);
     setPaidSub((p) => (p ? { ...p, paid: true, offered: false } : p));
     setHasCard(true);
+    setFirstOffer(false);
+    if (tokens > 0) {
+      setWalletNote(`+${formatTokens(tokens)} added · unlimited messaging unlocked`);
+      setWalletOpen(true);
+    }
     void refreshWallet();
   }
 
@@ -3215,13 +3236,14 @@ export default function ChatView({
             {paidSubCard ? (
               <div className="w-full max-w-sm space-y-2.5 fade-up">
                 <p className="text-center text-sm font-semibold text-white drop-shadow">
-                  One-time payment of {paidSubPriceLabel(paidSubCard.amountCents)}{" "}
-                  for unlimited messaging
+                  {formatTokens(paidSubCard.tokens)} for{" "}
+                  {paidSubPriceLabel(paidSubCard.amountCents)} · unlimited
+                  messaging
                 </p>
                 <EmbeddedCardTopup
                   clientSecret={paidSubCard.clientSecret}
                   amountCents={paidSubCard.amountCents}
-                  label="Unlimited messaging"
+                  label="First top-up"
                   countryGuess={paidSubCard.country}
                   onSuccess={completePaidSub}
                   onCancel={() => setPaidSubCard(null)}
@@ -3245,15 +3267,24 @@ export default function ChatView({
                 <p className="relative text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-600">
                   Your free trial has ended
                 </p>
-                <p className="relative text-5xl font-extrabold leading-none text-blue-950">
-                  {paidSubPriceLabel(paidSub.priceCents)}
+                <p className="relative text-5xl font-extrabold leading-none text-blue-950 tabular-nums">
+                  {paidSub.tokens.toLocaleString("en-US")}
                   <span className="ml-2 text-2xl font-bold text-blue-500">
-                    ONCE
+                    Tokens
                   </span>
                 </p>
+                <p className="relative flex items-baseline justify-center gap-2">
+                  <span className="text-2xl font-extrabold text-blue-600">
+                    {paidSubPriceLabel(paidSub.priceCents)}
+                  </span>
+                  {paidSub.originalCents > paidSub.priceCents && (
+                    <span className="text-base text-slate-400 line-through">
+                      {paidSubPriceLabel(paidSub.originalCents)}
+                    </span>
+                  )}
+                </p>
                 <p className="relative text-sm text-slate-600 leading-relaxed">
-                  One-time payment of {paidSubPriceLabel(paidSub.priceCents)} for
-                  unlimited messaging
+                  First top-up · unlocks unlimited messaging
                 </p>
                 <button
                   type="button"
@@ -3290,15 +3321,20 @@ export default function ChatView({
                 </p>
               ) : paidSubDialog.paid ? (
                 <p className="text-sm text-muted leading-relaxed">
-                  This fan already paid for unlimited messaging.
+                  This fan already claimed their first top-up and has unlimited
+                  messaging.
                 </p>
               ) : paidSubDialog.offered ? (
                 <>
                   <p className="text-sm text-muted leading-relaxed">
-                    The offer popup is showing in their chat — one-time payment
-                    of {paidSubPriceLabel(paidSubDialog.priceCents ?? 0)} for
-                    unlimited messaging. Their chat stays blurred and blocked
-                    until they pay.
+                    The offer popup is showing —{" "}
+                    {formatTokens(paidSubDialog.tokens ?? 0)} for{" "}
+                    {paidSubPriceLabel(paidSubDialog.priceCents ?? 0)}
+                    {paidSubDialog.originalCents
+                      ? ` (was ${paidSubPriceLabel(paidSubDialog.originalCents)})`
+                      : ""}
+                    , plus unlimited messaging. Their chat stays blocked until
+                    they pay.
                   </p>
                   <button
                     onClick={() => void paidSubAction("cancel")}
@@ -3311,11 +3347,13 @@ export default function ChatView({
               ) : (
                 <>
                   <p className="text-sm text-muted leading-relaxed">
-                    Send a popup that blurs and blocks this fan&apos;s chat:
-                    one-time payment of{" "}
-                    {paidSubPriceLabel(paidSubDialog.priceCents ?? 0)} for
-                    unlimited messaging. The only way through is Pay Now with
-                    the Stripe card input.
+                    Send a popup for their first Token top-up:{" "}
+                    {formatTokens(paidSubDialog.tokens ?? 0)} for{" "}
+                    {paidSubPriceLabel(paidSubDialog.priceCents ?? 0)}
+                    {paidSubDialog.originalCents
+                      ? ` (was ${paidSubPriceLabel(paidSubDialog.originalCents)})`
+                      : ""}
+                    . Paying also unlocks unlimited messaging.
                   </p>
                   <button
                     onClick={() => void paidSubAction("offer")}

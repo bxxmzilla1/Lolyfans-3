@@ -31,7 +31,9 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     enabled: cfg.enabled,
+    tokens: cfg.tokens,
     priceCents: cfg.priceCents,
+    originalCents: cfg.originalCents,
     offered: !!chat.paidsub_offer_at,
     paid: !!chat.paidsub_paid_at,
   });
@@ -74,9 +76,18 @@ export async function POST(req: NextRequest) {
     await broadcast(`chat:${chatId}`, "paidsub", {
       offered: true,
       paid: false,
+      tokens: cfg.tokens,
       priceCents: cfg.priceCents,
+      originalCents: cfg.originalCents,
     });
-    return NextResponse.json({ ok: true, offered: true, paid: false });
+    return NextResponse.json({
+      ok: true,
+      offered: true,
+      paid: false,
+      tokens: cfg.tokens,
+      priceCents: cfg.priceCents,
+      originalCents: cfg.originalCents,
+    });
   }
 
   if (action === "cancel") {

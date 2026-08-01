@@ -5,11 +5,12 @@ import { ensureStripeCustomer } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { visitorCountryCode } from "@/lib/geo";
 import { paidSubFromMetadata } from "@/lib/paidSub";
+import { formatTokens } from "@/lib/tokens";
 
 /**
- * PaidSub "Pay Now": a PaymentIntent for the one-time unlimited-messaging
- * price, confirmed in the embedded card wizard inside the blocking popup.
- * The card is saved for one-tap purchases afterwards.
+ * PaidSub "Pay Now": PaymentIntent for the discounted first top-up pack.
+ * Paying credits Tokens and unlocks unlimited messaging. Card is saved for
+ * one-tap purchases afterwards.
  */
 export async function POST(req: NextRequest) {
   if (!stripeConfigured()) {
@@ -39,6 +40,9 @@ export async function POST(req: NextRequest) {
 
   const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
   const cfg = paidSubFromMetadata(ownerUser?.user?.user_metadata ?? {});
+  if (!cfg.enabled || cfg.tokens <= 0 || cfg.priceCents <= 0) {
+    return NextResponse.json({ error: "Offer is not available" }, { status: 400 });
+  }
 
   const customerId = await ensureStripeCustomer(chatId);
   const pi = await stripe().paymentIntents.create({
@@ -47,13 +51,19 @@ export async function POST(req: NextRequest) {
     customer: customerId,
     payment_method_types: ["card"],
     setup_future_usage: "off_session",
-    metadata: { chatId, kind: "paidsub" },
-    description: "Unlimited messaging",
+    metadata: {
+      chatId,
+      kind: "paidsub",
+      tokens: String(cfg.tokens),
+    },
+    description: `First top-up · ${formatTokens(cfg.tokens)} + unlimited messaging`,
   });
 
   return NextResponse.json({
     clientSecret: pi.client_secret,
     amountCents: cfg.priceCents,
+    tokens: cfg.tokens,
+    originalCents: cfg.originalCents,
     country: await visitorCountryCode(req.headers),
   });
 }

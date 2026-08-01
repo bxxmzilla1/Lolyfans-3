@@ -89,8 +89,9 @@ export async function GET(req: NextRequest) {
     paidSub: {
       offered: paidSub.enabled && !!chat?.paidsub_offer_at && !paidSubPaid,
       paid: paidSubPaid,
+      tokens: paidSub.tokens,
       priceCents: paidSub.priceCents,
-      priceTokens: tokensForCents(paidSub.priceCents),
+      originalCents: paidSub.originalCents,
     },
   });
 }

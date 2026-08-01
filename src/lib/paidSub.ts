@@ -1,22 +1,40 @@
 /**
- * PaidSub: the creator can push a popup into a fan's chat offering unlimited
- * messaging for a one-time payment (default $5). The popup blurs and blocks
- * the whole chat until the fan pays through the embedded Stripe card input.
- * Once paid, Pay per Message metering is skipped for that chat forever.
+ * PaidSub: the creator can push a popup into a fan's chat offering their
+ * first Token top-up at a discount — paying also unlocks unlimited messaging
+ * (Pay per Message metering is skipped for that chat forever).
  */
 export type PaidSub = {
   enabled: boolean;
-  /** One-time price for unlimited messaging, in cents. */
+  /** Tokens credited on payment (their first top-up pack). */
+  tokens: number;
+  /** Discounted price the fan pays, in cents. */
   priceCents: number;
+  /** Struck-through "was" price shown next to the offer. */
+  originalCents: number;
 };
+
+export const DEFAULT_PAID_SUB: PaidSub = {
+  enabled: false,
+  tokens: 1300,
+  priceCents: 499,
+  originalCents: 999,
+};
+
+function positiveInt(value: unknown, fallback: number): number {
+  const n = Math.round(Number(value));
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
 
 /** Read a creator's PaidSub config from their auth user_metadata. */
 export function paidSubFromMetadata(meta: Record<string, unknown>): PaidSub {
-  const priceCents =
-    Math.max(0, Math.round(Number(meta.paidsub_price_cents)) || 0) || 500;
   return {
     enabled: meta.paidsub_enabled === true,
-    priceCents,
+    tokens: positiveInt(meta.paidsub_tokens, DEFAULT_PAID_SUB.tokens),
+    priceCents: positiveInt(meta.paidsub_price_cents, DEFAULT_PAID_SUB.priceCents),
+    originalCents: positiveInt(
+      meta.paidsub_original_cents,
+      DEFAULT_PAID_SUB.originalCents
+    ),
   };
 }
 
