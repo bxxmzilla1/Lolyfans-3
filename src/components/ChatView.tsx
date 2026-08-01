@@ -35,6 +35,7 @@ import {
   type VerifyPopup,
   type WelcomeOffer,
 } from "@/lib/popupOffer";
+import { formatCouponMessage } from "@/lib/coupon";
 import { paidSubPriceLabel } from "@/lib/paidSub";
 import {
   IconBack,
@@ -165,6 +166,10 @@ export default function ChatView({
     original: string;
   } | null>(null);
   const [sendingOffer, setSendingOffer] = useState(false);
+  const [claimingCouponId, setClaimingCouponId] = useState<string | null>(null);
+  const [redeemedCoupons, setRedeemedCoupons] = useState<Set<string>>(
+    () => new Set()
+  );
   const [payLinkDialog, setPayLinkDialog] = useState<{
     tokens: string;
     price: string;
@@ -929,8 +934,16 @@ export default function ChatView({
     setReplyTo(null);
   }
 
+  const openWalletGuardRef = useRef(0);
   /** Open the top-up sheet, optionally explaining why (e.g. short on tokens). */
   function openWallet(note?: string) {
+    const now = Date.now();
+    // Collapse rapid double-opens (header tap + shortfall, or mobile double-fire).
+    if (walletOpen && now - openWalletGuardRef.current < 800) {
+      if (note) setWalletNote(note);
+      return;
+    }
+    openWalletGuardRef.current = now;
     setWalletNote(note ?? null);
     setWalletOpen(true);
   }
@@ -1029,6 +1042,14 @@ export default function ChatView({
     setWelcomeOfferPopup(false);
     if (claim === "custom") setCustomOffer(null);
     setCustomOfferPopup(false);
+    let couponId: string | null = null;
+    try {
+      couponId = sessionStorage.getItem("lf-pending-coupon");
+      sessionStorage.removeItem("lf-pending-coupon");
+    } catch {}
+    if (couponId) {
+      setRedeemedCoupons((prev) => new Set(prev).add(couponId!));
+    }
     const pendingId = pendingUnlockIdRef.current;
     if (pendingId) {
       pendingUnlockIdRef.current = null;
@@ -1048,23 +1069,86 @@ export default function ChatView({
       alert("Enter the tokens, price and original price.");
       return;
     }
+    if (originalCents < priceCents) {
+      alert("Original price should be higher than the discounted price.");
+      return;
+    }
     setSendingOffer(true);
     try {
-      const res = await fetch("/api/chats/offer", {
+      const content = formatCouponMessage({
+        id: crypto.randomUUID(),
+        tokens,
+        priceCents,
+        originalCents,
+      });
+      const res = await fetch("/api/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, tokens, priceCents, originalCents }),
+        body: JSON.stringify({ chatId, content }),
       });
       const data = await res.json().catch(() => ({}));
-      if (res.ok) {
+      if (res.ok && data.message) {
+        setMessages((prev) =>
+          prev.some((m) => m.id === data.message.id)
+            ? prev
+            : [...prev, data.message]
+        );
         setOfferDialog(null);
       } else {
-        alert(data.error || "Could not send the offer");
+        alert(data.error || "Could not send the coupon");
       }
     } catch {
-      alert("Could not send the offer");
+      alert("Could not send the coupon");
     }
     setSendingOffer(false);
+  }
+
+  /** Fan claims a coupon bubble — one-time discounted token pack. */
+  async function claimCoupon(messageId: string) {
+    if (claimingCouponId || role !== "guest") return;
+    setClaimingCouponId(messageId);
+    try {
+      const res = await fetch("/api/payments/topup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chatId,
+          couponMessageId: messageId,
+          embedded: elementsEnabled(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.topped) {
+        if (typeof data.balance === "number") setBalance(data.balance);
+        setRedeemedCoupons((prev) => new Set(prev).add(messageId));
+        setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
+        setWalletOpen(true);
+      } else if (res.ok && data.clientSecret) {
+        setCardTopup({
+          clientSecret: data.clientSecret,
+          amountCents: Number(data.amountCents ?? 0),
+          tokens: Number(data.tokens ?? 0),
+          country: data.country ?? null,
+        });
+        // Remember which coupon this card wizard is for so complete can mark it.
+        pendingUnlockIdRef.current = null;
+        sessionStorage.setItem("lf-pending-coupon", messageId);
+      } else if (res.ok && data.checkoutUrl) {
+        try {
+          sessionStorage.setItem("lf-pending-coupon", messageId);
+        } catch {}
+        window.location.href = data.checkoutUrl;
+        return;
+      } else if (res.status === 410) {
+        setRedeemedCoupons((prev) => new Set(prev).add(messageId));
+        alert(data.error || "This coupon has already been used");
+      } else {
+        alert(data.error || "Could not claim coupon");
+      }
+    } catch {
+      alert("Could not claim coupon");
+    }
+    setClaimingCouponId(null);
   }
 
   async function createPayLink() {
@@ -1794,6 +1878,9 @@ export default function ChatView({
             onOpenBlurDrainer={
               role === "guest" ? (m) => setDrainPlayer(m) : undefined
             }
+            onClaimCoupon={role === "guest" ? claimCoupon : undefined}
+            claimingCoupon={claimingCouponId === m.id}
+            couponRedeemed={redeemedCoupons.has(m.id)}
           />
         ))}
         {peerTyping && (
@@ -2225,8 +2312,8 @@ export default function ChatView({
                   ? "bg-accent text-white glow-accent"
                   : "bg-transparent border border-line text-muted hover:text-fg"
               }`}
-              aria-label="Send a one-time offer"
-              title="Send this fan a custom one-time offer popup"
+              aria-label="Send a coupon"
+              title="Send this fan a one-time Token coupon"
             >
               %
             </button>
@@ -2610,10 +2697,10 @@ export default function ChatView({
               onClick={(e) => e.stopPropagation()}
             >
               <div>
-                <p className="font-bold">Send a one-time offer</p>
+                <p className="font-bold">Send a coupon</p>
                 <p className="text-xs text-muted mt-0.5">
-                  This fan gets a personal popup, shown once, presented as a
-                  platform offer — not as a message from you.
+                  Appears as a bubble card in chat. The fan can claim it once
+                  for the discounted Token pack.
                 </p>
               </div>
               <div className="space-y-1.5">
@@ -2676,7 +2763,7 @@ export default function ChatView({
                   disabled={sendingOffer}
                   className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
                 >
-                  {sendingOffer ? "Sending…" : "Send offer"}
+                  {sendingOffer ? "Sending…" : "Send coupon"}
                 </button>
               </div>
             </div>

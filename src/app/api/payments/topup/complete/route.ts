@@ -52,7 +52,16 @@ export async function POST(req: NextRequest) {
   const customerId = typeof pi.customer === "string" ? pi.customer : null;
   await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
 
-  const balance = await creditTokens({ chatId, tokens, paymentIntentId: pi.id });
+  const couponMessageId =
+    typeof pi.metadata?.couponMessageId === "string"
+      ? pi.metadata.couponMessageId
+      : null;
+  const balance = await creditTokens({
+    chatId,
+    tokens,
+    paymentIntentId: pi.id,
+    messageId: couponMessageId,
+  });
 
   // A claimed creator-sent offer is single-use: clear it once paid.
   if (pi.metadata?.customOffer === "1") {

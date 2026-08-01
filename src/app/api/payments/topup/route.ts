@@ -8,6 +8,7 @@ import {
   formatTokens,
   FIRST_TOPUP_OFFER_PACK_ID,
 } from "@/lib/tokens";
+import { parseCouponMessage } from "@/lib/coupon";
 import { popupOfferFromMetadata, welcomeOfferFromMetadata } from "@/lib/popupOffer";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { requestOrigin } from "@/lib/smsNotify";
@@ -17,21 +18,24 @@ import Stripe from "stripe";
 /**
  * Token top-up. One-tap: with a saved card the pack is charged off-session
  * and credited instantly. First purchase goes through Stripe Checkout, which
- * saves the card so every later top-up is one tap.
+ * saves the card so every later top-up is one tap. Also redeems creator-sent
+ * coupon messages (couponMessageId) as a one-time discounted pack.
  */
 export async function POST(req: NextRequest) {
   if (!stripeConfigured()) {
     return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
   }
 
-  const { chatId, packId, returnTo, claimOffer, embedded } = await req.json();
-  if (!chatId || !packId) {
-    return NextResponse.json({ error: "chatId and packId required" }, { status: 400 });
+  const { chatId, packId, returnTo, claimOffer, embedded, couponMessageId } =
+    await req.json();
+  if (!chatId || (!packId && !couponMessageId)) {
+    return NextResponse.json(
+      { error: "chatId and packId (or couponMessageId) required" },
+      { status: 400 }
+    );
   }
   // Where Checkout drops the fan afterwards: the chat (default) or the Wallet tab.
   const returnPath = returnTo === "profile" ? "/profile" : "/chat";
-  const pack = packById(String(packId));
-  if (!pack) return NextResponse.json({ error: "Unknown pack" }, { status: 400 });
 
   if (!(await guestOwnsChat(req.headers, chatId))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -48,18 +52,57 @@ export async function POST(req: NextRequest) {
   const origin = requestOrigin(req.headers);
   const s = stripe();
 
+  // Chat coupon bubble: one-time claim priced from the message body.
+  let couponMsgId: string | null = null;
+  let couponTokens = 0;
+  let couponPrice = 0;
+  let couponOriginal = 0;
+  if (couponMessageId) {
+    const { data: msg } = await db
+      .from("messages")
+      .select("id, chat_id, sender, content")
+      .eq("id", couponMessageId)
+      .eq("chat_id", chatId)
+      .maybeSingle();
+    const coupon = parseCouponMessage(msg?.content);
+    if (!msg || msg.sender !== "owner" || !coupon) {
+      return NextResponse.json({ error: "Coupon not found" }, { status: 404 });
+    }
+    const { count: redeemed } = await db
+      .from("token_transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("chat_id", chatId)
+      .eq("message_id", msg.id)
+      .eq("kind", "topup");
+    if ((redeemed ?? 0) > 0) {
+      return NextResponse.json(
+        { error: "This coupon has already been used" },
+        { status: 410 }
+      );
+    }
+    couponMsgId = msg.id;
+    couponTokens = coupon.tokens;
+    couponPrice = coupon.priceCents;
+    couponOriginal = coupon.originalCents;
+  }
+
   // Creator-sent custom offer for this fan: priced from the stored offer,
   // regardless of any earlier top-ups. Cleared once the payment lands.
   const customOffer =
-    claimOffer === "custom"
+    !couponMsgId && claimOffer === "custom"
       ? (chat.custom_offer as {
           tokens?: number;
           priceCents?: number;
           originalCents?: number;
         } | null)
       : null;
-  if (claimOffer === "custom" && !customOffer) {
+  if (claimOffer === "custom" && !customOffer && !couponMsgId) {
     return NextResponse.json({ error: "This offer is no longer available" }, { status: 410 });
+  }
+
+  const pack = couponMsgId ? null : packById(String(packId));
+  if (!couponMsgId && !pack) {
+    return NextResponse.json({ error: "Unknown pack" }, { status: 400 });
   }
 
   // First-ever top-up buying the VIP pack → the creator's one-time offer.
@@ -70,15 +113,16 @@ export async function POST(req: NextRequest) {
     .eq("chat_id", chatId)
     .eq("kind", "topup");
   let offerApplies =
+    !couponMsgId &&
     !customOffer &&
     claimOffer !== "welcome" &&
     (topupCount ?? 0) === 0 &&
-    pack.id === FIRST_TOPUP_OFFER_PACK_ID;
+    pack!.id === FIRST_TOPUP_OFFER_PACK_ID;
 
   // Welcome offer (post-signup popup): only valid on the fan's very first
   // top-up, priced from the creator's Welcome offer settings server-side.
   let welcomeOffer = null;
-  if (!customOffer && claimOffer === "welcome") {
+  if (!couponMsgId && !customOffer && claimOffer === "welcome") {
     if ((topupCount ?? 0) > 0) {
       return NextResponse.json(
         { error: "This offer is no longer available" },
@@ -96,10 +140,14 @@ export async function POST(req: NextRequest) {
     welcomeOffer = wo;
   }
 
-  let priceCents = pack.priceCents;
-  let tokens = packTotalTokens(pack);
-  let originalCents = pack.priceCents;
-  if (customOffer) {
+  let priceCents = pack?.priceCents ?? 0;
+  let tokens = pack ? packTotalTokens(pack) : 0;
+  let originalCents = pack?.priceCents ?? 0;
+  if (couponMsgId) {
+    priceCents = couponPrice;
+    tokens = couponTokens;
+    originalCents = couponOriginal;
+  } else if (customOffer) {
     priceCents = Math.max(1, Math.round(Number(customOffer.priceCents)));
     tokens = Math.max(1, Math.round(Number(customOffer.tokens)));
     originalCents = Math.max(1, Math.round(Number(customOffer.originalCents)));
@@ -135,11 +183,18 @@ export async function POST(req: NextRequest) {
           chatId,
           kind: "topup",
           tokens: String(tokens),
-          packId: pack.id,
+          packId: pack?.id ?? "coupon",
+          ...(couponMsgId ? { couponMessageId: couponMsgId } : {}),
+          ...(customOffer ? { customOffer: "1" } : {}),
         },
         description: `Top up ${formatTokens(tokens)}`,
       });
-      const balance = await creditTokens({ chatId, tokens, paymentIntentId: pi.id });
+      const balance = await creditTokens({
+        chatId,
+        tokens,
+        paymentIntentId: pi.id,
+        messageId: couponMsgId,
+      });
       if (customOffer) {
         await db.from("chats").update({ custom_offer: null }).eq("id", chatId);
       }
@@ -167,6 +222,14 @@ export async function POST(req: NextRequest) {
   // fall back to hosted Checkout. Both save the card for one-tap next time.
   const customerId = await ensureStripeCustomer(chatId);
 
+  const packMeta = pack?.id ?? "coupon";
+  const offerDesc =
+    couponMsgId || customOffer || welcomeOffer || offerApplies
+      ? `One-time offer — normally $${(originalCents / 100).toFixed(2)}`
+      : pack && pack.bonusTokens > 0
+        ? `${pack.tokens} Tokens + ${pack.bonusTokens} bonus`
+        : "Token top-up";
+
   if (embedded === true) {
     const pi = await s.paymentIntents.create({
       amount: priceCents,
@@ -178,7 +241,8 @@ export async function POST(req: NextRequest) {
         chatId,
         kind: "topup",
         tokens: String(tokens),
-        packId: pack.id,
+        packId: packMeta,
+        ...(couponMsgId ? { couponMessageId: couponMsgId } : {}),
         ...(customOffer ? { customOffer: "1" } : {}),
       },
       description: `Top up ${formatTokens(tokens)}`,
@@ -202,12 +266,7 @@ export async function POST(req: NextRequest) {
           unit_amount: priceCents,
           product_data: {
             name: formatTokens(tokens),
-            description:
-              customOffer || welcomeOffer || offerApplies
-                ? `One-time offer — normally $${(originalCents / 100).toFixed(2)}`
-                : pack.bonusTokens > 0
-                  ? `${pack.tokens} Tokens + ${pack.bonusTokens} bonus`
-                  : "Token top-up",
+            description: offerDesc,
           },
         },
       },
@@ -218,7 +277,8 @@ export async function POST(req: NextRequest) {
         chatId,
         kind: "topup",
         tokens: String(tokens),
-        packId: pack.id,
+        packId: packMeta,
+        ...(couponMsgId ? { couponMessageId: couponMsgId } : {}),
         ...(customOffer ? { customOffer: "1" } : {}),
       },
     },
@@ -226,7 +286,8 @@ export async function POST(req: NextRequest) {
       chatId,
       kind: "topup",
       tokens: String(tokens),
-      packId: pack.id,
+      packId: packMeta,
+      ...(couponMsgId ? { couponMessageId: couponMsgId } : {}),
       ...(customOffer ? { customOffer: "1" } : {}),
     },
     success_url: `${origin}${returnPath}?topup=1&session_id={CHECKOUT_SESSION_ID}`,

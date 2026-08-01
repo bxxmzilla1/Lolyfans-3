@@ -324,6 +324,8 @@ export async function creditTokens(opts: {
   chatId: string;
   tokens: number;
   paymentIntentId: string | null;
+  /** Optional: coupon message id — marks that coupon as redeemed. */
+  messageId?: string | null;
 }): Promise<number | null> {
   const db = supabaseAdmin();
   const { error: ledgerError } = await db.from("token_transactions").insert({
@@ -331,6 +333,7 @@ export async function creditTokens(opts: {
     amount: opts.tokens,
     kind: "topup",
     stripe_payment_intent_id: opts.paymentIntentId,
+    ...(opts.messageId ? { message_id: opts.messageId } : {}),
   });
   // Unique payment-intent index: a duplicate means it was already credited.
   if (ledgerError) return null;
@@ -609,7 +612,16 @@ export async function fulfillCheckout(session: Stripe.Checkout.Session) {
       typeof session.payment_intent === "string"
         ? session.payment_intent
         : session.payment_intent?.id ?? null;
-    await creditTokens({ chatId, tokens, paymentIntentId });
+    const couponMessageId =
+      typeof session.metadata?.couponMessageId === "string"
+        ? session.metadata.couponMessageId
+        : null;
+    await creditTokens({
+      chatId,
+      tokens,
+      paymentIntentId,
+      messageId: couponMessageId,
+    });
     // A claimed creator-sent offer is single-use: clear it once paid.
     if (session.metadata?.customOffer === "1") {
       await supabaseAdmin().from("chats").update({ custom_offer: null }).eq("id", chatId);

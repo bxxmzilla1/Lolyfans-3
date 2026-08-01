@@ -12,6 +12,8 @@ import {
   type MediaItem,
 } from "@/lib/utils";
 import { formatTokens, tokensForCents } from "@/lib/tokens";
+import { parseCouponMessage } from "@/lib/coupon";
+import { offerPriceLabel } from "@/lib/popupOffer";
 import {
   IconBack,
   IconCheck,
@@ -152,6 +154,10 @@ function MessageBubble({
   verifyLock = false,
   onVerifyRequest,
   onOpenBlurDrainer,
+  peerName,
+  onClaimCoupon,
+  claimingCoupon = false,
+  couponRedeemed = false,
 }: {
   message: Message;
   mine: boolean;
@@ -167,7 +173,7 @@ function MessageBubble({
   selectMode?: boolean;
   selected?: boolean;
   onSelectToggle?: (m: Message) => void;
-  /** Creator's display name (unused by the classic locked overlay). */
+  /** Creator's display name — used on coupon cards. */
   peerName?: string;
   /**
    * Verify popup "media trigger": incoming photos/videos render locked until
@@ -177,6 +183,10 @@ function MessageBubble({
   onVerifyRequest?: () => void;
   /** Fan: reopen the BlurDrainer player to keep unblurring. */
   onOpenBlurDrainer?: (m: Message) => void;
+  /** Fan: claim a one-time Token coupon bubble. */
+  onClaimCoupon?: (messageId: string) => void;
+  claimingCoupon?: boolean;
+  couponRedeemed?: boolean;
 }) {
   const mediaItems = mediaItemsFromMessage(message);
   const hasMedia = mediaItems.length > 0;
@@ -249,10 +259,13 @@ function MessageBubble({
   const displayContent = message.content ? stripPaymentReceipt(message.content) : "";
   const tipMatch = displayContent.match(TIP_LINE_RE);
   const isTip = !!tipMatch;
+  const coupon = parseCouponMessage(message.content);
+  const isCoupon = !!coupon;
   // A locked media message whose content is only a hidden link renders no text row.
   const showText =
     !!displayContent &&
     !isTip &&
+    !isCoupon &&
     !(hasMedia && locked && messagePreviewText(displayContent) === "");
 
   const replyPreview = (() => {
@@ -631,6 +644,91 @@ function MessageBubble({
           </div>
         )}
 
+        {isCoupon && coupon && (
+          <div className="px-3.5 py-3.5 min-w-[240px] max-w-[280px]">
+            <p
+              className={`text-[11px] font-semibold uppercase tracking-wide mb-2.5 ${
+                mine ? "text-white/70" : "text-muted"
+              }`}
+            >
+              {mine
+                ? "You sent a one time coupon"
+                : `${peerName || "Creator"} sent you a one time coupon`}
+            </p>
+            <div
+              className={`rounded-2xl px-4 py-3.5 ${
+                mine
+                  ? "bg-white/15 ring-1 ring-white/25"
+                  : "bg-gradient-to-br from-accent/15 to-sky-500/10 ring-1 ring-accent/30"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <span
+                  className={`w-11 h-11 rounded-full flex items-center justify-center shrink-0 ${
+                    mine ? "bg-white/20 text-white" : "bg-accent text-white"
+                  }`}
+                >
+                  <IconTip className="w-5 h-5" />
+                </span>
+                <div className="min-w-0">
+                  <p
+                    className={`text-2xl font-extrabold leading-none tabular-nums ${
+                      mine ? "text-white" : "text-fg"
+                    }`}
+                  >
+                    {coupon.tokens.toLocaleString("en-US")}
+                  </p>
+                  <p
+                    className={`text-xs font-semibold mt-0.5 ${
+                      mine ? "text-white/75" : "text-muted"
+                    }`}
+                  >
+                    Tokens
+                  </p>
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span
+                  className={`text-lg font-extrabold ${
+                    mine ? "text-white" : "text-accent"
+                  }`}
+                >
+                  {offerPriceLabel(coupon.priceCents)}
+                </span>
+                <span
+                  className={`text-sm line-through ${
+                    mine ? "text-white/50" : "text-muted"
+                  }`}
+                >
+                  {offerPriceLabel(coupon.originalCents)}
+                </span>
+              </div>
+              {!mine && onClaimCoupon && (
+                <button
+                  type="button"
+                  disabled={claimingCoupon || couponRedeemed}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onClaimCoupon(message.id);
+                  }}
+                  className="mt-3 w-full rounded-xl bg-accent text-white text-sm font-bold py-2.5 disabled:opacity-60 active:opacity-80"
+                >
+                  {couponRedeemed
+                    ? "Claimed"
+                    : claimingCoupon
+                      ? "Claiming…"
+                      : `Claim for ${offerPriceLabel(coupon.priceCents)}`}
+                </button>
+              )}
+              {mine && (
+                <p className="mt-2.5 text-[11px] text-white/65 font-semibold">
+                  One-time coupon · {offerPriceLabel(coupon.priceCents)}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {showText && displayContent && (
           <p className="px-4 py-2.5 text-[15px] leading-snug whitespace-pre-wrap break-words">
             {renderContent(displayContent, mine, hasMedia, locked)}
@@ -640,7 +738,7 @@ function MessageBubble({
         <p
           className={`px-4 pb-1.5 text-[10px] flex items-center gap-2 ${
             mine ? "text-white/60 justify-end" : "text-muted"
-          } ${!showText && !isTip && hasMedia ? "pt-1.5" : "-mt-1"}`}
+          } ${!showText && !isTip && !isCoupon && hasMedia ? "pt-1.5" : "-mt-1"}`}
         >
           {myPriceLabel && (
             <span className="mr-auto font-semibold">{myPriceLabel}</span>
@@ -678,5 +776,7 @@ export default memo(
     prev.selectMode === next.selectMode &&
     prev.selected === next.selected &&
     prev.peerName === next.peerName &&
-    prev.verifyLock === next.verifyLock
+    prev.verifyLock === next.verifyLock &&
+    prev.claimingCoupon === next.claimingCoupon &&
+    prev.couponRedeemed === next.couponRedeemed
 );

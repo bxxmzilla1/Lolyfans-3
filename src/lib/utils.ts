@@ -52,6 +52,7 @@ export function messagePreviewText(content: string): string {
     .trim();
   const tip = cleaned.match(/^💸 Tip · (\$[\d.]+|[\d,]+ Tokens?)/i);
   if (tip) return `Tip · ${tip[1]}`;
+  if (cleaned.startsWith("🎟️COUPON:")) return "Coupon";
   return cleaned;
 }
 
