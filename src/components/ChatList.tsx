@@ -194,11 +194,13 @@ export default function ChatList() {
   // How many recent chats to render (0 = all) — creator-tunable, persisted.
   const [listLimit, setListLimit] = useState<number>(readStoredListLimit);
   const [massOpen, setMassOpen] = useState(false);
-  // Mass-apply / mass-remove PaidSub across current fans.
-  const [paidSubMassConfirm, setPaidSubMassConfirm] = useState<
+  // Mass PaidSub sheet: pick apply-to-all or remove-from-all.
+  const [paidSubMassConfirm, setPaidSubMassConfirm] = useState<false | "menu">(
+    false
+  );
+  const [paidSubMassBusy, setPaidSubMassBusy] = useState<
     false | "offer" | "remove"
   >(false);
-  const [paidSubMassBusy, setPaidSubMassBusy] = useState(false);
   // Chats whose fan is typing right now (each entry auto-clears after 3s).
   const [typingIds, setTypingIds] = useState<Set<string>>(new Set());
   const typingTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -212,7 +214,7 @@ export default function ChatList() {
    *  clears every pending offer so the blocking popup disappears. */
   async function massPaidSub(action: "offer" | "remove") {
     if (paidSubMassBusy) return;
-    setPaidSubMassBusy(true);
+    setPaidSubMassBusy(action);
     try {
       const res = await fetch("/api/chats/paidsub/mass", {
         method: "POST",
@@ -662,19 +664,12 @@ export default function ChatList() {
             {selectMode ? "Cancel" : "Select"}
           </button>
           <button
-            onClick={() => setPaidSubMassConfirm("offer")}
-            title="Send the PaidSub offer to every current fan without a registered card"
+            onClick={() => setPaidSubMassConfirm("menu")}
+            title="Mass apply or mass remove the PaidSub offer"
             className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted hover:text-fg transition-colors"
           >
             <IconClock className="w-3.5 h-3.5 text-orange-400" />
             PaidSub all
-          </button>
-          <button
-            onClick={() => setPaidSubMassConfirm("remove")}
-            title="Remove the PaidSub popup from every fan who still has it pending"
-            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted hover:text-fg transition-colors"
-          >
-            Remove PaidSub
           </button>
         </div>
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
@@ -1043,70 +1038,42 @@ export default function ChatList() {
               className="w-full max-w-xs bg-card border border-line rounded-2xl p-4 space-y-3 fade-up"
             >
               <div className="flex items-center gap-2.5">
-                <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
-                    paidSubMassConfirm === "remove"
-                      ? "bg-red-500/15 border-red-500/30"
-                      : "bg-orange-500/15 border-orange-500/30"
-                  }`}
-                >
-                  <IconClock
-                    className={`w-4.5 h-4.5 ${
-                      paidSubMassConfirm === "remove"
-                        ? "text-red-400"
-                        : "text-orange-400"
-                    }`}
-                  />
+                <div className="w-9 h-9 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center shrink-0">
+                  <IconClock className="w-4.5 h-4.5 text-orange-400" />
                 </div>
-                <p className="font-bold">
-                  {paidSubMassConfirm === "remove"
-                    ? "Remove PaidSub"
-                    : "Mass PaidSub"}
-                </p>
+                <p className="font-bold">Mass PaidSub</p>
               </div>
               <p className="text-sm text-muted leading-relaxed">
-                {paidSubMassConfirm === "remove" ? (
-                  <>
-                    Removes the PaidSub popup from every fan who still has it
-                    pending. Fans who already paid keep unlimited messaging.
-                    Their chats unblock immediately.
-                  </>
-                ) : (
-                  <>
-                    Sends the PaidSub popup to every <b>current</b> fan without
-                    a registered card. Their chats stay blurred and blocked
-                    until they pay. New fans who join later are not included.
-                  </>
-                )}
+                <b>Apply to all</b> sends the PaidSub popup to every{" "}
+                <b>current</b> fan without a registered card — their chats stay
+                blocked until they pay. <b>Remove from all</b> takes the popup
+                down from everyone who hasn&apos;t paid yet, unblocking their
+                chats. Fans who already paid keep unlimited messaging either
+                way.
               </p>
-              <div className="flex gap-2">
+              <div className="space-y-2">
                 <button
-                  onClick={() => setPaidSubMassConfirm(false)}
-                  disabled={paidSubMassBusy}
-                  className="flex-1 bg-card2 border border-line rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                  onClick={() => void massPaidSub("offer")}
+                  disabled={!!paidSubMassBusy}
+                  className="w-full bg-accent text-white rounded-xl py-2.5 text-sm font-semibold active:opacity-80 transition-opacity disabled:opacity-50"
                 >
-                  Cancel
+                  {paidSubMassBusy === "offer" ? "Applying…" : "Apply to all"}
                 </button>
                 <button
-                  onClick={() =>
-                    void massPaidSub(
-                      paidSubMassConfirm === "remove" ? "remove" : "offer"
-                    )
-                  }
-                  disabled={paidSubMassBusy}
-                  className={`flex-1 text-white rounded-xl py-2.5 text-sm font-semibold active:opacity-80 transition-opacity disabled:opacity-50 ${
-                    paidSubMassConfirm === "remove"
-                      ? "bg-red-500"
-                      : "bg-accent"
-                  }`}
+                  onClick={() => void massPaidSub("remove")}
+                  disabled={!!paidSubMassBusy}
+                  className="w-full bg-red-500 text-white rounded-xl py-2.5 text-sm font-semibold active:opacity-80 transition-opacity disabled:opacity-50"
                 >
-                  {paidSubMassBusy
-                    ? paidSubMassConfirm === "remove"
-                      ? "Removing…"
-                      : "Applying…"
-                    : paidSubMassConfirm === "remove"
-                      ? "Remove all"
-                      : "Apply"}
+                  {paidSubMassBusy === "remove"
+                    ? "Removing…"
+                    : "Remove from all"}
+                </button>
+                <button
+                  onClick={() => setPaidSubMassConfirm(false)}
+                  disabled={!!paidSubMassBusy}
+                  className="w-full bg-card2 border border-line rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
+                >
+                  Cancel
                 </button>
               </div>
             </div>
