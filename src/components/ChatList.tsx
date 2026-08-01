@@ -194,8 +194,10 @@ export default function ChatList() {
   // How many recent chats to render (0 = all) — creator-tunable, persisted.
   const [listLimit, setListLimit] = useState<number>(readStoredListLimit);
   const [massOpen, setMassOpen] = useState(false);
-  // Mass-apply PaidSub to every current fan without a registered card.
-  const [paidSubMassConfirm, setPaidSubMassConfirm] = useState(false);
+  // Mass-apply / mass-remove PaidSub across current fans.
+  const [paidSubMassConfirm, setPaidSubMassConfirm] = useState<
+    false | "offer" | "remove"
+  >(false);
   const [paidSubMassBusy, setPaidSubMassBusy] = useState(false);
   // Chats whose fan is typing right now (each entry auto-clears after 3s).
   const [typingIds, setTypingIds] = useState<Set<string>>(new Set());
@@ -206,27 +208,39 @@ export default function ChatList() {
   const loadRef = useRef<() => Promise<void>>(async () => {});
   const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /** Push the PaidSub offer into every current chat without a saved card.
-   *  New fans who join later are NOT included — apply again (or per chat). */
-  async function massApplyPaidSub() {
+  /** Mass PaidSub: "offer" pushes the popup to card-less fans; "remove"
+   *  clears every pending offer so the blocking popup disappears. */
+  async function massPaidSub(action: "offer" | "remove") {
     if (paidSubMassBusy) return;
     setPaidSubMassBusy(true);
     try {
-      const res = await fetch("/api/chats/paidsub/mass", { method: "POST" });
+      const res = await fetch("/api/chats/paidsub/mass", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setPaidSubMassConfirm(false);
-        alert(
-          `PaidSub offer sent to ${data.applied ?? 0} fan${
-            data.applied === 1 ? "" : "s"
-          } without a card.`
-        );
+        if (action === "remove") {
+          alert(
+            `PaidSub removed from ${data.removed ?? 0} fan${
+              data.removed === 1 ? "" : "s"
+            }.`
+          );
+        } else {
+          alert(
+            `PaidSub offer sent to ${data.applied ?? 0} fan${
+              data.applied === 1 ? "" : "s"
+            } without a card.`
+          );
+        }
         void load();
       } else {
-        alert(data.error || "Could not apply PaidSub");
+        alert(data.error || "Could not update PaidSub");
       }
     } catch {
-      alert("Could not apply PaidSub");
+      alert("Could not update PaidSub");
     }
     setPaidSubMassBusy(false);
   }
@@ -648,12 +662,19 @@ export default function ChatList() {
             {selectMode ? "Cancel" : "Select"}
           </button>
           <button
-            onClick={() => setPaidSubMassConfirm(true)}
+            onClick={() => setPaidSubMassConfirm("offer")}
             title="Send the PaidSub offer to every current fan without a registered card"
             className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted hover:text-fg transition-colors"
           >
             <IconClock className="w-3.5 h-3.5 text-orange-400" />
             PaidSub all
+          </button>
+          <button
+            onClick={() => setPaidSubMassConfirm("remove")}
+            title="Remove the PaidSub popup from every fan who still has it pending"
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-card2 border border-line text-muted hover:text-fg transition-colors"
+          >
+            Remove PaidSub
           </button>
         </div>
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
@@ -1022,15 +1043,41 @@ export default function ChatList() {
               className="w-full max-w-xs bg-card border border-line rounded-2xl p-4 space-y-3 fade-up"
             >
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center shrink-0">
-                  <IconClock className="w-4.5 h-4.5 text-orange-400" />
+                <div
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 border ${
+                    paidSubMassConfirm === "remove"
+                      ? "bg-red-500/15 border-red-500/30"
+                      : "bg-orange-500/15 border-orange-500/30"
+                  }`}
+                >
+                  <IconClock
+                    className={`w-4.5 h-4.5 ${
+                      paidSubMassConfirm === "remove"
+                        ? "text-red-400"
+                        : "text-orange-400"
+                    }`}
+                  />
                 </div>
-                <p className="font-bold">Mass PaidSub</p>
+                <p className="font-bold">
+                  {paidSubMassConfirm === "remove"
+                    ? "Remove PaidSub"
+                    : "Mass PaidSub"}
+                </p>
               </div>
               <p className="text-sm text-muted leading-relaxed">
-                Sends the PaidSub popup to every <b>current</b> fan without a
-                registered card. Their chats stay blurred and blocked until
-                they pay. New fans who join later are not included.
+                {paidSubMassConfirm === "remove" ? (
+                  <>
+                    Removes the PaidSub popup from every fan who still has it
+                    pending. Fans who already paid keep unlimited messaging.
+                    Their chats unblock immediately.
+                  </>
+                ) : (
+                  <>
+                    Sends the PaidSub popup to every <b>current</b> fan without
+                    a registered card. Their chats stay blurred and blocked
+                    until they pay. New fans who join later are not included.
+                  </>
+                )}
               </p>
               <div className="flex gap-2">
                 <button
@@ -1041,11 +1088,25 @@ export default function ChatList() {
                   Cancel
                 </button>
                 <button
-                  onClick={() => void massApplyPaidSub()}
+                  onClick={() =>
+                    void massPaidSub(
+                      paidSubMassConfirm === "remove" ? "remove" : "offer"
+                    )
+                  }
                   disabled={paidSubMassBusy}
-                  className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold active:opacity-80 transition-opacity disabled:opacity-50"
+                  className={`flex-1 text-white rounded-xl py-2.5 text-sm font-semibold active:opacity-80 transition-opacity disabled:opacity-50 ${
+                    paidSubMassConfirm === "remove"
+                      ? "bg-red-500"
+                      : "bg-accent"
+                  }`}
                 >
-                  {paidSubMassBusy ? "Applying…" : "Apply"}
+                  {paidSubMassBusy
+                    ? paidSubMassConfirm === "remove"
+                      ? "Removing…"
+                      : "Applying…"
+                    : paidSubMassConfirm === "remove"
+                      ? "Remove all"
+                      : "Apply"}
                 </button>
               </div>
             </div>
