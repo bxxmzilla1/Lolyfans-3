@@ -138,7 +138,7 @@ export default function GuestChatHeader({
           aria-label="Show token balance"
           className="relative z-50 ml-auto shrink-0 px-3.5 py-2 rounded-full bg-accent text-white text-xs font-semibold whitespace-nowrap active:opacity-80"
         >
-          Wallet
+          My Tokens
         </button>
       )}
       {bubble && (
