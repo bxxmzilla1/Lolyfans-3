@@ -41,7 +41,37 @@ export default function FollowButton({
   const [subscribed, setSubscribed] = useState(!!initialSubscribed);
   const [busy, setBusy] = useState(false);
   const [paySheet, setPaySheet] = useState(false);
+  // Private Telegram channel link — fetched from the subscription-gated
+  // endpoint, so it only ever exists client-side for paying fans.
+  const [tgLink, setTgLink] = useState<string | null>(null);
   const { refresh } = useGuestShell();
+
+  async function fetchTelegramLink(): Promise<string | null> {
+    try {
+      const res = await fetch(`/api/payments/subscribe/link?ownerId=${ownerId}`);
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && typeof data.link === "string" && data.link) {
+        setTgLink(data.link);
+        return data.link as string;
+      }
+    } catch {}
+    return null;
+  }
+
+  /** After paying: straight into the private Telegram channel. */
+  async function openTelegram(): Promise<boolean> {
+    const link = tgLink || (await fetchTelegramLink());
+    if (!link) return false;
+    window.location.href = link;
+    return true;
+  }
+
+  // Subscribed fans get the channel link ready so the button opens it
+  // instantly.
+  useEffect(() => {
+    if (paid && subscribed) void fetchTelegramLink();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paid, subscribed]);
 
   // Back from a payment: either a hosted Checkout session (?session_id=) or a
   // rare 3-D Secure redirect from the in-page form (?sub= / ?pi=). Confirm,
@@ -74,6 +104,8 @@ export default function FollowButton({
       if (res?.ok) {
         setSubscribed(true);
         refresh();
+        // Payment confirmed → send them into the private Telegram channel.
+        void openTelegram();
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,10 +196,20 @@ export default function FollowButton({
     setBusy(false);
   }
 
+  // Subscribed with a channel link → the button opens Telegram; cancel moves
+  // to the small text link underneath.
+  async function openOrCancel() {
+    if (busy) return;
+    if (await openTelegram()) return;
+    await cancelPaid();
+  }
+
   const active = paid ? subscribed : following;
-  const onClick = paid ? (subscribed ? cancelPaid : subscribePaid) : toggleFollow;
+  const onClick = paid ? (subscribed ? openOrCancel : subscribePaid) : toggleFollow;
   const rightLabel = paid && plan ? subCtaLabel(plan) : "FREE";
   const caption = paid && plan && !subscribed ? subCaption(plan) : null;
+  const joinLabel = paid ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE";
+  const subscribedLabel = paid && tgLink ? "OPEN TELEGRAM CHANNEL" : "Subscribed";
 
   const button = (
     <button
@@ -186,13 +228,13 @@ export default function FollowButton({
       }`}
     >
       {active ? (
-        "Subscribed"
+        subscribedLabel
       ) : small ? (
-        "SUBSCRIBE"
+        paid ? "JOIN" : "SUBSCRIBE"
       ) : (
-        <span className="flex items-center justify-between gap-8">
-          <span>SUBSCRIBE</span>
-          <span>{busy ? "…" : rightLabel}</span>
+        <span className="flex items-center justify-between gap-4">
+          <span className="text-left">{joinLabel}</span>
+          <span className="shrink-0">{busy ? "…" : rightLabel}</span>
         </span>
       )}
     </button>
@@ -209,7 +251,7 @@ export default function FollowButton({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-3 mb-4">
-            <p className="font-bold">Subscribe</p>
+            <p className="font-bold">Join Private Telegram Channel</p>
             <button
               onClick={() => setPaySheet(false)}
               className="text-muted text-sm px-1"
@@ -226,6 +268,8 @@ export default function FollowButton({
               setPaySheet(false);
               setSubscribed(true);
               refresh();
+              // Paid → straight into the private Telegram channel.
+              void openTelegram();
             }}
           />
         </div>
@@ -233,7 +277,31 @@ export default function FollowButton({
     </Portal>
   );
 
-  if (!caption || small)
+  // The main button opens Telegram once subscribed, so cancel becomes a
+  // small text link underneath.
+  const cancelLink = paid &&
+    subscribed &&
+    !!tgLink &&
+    !small &&
+    plan?.interval !== "lifetime" && (
+      <button
+        onClick={cancelPaid}
+        disabled={busy}
+        className="w-full text-center text-xs text-muted hover:text-fg transition-colors disabled:opacity-50"
+      >
+        Cancel subscription
+      </button>
+    );
+
+  if (!caption && !cancelLink) {
+    return (
+      <>
+        {button}
+        {sheet}
+      </>
+    );
+  }
+  if (small)
     return (
       <>
         {button}
@@ -243,7 +311,8 @@ export default function FollowButton({
   return (
     <div className="space-y-1.5">
       {button}
-      <p className="text-xs text-muted text-center">{caption}</p>
+      {caption && <p className="text-xs text-muted text-center">{caption}</p>}
+      {cancelLink}
       {sheet}
     </div>
   );

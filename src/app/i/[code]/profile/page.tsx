@@ -139,6 +139,8 @@ export default async function InviteProfilePreviewPage({
   // Price label mirrors the creator's Settings → Subscriptions plan.
   const ctaRight = subCtaLabel(profile.plan);
   const ctaCaption = subCaption(profile.plan);
+  const ctaLeft =
+    profile.plan.priceCents > 0 ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE";
 
   return (
     <div className="min-h-dvh pb-10">
@@ -178,10 +180,10 @@ export default async function InviteProfilePreviewPage({
             <div className="pt-1 space-y-2">
               <Link
                 href={`/i/${code}/signup`}
-                className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold flex items-center justify-between active:opacity-80 transition-opacity"
+                className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold flex items-center justify-between gap-3 active:opacity-80 transition-opacity"
               >
-                <span>SUBSCRIBE</span>
-                <span>{ctaRight}</span>
+                <span className="text-left">{ctaLeft}</span>
+                <span className="shrink-0">{ctaRight}</span>
               </Link>
               {ctaCaption && (
                 <p className="text-xs text-muted text-center">{ctaCaption}</p>
@@ -256,10 +258,10 @@ export default async function InviteProfilePreviewPage({
           <p className="text-sm font-semibold">Subscribe to this creator to see more</p>
           <Link
             href={`/i/${code}/signup`}
-            className="w-full py-3.5 px-6 rounded-full bg-accent text-white text-base font-semibold flex items-center justify-between active:opacity-80 transition-opacity"
+            className="w-full py-3.5 px-6 rounded-full bg-accent text-white text-base font-semibold flex items-center justify-between gap-3 active:opacity-80 transition-opacity"
           >
-            <span>SUBSCRIBE</span>
-            <span>{ctaRight}</span>
+            <span className="text-left">{ctaLeft}</span>
+            <span className="shrink-0">{ctaRight}</span>
           </Link>
           {ctaCaption && <p className="text-xs text-muted">{ctaCaption}</p>}
         </div>

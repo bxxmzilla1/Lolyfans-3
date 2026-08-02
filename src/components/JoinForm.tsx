@@ -49,6 +49,23 @@ export default function JoinForm({
     router.refresh();
   }
 
+  /** After the subscription payment: straight into the creator's private
+   *  Telegram channel when one is configured, otherwise the chat. */
+  async function afterPaid() {
+    if (ownerId) {
+      try {
+        const res = await fetch(`/api/payments/subscribe/link?ownerId=${ownerId}`);
+        const data = await res.json().catch(() => ({}));
+        if (res.ok && typeof data.link === "string" && data.link) {
+          setOpening(true);
+          window.location.href = data.link;
+          return;
+        }
+      } catch {}
+    }
+    openChat();
+  }
+
   async function join(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
@@ -108,7 +125,7 @@ export default function JoinForm({
             ownerId={ownerId}
             ownerName={ownerName}
             plan={plan}
-            onSuccess={openChat}
+            onSuccess={() => void afterPaid()}
           />
         </div>
         {opening && <OpeningSkeleton />}
