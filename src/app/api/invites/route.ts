@@ -4,17 +4,61 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { fetchAllRows } from "@/lib/fetchAllRows";
 
+type Stats = { joins: number; clicks: number; countries: Record<string, number> };
+const blank = (): Stats => ({ joins: 0, clicks: 0, countries: {} });
+
 export async function GET() {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = supabaseAdmin();
-  const [invitesRes, chatsRes, visitsRes] = await Promise.all([
+  // Stats come from ONE SQL round trip (invite_stats in schema.sql). Paging
+  // every chat/visit row through the API made this tab crawl for accounts
+  // with thousands of fans.
+  const [invitesRes, statsRes] = await Promise.all([
     db
       .from("invites")
       .select("*")
       .eq("owner_id", ownerId)
       .order("created_at", { ascending: false }),
+    db.rpc("invite_stats", { p_owner_id: ownerId }),
+  ]);
+  if (invitesRes.error) {
+    return NextResponse.json({ error: invitesRes.error.message }, { status: 500 });
+  }
+
+  const stats: Record<string, Stats> = {};
+  if (!statsRes.error && Array.isArray(statsRes.data)) {
+    for (const row of statsRes.data as {
+      invite_id: string;
+      joins: number;
+      clicks: number;
+      countries: Record<string, number> | null;
+    }[]) {
+      stats[row.invite_id] = {
+        joins: Number(row.joins) || 0,
+        clicks: Number(row.clicks) || 0,
+        countries: row.countries ?? {},
+      };
+    }
+  } else {
+    // Function not installed yet: the old paged reads, so the tab still works
+    // (slowly) until migration-invite-stats.sql is run.
+    Object.assign(stats, await legacyStats(ownerId));
+  }
+
+  return NextResponse.json({
+    invites: (invitesRes.data ?? []).map((invite) => ({
+      ...invite,
+      stats: stats[invite.id] ?? blank(),
+    })),
+  });
+}
+
+/** Pre-migration fallback: pages every chat + visit row (slow but correct). */
+async function legacyStats(ownerId: string): Promise<Record<string, Stats>> {
+  const db = supabaseAdmin();
+  const [chatsRes, visitsRes] = await Promise.all([
     // Paged reads (fetchAllRows): Supabase caps selects at 1000 rows, which
     // froze click/subscriber counts at exactly 1000 once links got popular.
     fetchAllRows((from, to) =>
@@ -36,15 +80,10 @@ export async function GET() {
         .range(from, to)
     ),
   ]);
-  if (invitesRes.error) {
-    return NextResponse.json({ error: invitesRes.error.message }, { status: 500 });
-  }
 
   // Per link: subscribers = people who created a chat (deduplicated by IP —
   // the same device rejoining doesn't count twice), plus their countries.
-  type Stats = { joins: number; clicks: number; countries: Record<string, number> };
   const stats: Record<string, Stats> = {};
-  const blank = (): Stats => ({ joins: 0, clicks: 0, countries: {} });
   const seenIps: Record<string, Set<string>> = {};
   for (const chat of chatsRes.data ?? []) {
     const inviteId = chat.invite_id as string;
@@ -63,13 +102,7 @@ export async function GET() {
     stats[inviteId] ??= blank();
     stats[inviteId].clicks += 1; // rows are already unique per (invite, ip)
   }
-
-  return NextResponse.json({
-    invites: (invitesRes.data ?? []).map((invite) => ({
-      ...invite,
-      stats: stats[invite.id] ?? blank(),
-    })),
-  });
+  return stats;
 }
 
 export async function POST(req: NextRequest) {

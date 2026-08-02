@@ -11,8 +11,13 @@ type InviteWithStats = Invite & {
   stats: { joins: number; clicks: number; countries: Record<string, number> };
 };
 
+// Module-level cache: reopening the tab paints the last known list instantly
+// while the fresh data loads in the background.
+let invitesCache: InviteWithStats[] | null = null;
+
 export default function InviteManager() {
-  const [invites, setInvites] = useState<InviteWithStats[]>([]);
+  const [invites, setInvites] = useState<InviteWithStats[]>(invitesCache ?? []);
+  const [loading, setLoading] = useState(invitesCache === null);
   const [showForm, setShowForm] = useState(false);
   const [label, setLabel] = useState("");
   const [countries, setCountries] = useState<string[]>([]);
@@ -32,11 +37,13 @@ export default function InviteManager() {
   const [applying, setApplying] = useState(false);
 
   async function load() {
-    const res = await fetch("/api/invites");
-    if (res.ok) {
+    const res = await fetch("/api/invites").catch(() => null);
+    if (res?.ok) {
       const { invites } = await res.json();
+      invitesCache = invites;
       setInvites(invites);
     }
+    setLoading(false);
   }
 
   async function refresh() {
@@ -328,6 +335,21 @@ export default function InviteManager() {
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {loading && invites.length === 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="bg-card border border-line rounded-2xl p-4 space-y-3 animate-pulse"
+            >
+              <div className="h-4 w-2/5 rounded bg-card2" />
+              <div className="h-3 w-3/5 rounded bg-card2" />
+              <div className="h-9 w-full rounded-xl bg-card2" />
+            </div>
+          ))}
         </div>
       )}
 
