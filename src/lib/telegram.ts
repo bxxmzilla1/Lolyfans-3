@@ -499,37 +499,125 @@ function dollarsLabel(cents: number): string {
 }
 
 /**
- * Centered lock + price badge (transparent PNG) composited onto teasers so the
- * caption doesn't need to repeat the price.
+ * Price text as pixels: serverless hosts have no fonts, so SVG <text>
+ * renders nothing there. Compose from pre-rendered glyph PNGs instead
+ * (baseline-aligned via each glyph's canvas `top`).
  */
-async function lockPriceBadgePng(priceCents: number, size = 220): Promise<Buffer> {
+async function priceStripPng(
+  label: string,
+  digitHeight: number
+): Promise<{ data: Buffer; w: number; h: number }> {
   const sharp = (await import("sharp")).default;
-  const label = dollarsLabel(priceCents);
-  const svg = `
-<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.45"/>
-    </filter>
-  </defs>
-  <rect x="18" y="18" width="${size - 36}" height="${size - 36}" rx="36"
-        fill="rgba(0,0,0,0.58)" filter="url(#s)"/>
-  <!-- lock body -->
-  <rect x="${size / 2 - 22}" y="${size / 2 - 8}" width="44" height="36" rx="8" fill="#fff"/>
-  <!-- lock shackle -->
-  <path d="M ${size / 2 - 14} ${size / 2 - 8}
-           v -14
-           a 14 14 0 0 1 28 0
-           v 14"
-        fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
-  <circle cx="${size / 2}" cy="${size / 2 + 8}" r="5" fill="rgba(0,0,0,0.55)"/>
-  <text x="50%" y="${size - 48}" text-anchor="middle"
-        font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700"
-        fill="#fff">${label}</text>
-</svg>`;
-  return sharp(Buffer.from(svg)).png().toBuffer();
+  const { GLYPHS, GLYPH_CANVAS_H } = await import("@/lib/badgeAssets");
+  const refDigitH = GLYPHS["0"].h;
+  const s = digitHeight / refDigitH;
+  const spacing = Math.max(1, Math.round(digitHeight * 0.08));
+
+  const parts: { data: Buffer; w: number; h: number; top: number }[] = [];
+  for (const ch of label) {
+    const g = GLYPHS[ch];
+    if (!g) continue;
+    const w = Math.max(1, Math.round(g.w * s));
+    const h = Math.max(1, Math.round(g.h * s));
+    const data = await sharp(Buffer.from(g.b64, "base64"))
+      .resize(w, h)
+      .png()
+      .toBuffer();
+    parts.push({ data, w, h, top: Math.round(g.top * s) });
+  }
+  if (parts.length === 0) throw new Error("empty price label");
+
+  const stripH = Math.ceil(GLYPH_CANVAS_H * s);
+  const stripW = parts.reduce((sum, p) => sum + p.w, 0) + spacing * (parts.length - 1);
+  let x = 0;
+  const composites = parts.map((p) => {
+    const c = { input: p.data, left: x, top: p.top };
+    x += p.w + spacing;
+    return c;
+  });
+
+  const data = await sharp({
+    create: {
+      width: stripW,
+      height: stripH,
+      channels: 4,
+      background: { r: 0, g: 0, b: 0, alpha: 0 },
+    },
+  })
+    .composite(composites)
+    .png()
+    .toBuffer();
+  return { data, w: stripW, h: stripH };
 }
 
+/**
+ * Lolyfans-styled PPV badge: brand-gradient rounded square, white lock and
+ * the price underneath (from pre-rendered glyphs).
+ */
+async function ppvBadgePng(priceCents: number, size = 220): Promise<Buffer> {
+  const sharp = (await import("sharp")).default;
+  const S = size;
+  const k = S / 220;
+  const cx = S / 2;
+  const svg = `
+<svg width="${S}" height="${S}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#4fc9ff"/>
+      <stop offset="0.55" stop-color="#00aff0"/>
+      <stop offset="1" stop-color="#0086c9"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="${5 * k}" stdDeviation="${9 * k}" flood-color="#003a52" flood-opacity="0.5"/>
+    </filter>
+  </defs>
+  <rect x="${12 * k}" y="${12 * k}" width="${S - 24 * k}" height="${S - 24 * k}"
+        rx="${52 * k}" fill="url(#g)" filter="url(#glow)"/>
+  <!-- lock shackle -->
+  <path d="M ${cx - 21 * k} ${92 * k} v ${-16 * k} a ${21 * k} ${21 * k} 0 0 1 ${42 * k} 0 v ${16 * k}"
+        fill="none" stroke="#ffffff" stroke-width="${12 * k}" stroke-linecap="round"/>
+  <!-- lock body -->
+  <rect x="${cx - 33 * k}" y="${92 * k}" width="${66 * k}" height="${54 * k}" rx="${13 * k}" fill="#ffffff"/>
+  <circle cx="${cx}" cy="${116 * k}" r="${7 * k}" fill="#0090cf"/>
+</svg>`;
+  const base = await sharp(Buffer.from(svg)).png().toBuffer();
+
+  const strip = await priceStripPng(dollarsLabel(priceCents), Math.round(30 * k));
+  // Keep long prices inside the badge.
+  let { data: stripData, w: stripW, h: stripH } = strip;
+  const maxW = Math.round(S * 0.72);
+  if (stripW > maxW) {
+    const scale = maxW / stripW;
+    stripW = maxW;
+    stripH = Math.max(1, Math.round(stripH * scale));
+    stripData = await sharp(stripData).resize(stripW, stripH).png().toBuffer();
+  }
+  return sharp(base)
+    .composite([
+      {
+        input: stripData,
+        left: Math.round((S - stripW) / 2),
+        top: Math.round(152 * k),
+      },
+    ])
+    .png()
+    .toBuffer();
+}
+
+/** "Lolyfans" wordmark PNG scaled to the given width. */
+async function wordmarkPng(width: number): Promise<{ data: Buffer; w: number; h: number }> {
+  const sharp = (await import("sharp")).default;
+  const { WORDMARK } = await import("@/lib/badgeAssets");
+  const w = Math.max(60, Math.round(width));
+  const h = Math.max(1, Math.round((WORDMARK.h / WORDMARK.w) * w));
+  const data = await sharp(Buffer.from(WORDMARK.b64, "base64"))
+    .resize(w, h)
+    .png()
+    .toBuffer();
+  return { data, w, h };
+}
+
+/** Badge centered + Lolyfans wordmark top-left, burned onto the image. */
 async function compositeLockBadge(
   image: Buffer,
   priceCents: number
@@ -538,18 +626,18 @@ async function compositeLockBadge(
   const meta = await sharp(image).metadata();
   const w = meta.width || 600;
   const h = meta.height || 600;
-  const badgeSize = Math.round(Math.min(w, h) * 0.42);
-  const badge = await lockPriceBadgePng(priceCents, Math.max(160, badgeSize));
-  const badgeMeta = await sharp(badge).metadata();
-  const bw = badgeMeta.width || badgeSize;
-  const bh = badgeMeta.height || badgeSize;
+  const badgeSize = Math.min(280, Math.max(150, Math.round(Math.min(w, h) * 0.42)));
+  const badge = await ppvBadgePng(priceCents, badgeSize);
+  const mark = await wordmarkPng(Math.min(380, Math.max(130, Math.round(w * 0.32))));
+  const pad = Math.round(w * 0.045);
   return sharp(image)
     .composite([
       {
         input: badge,
-        left: Math.round((w - bw) / 2),
-        top: Math.round((h - bh) / 2),
+        left: Math.round((w - badgeSize) / 2),
+        top: Math.round((h - badgeSize) / 2),
       },
+      { input: mark.data, left: pad, top: pad },
     ])
     .jpeg({ quality: 70 })
     .toBuffer();
@@ -629,15 +717,18 @@ async function blurredVideoClip(
 
     if (priceCents && priceCents > 0) {
       const badgeFile = path.join(dir, "badge.png");
-      await fs.writeFile(badgeFile, await lockPriceBadgePng(priceCents, 200));
+      const markFile = path.join(dir, "mark.png");
+      await fs.writeFile(badgeFile, await ppvBadgePng(priceCents, 170));
+      await fs.writeFile(markFile, (await wordmarkPng(150)).data);
       await runFfmpeg([
         "-y",
         "-i", inFile,
         "-i", badgeFile,
+        "-i", markFile,
         "-t", "3",
         "-an",
         "-filter_complex",
-        "[0:v]scale=480:-2,boxblur=20:2[bg];[bg][1:v]overlay=(W-w)/2:(H-h)/2",
+        "[0:v]scale=480:-2,boxblur=20:2[bg];[bg][1:v]overlay=(W-w)/2:(H-h)/2[b1];[b1][2:v]overlay=20:20",
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-pix_fmt", "yuv420p",

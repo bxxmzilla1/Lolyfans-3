@@ -2,6 +2,11 @@ export function mediaUrl(path: string): string {
   return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/media/${path}`;
 }
 
+/** Low-res grid thumbnail (images only) — full-res stays on mediaUrl. */
+export function thumbUrl(path: string, w = 320): string {
+  return `/api/media/thumb?path=${encodeURIComponent(path)}&w=${w}`;
+}
+
 export type MediaItem = { path: string; type: "image" | "video" | "audio" };
 
 /** Normalize legacy single media_path + optional media_items into one list. */

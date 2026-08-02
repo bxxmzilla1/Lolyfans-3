@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
-import { fileKind, mediaUrl } from "@/lib/utils";
+import { fileKind, mediaUrl, thumbUrl } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { uploadWithProgress } from "@/lib/uploadWithProgress";
 import {
@@ -780,7 +780,7 @@ export default function VaultManager() {
               {item.media_type === "image" ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={mediaUrl(item.media_path)}
+                  src={thumbUrl(item.media_path, 320)}
                   alt=""
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                   loading="lazy"

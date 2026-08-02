@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getOwnerId } from "@/lib/session";
 import OwnerShell from "@/components/OwnerShell";
+import OwnerDarkMode from "@/components/OwnerDarkMode";
 
 export const dynamic = "force-dynamic";
 
@@ -10,5 +11,10 @@ export default async function OwnerLayout({
   children: React.ReactNode;
 }) {
   if (!(await getOwnerId())) redirect("/creator");
-  return <OwnerShell>{children}</OwnerShell>;
+  return (
+    <>
+      <OwnerDarkMode />
+      <OwnerShell>{children}</OwnerShell>
+    </>
+  );
 }

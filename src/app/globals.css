@@ -36,6 +36,26 @@ html.light {
   color-scheme: light;
 }
 
+/* Creator-side dark theme: neutral near-black surfaces, same light blue
+   accent. Applied by <OwnerDarkMode /> and overrides html.light. */
+html.owner-dark {
+  --bg: #0a0a0d;
+  --card: #111114;
+  --card-2: #18181d;
+  --line: #232329;
+  --line-strong: #3a3a42;
+  --fg: #f2f3f5;
+  --muted: #8f93a0;
+  --accent: #00aff0;
+  --accent-press: #0098d4;
+  --ig-gradient: linear-gradient(135deg, #4fc9ff 0%, #00aff0 55%, #0086c9 100%);
+  --glow-1: rgba(0, 175, 240, 0.1);
+  --glow-2: rgba(0, 152, 212, 0.07);
+  --glow-3: rgba(79, 201, 255, 0.05);
+  --track: rgba(255, 255, 255, 0.22);
+  color-scheme: dark;
+}
+
 @theme inline {
   --color-bg: var(--bg);
   --color-card: var(--card);
