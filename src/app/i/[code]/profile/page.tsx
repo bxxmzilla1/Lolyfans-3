@@ -200,10 +200,7 @@ export default async function InviteProfilePreviewPage({
                 The CTA carries its own caption (trial + price, or "Free to
                 join"). */}
             <div className="pt-1 space-y-2">
-              <InviteSubscribeCta
-                {...ctaProps}
-                initialOpen={openPay && profile.plan.priceCents > 0}
-              />
+              <InviteSubscribeCta {...ctaProps} />
             </div>
           </div>
         </section>
@@ -269,9 +266,7 @@ export default async function InviteProfilePreviewPage({
         {/* Subscribe gate under the locked feed */}
         <div className="border-t border-line px-4 py-6 text-center space-y-3">
           <p className="text-sm font-semibold">
-            {profile.plan.priceCents > 0
-              ? "Join the private Telegram channel to see more"
-              : "Subscribe to this creator to see more"}
+            Join the private Telegram channel to see more
           </p>
           <InviteSubscribeCta {...ctaProps} />
         </div>

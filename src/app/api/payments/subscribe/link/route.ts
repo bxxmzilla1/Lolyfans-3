@@ -1,16 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats } from "@/lib/guest";
-import { chatHasPaidAccess } from "@/lib/subscriptionAccess";
-import {
-  subPlanFromMetadata,
-  telegramLinkFromMetadata,
-} from "@/lib/subscriptionPlan";
+import { telegramLinkFromMetadata } from "@/lib/subscriptionPlan";
 
 /**
- * The creator's private Telegram channel invite link — only revealed to fans
- * with an active (or trialing) subscription. This is the ONLY place the link
- * leaves the server, so it can never be scraped off the profile page.
+ * The creator's private Telegram channel invite link — available to any fan
+ * who has signed up with this creator. Channel access is free (no subscription).
  */
 export async function GET(req: NextRequest) {
   const ownerId = req.nextUrl.searchParams.get("ownerId");
@@ -25,17 +20,5 @@ export async function GET(req: NextRequest) {
   const { data: ownerUser } = await supabaseAdmin().auth.admin.getUserById(ownerId);
   const meta = (ownerUser?.user?.user_metadata ?? {}) as Record<string, unknown>;
   const link = telegramLinkFromMetadata(meta);
-  if (!link) return NextResponse.json({ link: null });
-
-  // Paid profiles require an active subscription; free profiles share the
-  // link with anyone who joined.
-  const plan = subPlanFromMetadata(meta);
-  if (plan.priceCents > 0 && !(await chatHasPaidAccess(chat.id, ownerId))) {
-    return NextResponse.json(
-      { error: "Subscribe to get the channel link" },
-      { status: 402 }
-    );
-  }
-
-  return NextResponse.json({ link });
+  return NextResponse.json({ link: link || null });
 }

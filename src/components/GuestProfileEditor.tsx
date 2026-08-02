@@ -6,7 +6,6 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
 import { IconLogout, IconUser } from "./Icons";
 import { invalidateGuestBootstrap } from "./GuestShell";
-import GuestSubscriptions from "./GuestSubscriptions";
 
 /** Guest profile: change picture and name. */
 export default function GuestProfileEditor({
@@ -153,9 +152,6 @@ export default function GuestProfileEditor({
           </button>
         </div>
       </div>
-
-      {/* Creators they pay for, each with a settings sheet to cancel */}
-      <GuestSubscriptions />
 
       {/* Log out */}
       <div className="border-t border-line pt-4">

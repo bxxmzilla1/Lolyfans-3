@@ -397,8 +397,9 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               ? "bg-accent text-white"
               : "bg-card2 border border-line text-muted hover:text-fg"
           }`}
+          title="Private Telegram channel"
         >
-          <IconTip className="w-3.5 h-3.5" /> Subscriptions
+          <IconTip className="w-3.5 h-3.5" /> Channel
         </button>
         <button
           onClick={() => setSection("telegram")}

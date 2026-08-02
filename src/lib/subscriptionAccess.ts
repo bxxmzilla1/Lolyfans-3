@@ -3,35 +3,26 @@ import { subPlanFromMetadata, type SubPlan } from "@/lib/subscriptionPlan";
 
 export const ACTIVE_SUB_STATUSES = ["trialing", "active", "past_due", "canceling"];
 
-/** Load a creator's subscription plan from auth metadata. */
+/** Load a creator's (legacy) plan metadata — price is ignored; channel is free. */
 export async function ownerSubPlan(ownerId: string): Promise<SubPlan> {
   const { data } = await supabaseAdmin().auth.admin.getUserById(ownerId);
   const meta = (data?.user?.user_metadata ?? {}) as Record<string, unknown>;
   return subPlanFromMetadata(meta);
 }
 
-/** True when the creator charges for profile access. */
-export async function ownerRequiresPaidSub(ownerId: string): Promise<boolean> {
-  const plan = await ownerSubPlan(ownerId);
-  return plan.priceCents > 0;
+/** Channel access is free — kept for callers that still check the old gate. */
+export async function ownerRequiresPaidSub(_ownerId: string): Promise<boolean> {
+  return false;
 }
 
-/** Fan has an active/trialing/etc. paid subscription for this creator. */
+/** Always true now — channel subscriptions are removed. */
 export async function chatHasPaidAccess(
-  chatId: string,
-  ownerId: string
+  _chatId: string,
+  _ownerId: string
 ): Promise<boolean> {
-  const { data } = await supabaseAdmin()
-    .from("subscriptions")
-    .select("status")
-    .eq("chat_id", chatId)
-    .eq("owner_id", ownerId)
-    .in("status", ACTIVE_SUB_STATUSES)
-    .maybeSingle();
-  return !!data;
+  return true;
 }
 
-/** Invite code to send unpaid fans back to the card step. */
 export async function inviteCodeForChat(chatId: string): Promise<string | null> {
   const db = supabaseAdmin();
   const { data: chat } = await db
@@ -62,27 +53,14 @@ export async function inviteCodeForChat(chatId: string): Promise<string | null> 
 }
 
 /**
- * Where a returning guest should land. Paid creators with no subscription
- * stay on the signup payment step — never the fan shell. Fans no longer have
- * an in-app chat tab, so allowed guests land on the Home feed.
+ * Where a returning guest should land. Channel subscriptions are gone — every
+ * signed-up fan is allowed into the Home feed.
  */
 export async function guestAccessDestination(
-  chatId: string,
-  ownerId: string
+  _chatId: string,
+  _ownerId: string
 ): Promise<{ allowed: boolean; href: string }> {
-  if (!(await ownerRequiresPaidSub(ownerId))) {
-    return { allowed: true, href: "/home" };
-  }
-  if (await chatHasPaidAccess(chatId, ownerId)) {
-    return { allowed: true, href: "/home" };
-  }
-  const code = await inviteCodeForChat(chatId);
-  return {
-    allowed: false,
-    // Unpaid fans go to the invite profile preview: the Join Telegram card
-    // sheet opens over it (?pay=1) so the profile stays visible behind.
-    href: code ? `/i/${code}/profile?pay=1` : "/",
-  };
+  return { allowed: true, href: "/home" };
 }
 
 /**
@@ -96,8 +74,6 @@ export async function guestChatAccessDestination(
     .select("owner_id")
     .eq("id", chatId)
     .maybeSingle();
-  // Chat is gone (deleted by the creator) → clear the session, land on home.
   if (!chat) return { allowed: false, href: "/api/guest/gone", ownerId: null };
-  const dest = await guestAccessDestination(chatId, chat.owner_id);
-  return { ...dest, ownerId: chat.owner_id as string };
+  return { allowed: true, href: "/home", ownerId: chat.owner_id as string };
 }

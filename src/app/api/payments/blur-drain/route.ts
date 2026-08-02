@@ -2,14 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
+  chargeChatDollars,
   ensureStripeCustomer,
   recordBlurDrainTap,
   saveStripePaymentMethod,
-  spendTokens,
-  tokenBalance,
 } from "@/lib/payments";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
-import { tokensForCents } from "@/lib/tokens";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { visitorCountryCode } from "@/lib/geo";
 
@@ -46,13 +44,12 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST: unblur one BlurDrainer layer. Paid drains spend Tokens from the
- * fan's wallet (instant, no card round-trip); an empty wallet returns 402 so
- * the client opens the top-up sheet. Free drains cost nothing but require a
- * verified card (SetupIntent) first.
+ * POST: unblur one BlurDrainer layer. Paid drains charge dollars via Stripe
+ * (one-tap with a saved card, or a client secret for the card wizard). Free
+ * drains cost nothing but require a verified card (SetupIntent) first.
  */
 export async function POST(req: NextRequest) {
-  const { messageId, embedded, setupIntentId } = await req.json();
+  const { messageId, embedded, setupIntentId, paymentIntentId } = await req.json();
   if (!messageId) return NextResponse.json({ error: "messageId required" }, { status: 400 });
 
   const db = supabaseAdmin();
@@ -161,36 +158,72 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Paid drain: one tap = one instant token spend from the wallet.
-  const tokens = tokensForCents(cfg.priceCents);
-  const balance = await spendTokens({
-    chatId: message.chat_id,
-    tokens,
-    kind: "unlock",
-    messageId: message.id,
-  });
-  if (balance === null) {
-    return NextResponse.json(
-      {
-        error: "Not enough Tokens",
-        needTokens: tokens,
-        balance: await tokenBalance(message.chat_id),
-      },
-      { status: 402 }
-    );
+  // Finish an embedded card payment the client already confirmed.
+  if (typeof paymentIntentId === "string" && paymentIntentId) {
+    if (!stripeConfigured()) {
+      return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
+    }
+    const pi = await stripe().paymentIntents.retrieve(paymentIntentId);
+    if (
+      pi.status !== "succeeded" ||
+      pi.metadata?.kind !== "blur-drain" ||
+      pi.metadata?.messageId !== messageId
+    ) {
+      return NextResponse.json({ error: "Payment not completed" }, { status: 402 });
+    }
+    const pmId =
+      typeof pi.payment_method === "string"
+        ? pi.payment_method
+        : pi.payment_method?.id ?? null;
+    const custId = typeof pi.customer === "string" ? pi.customer : null;
+    await saveStripePaymentMethod(message.chat_id, custId, pmId);
+    const layersCleared = await recordBlurDrainTap({
+      messageId: message.id,
+      chatId: message.chat_id,
+      layers: cfg.layers,
+      paymentIntentId: pi.id,
+    });
+    return NextResponse.json({
+      ok: true,
+      layersCleared,
+      done: layersCleared >= cfg.layers,
+    });
   }
-  const layersCleared = await recordBlurDrainTap({
-    messageId: message.id,
+
+  // Paid drain: charge dollars per tap (no token wallet).
+  if (!stripeConfigured()) {
+    return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
+  }
+  const result = await chargeChatDollars({
     chatId: message.chat_id,
-    layers: cfg.layers,
-    paymentIntentId: `tokens_${message.id}_${Date.now()}_${Math.random()
-      .toString(36)
-      .slice(2, 8)}`,
+    amountCents: cfg.priceCents,
+    kind: "blur-drain",
+    description: "Blur drain tap",
+    metadata: { messageId: message.id },
   });
+
+  if ("paid" in result && result.paid) {
+    const layersCleared = await recordBlurDrainTap({
+      messageId: message.id,
+      chatId: message.chat_id,
+      layers: cfg.layers,
+      paymentIntentId: result.paymentIntentId,
+    });
+    return NextResponse.json({
+      ok: true,
+      layersCleared,
+      done: layersCleared >= cfg.layers,
+    });
+  }
+
+  if (!("clientSecret" in result)) {
+    return NextResponse.json({ error: "Could not start payment" }, { status: 500 });
+  }
+
   return NextResponse.json({
-    ok: true,
-    layersCleared,
-    balance,
-    done: layersCleared >= cfg.layers,
+    clientSecret: result.clientSecret,
+    amountCents: cfg.priceCents,
+    country: await visitorCountryCode(req.headers),
+    needsCard: true,
   });
 }

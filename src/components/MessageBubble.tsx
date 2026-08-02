@@ -11,8 +11,13 @@ import {
   mediaItemsFromMessage,
   type MediaItem,
 } from "@/lib/utils";
-import { formatTokens, tokensForCents } from "@/lib/tokens";
 import { parseCouponMessage, offerPriceLabel } from "@/lib/coupon";
+import { blurDrainPriceLabel } from "@/lib/blurDrainer";
+
+function dollarsLabel(cents: number): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+}
 import {
   IconBack,
   IconCheck,
@@ -250,7 +255,7 @@ function MessageBubble({
   const linkPrice = message.content ? linkPriceIn(message.content) : null;
   const myPriceLabel = mine
     ? price > 0
-      ? formatTokens(tokensForCents(price))
+      ? dollarsLabel(price)
       : linkPrice
         ? `$${linkPrice}`
         : null
@@ -323,7 +328,7 @@ function MessageBubble({
                   Unlock
                 </span>
                 <span className="text-white text-sm font-bold drop-shadow">
-                  {formatTokens(tokensForCents(price))}
+                  {dollarsLabel(price)}
                 </span>
               </>
             ) : (
@@ -341,7 +346,7 @@ function MessageBubble({
             e.stopPropagation();
             onUnlock?.(message);
           }}
-          aria-label={`Unlock for ${formatTokens(tokensForCents(price))}`}
+          aria-label={`Unlock for ${dollarsLabel(price)}`}
           className="absolute inset-0 z-[15] cursor-pointer"
         />
       ) : unlocking ? (
@@ -540,7 +545,7 @@ function MessageBubble({
             >
               BlurDrainer · {drainCleared}/{drainCfg.layers} tapped ·{" "}
               {drainCfg.priceCents > 0
-                ? `${formatTokens(tokensForCents(drainCfg.priceCents))}/tap`
+                ? `${blurDrainPriceLabel(drainCfg.priceCents)}/tap`
                 : "FREE (card verify)"}
             </span>
           </div>

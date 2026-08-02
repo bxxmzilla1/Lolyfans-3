@@ -248,6 +248,71 @@ export async function saveStripePaymentMethod(
 }
 
 /**
+ * Charge a fan's chat in dollars (no token wallet). Tries an off-session
+ * charge on the saved card first; otherwise returns a PaymentIntent client
+ * secret for the embedded card wizard.
+ */
+export async function chargeChatDollars(opts: {
+  chatId: string;
+  amountCents: number;
+  kind: string;
+  description: string;
+  metadata?: Record<string, string>;
+}): Promise<
+  | { paid: true; paymentIntentId: string }
+  | { clientSecret: string; paymentIntentId: string }
+> {
+  const db = supabaseAdmin();
+  const s = stripe();
+  const { data: chat } = await db
+    .from("chats")
+    .select("stripe_customer_id, stripe_payment_method_id")
+    .eq("id", opts.chatId)
+    .maybeSingle();
+
+  const meta = {
+    chatId: opts.chatId,
+    kind: opts.kind,
+    ...(opts.metadata ?? {}),
+  };
+
+  if (chat?.stripe_customer_id && chat?.stripe_payment_method_id) {
+    try {
+      const pi = await s.paymentIntents.create({
+        amount: opts.amountCents,
+        currency: "usd",
+        customer: chat.stripe_customer_id,
+        payment_method: chat.stripe_payment_method_id,
+        off_session: true,
+        confirm: true,
+        metadata: meta,
+        description: opts.description,
+      });
+      if (pi.status === "succeeded") {
+        return { paid: true, paymentIntentId: pi.id };
+      }
+    } catch {
+      // fall through to the card wizard
+    }
+  }
+
+  const customerId = await ensureStripeCustomer(opts.chatId);
+  const pi = await s.paymentIntents.create({
+    amount: opts.amountCents,
+    currency: "usd",
+    customer: customerId,
+    payment_method_types: ["card"],
+    setup_future_usage: "off_session",
+    metadata: meta,
+    description: opts.description,
+  });
+  return {
+    clientSecret: pi.client_secret!,
+    paymentIntentId: pi.id,
+  };
+}
+
+/**
  * Paid-profile sign-ups are created `pending` (hidden from the creator's chat
  * list) until payment details are done. Flip the flag on activation and ping
  * the inbox so the chat appears — the "new-chat" broadcast /api/join skips

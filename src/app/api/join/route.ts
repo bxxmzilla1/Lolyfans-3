@@ -4,17 +4,16 @@ import { createToken, GUEST_COOKIE, cookieOptions } from "@/lib/session";
 import { getRequestCountry, ipFromHeaders, inviteUsable, countryAllowed } from "@/lib/invites";
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { broadcast } from "@/lib/realtime";
-import { ownerRequiresPaidSub } from "@/lib/subscriptionAccess";
 import { recordInviteEvent } from "@/lib/inviteEvents";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
- * Creates (or resumes) a guest chat after sign-up: the guest registers with
- * an email + password. No verification step — the account works right away.
+ * Creates (or resumes) a guest chat after sign-up. Email + password only —
+ * no name field, no channel subscription payment. The account works right away.
  */
 export async function POST(req: NextRequest) {
-  const { code, name, email, password } = await req.json();
+  const { code, email, password } = await req.json();
 
   if (!code) {
     return NextResponse.json({ error: "Invalid link" }, { status: 400 });
@@ -57,8 +56,6 @@ export async function POST(req: NextRequest) {
     .eq("guest_email", emailStr)
     .maybeSingle();
 
-  const paidProfile = await ownerRequiresPaidSub(invite!.owner_id);
-
   if (existing) {
     if (!verifyPassword(passwordStr, existing.guest_password || "")) {
       return NextResponse.json(
@@ -66,28 +63,23 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-    // Keep the device binding fresh so IP-based resume keeps working.
-    // Free profiles follow immediately; paid ones follow only after payment.
     after(async () => {
       if (ip) {
         await db.from("chats").update({ guest_ip: ip }).eq("id", existing.id);
       }
-      if (!paidProfile) {
-        // Profile is free (again): a chat parked as pending from an earlier
-        // paid sign-up becomes a normal visible chat.
-        await db.from("chats").update({ pending: false }).eq("id", existing.id);
-        await db
-          .from("follows")
-          .upsert(
-            { chat_id: existing.id, owner_id: invite!.owner_id },
-            { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
-          );
-      }
+      // Clear any leftover pending flag from the old paid-sub flow.
+      await db.from("chats").update({ pending: false }).eq("id", existing.id);
+      await db
+        .from("follows")
+        .upsert(
+          { chat_id: existing.id, owner_id: invite!.owner_id },
+          { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
+        );
     });
     const res = NextResponse.json({
       ok: true,
       chatId: existing.id,
-      needsPayment: paidProfile,
+      ownerId: invite!.owner_id,
     });
     res.cookies.set(
       GUEST_COOKIE,
@@ -97,10 +89,12 @@ export async function POST(req: NextRequest) {
     return res;
   }
 
-  // The name typed at sign-up; auto-generate one only as a fallback.
+  // Display name is derived from the email local-part (no name field on signup).
+  const local = emailStr.split("@")[0] || "Guest";
   const guestName =
-    String(name || "").trim().slice(0, 40) ||
+    local.replace(/[._+-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 40) ||
     `Guest ${Math.floor(1000 + Math.random() * 9000)}`;
+
   const row = {
     owner_id: invite!.owner_id,
     invite_id: invite!.id,
@@ -109,32 +103,29 @@ export async function POST(req: NextRequest) {
     guest_ip: ip,
     guest_email: emailStr,
     guest_password: hashPassword(passwordStr),
+    pending: false,
   };
-  // Paid profiles: the chat stays pending (hidden from the creator's list)
-  // until the fan finishes adding payment details.
-  let { data: chat, error } = await db
-    .from("chats")
-    .insert({ ...row, pending: paidProfile })
-    .select()
-    .single();
+  let { data: chat, error } = await db.from("chats").insert(row).select().single();
   if (error && /pending/i.test(error.message)) {
-    // Migration not applied yet — sign-ups must keep working.
-    ({ data: chat, error } = await db.from("chats").insert(row).select().single());
+    const { pending: _ignored, ...withoutPending } = row;
+    void _ignored;
+    ({ data: chat, error } = await db
+      .from("chats")
+      .insert(withoutPending)
+      .select()
+      .single());
   }
   if (error || !chat) {
     return NextResponse.json({ error: "Could not create chat" }, { status: 500 });
   }
   const chatId = chat.id as string;
 
-  // Bookkeeping after the response is sent. Paid profiles defer follow +
-  // welcome until the subscription is confirmed (see subscribe/activate).
   after(async () => {
     await db
       .from("invites")
       .update({ uses: (invite!.uses ?? 0) + 1 })
       .eq("id", invite!.id);
 
-    // Timestamped signup row in the invite activity log.
     await recordInviteEvent({
       inviteId: invite!.id,
       kind: "signup",
@@ -142,12 +133,6 @@ export async function POST(req: NextRequest) {
       ip,
       country,
     });
-
-    if (paidProfile) {
-      // No "new-chat" ping yet — the chat is pending until the fan finishes
-      // payment (revealPendingChat notifies the inbox on activation).
-      return;
-    }
 
     await db
       .from("follows")
@@ -161,7 +146,7 @@ export async function POST(req: NextRequest) {
   const res = NextResponse.json({
     ok: true,
     chatId,
-    needsPayment: paidProfile,
+    ownerId: invite!.owner_id,
   });
   res.cookies.set(GUEST_COOKIE, createToken({ chatId, name: guestName }), cookieOptions);
   return res;

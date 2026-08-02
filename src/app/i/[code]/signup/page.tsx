@@ -4,30 +4,22 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
 import { mediaUrl } from "@/lib/utils";
-import { subPlanFromMetadata } from "@/lib/subscriptionPlan";
-import {
-  chatHasPaidAccess,
-  ownerRequiresPaidSub,
-} from "@/lib/subscriptionAccess";
 import JoinForm from "@/components/JoinForm";
 import InviteProfile from "@/components/InviteProfile";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Step 2 of an invite link: the sign-up page (name, email, password).
- * Paid profiles keep unpaid guests here on the card step — they never
- * skip into /chat until the subscription is confirmed.
+ * Invite sign-up page: email + password only. After join, fans are sent to
+ * the creator's free Telegram channel (or Home if none is configured).
  */
 export default async function InviteSignupPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ code: string }>;
   searchParams: Promise<{ pay?: string }>;
 }) {
   const { code } = await params;
-  const { pay } = await searchParams;
   const db = supabaseAdmin();
   const requestHeaders = await headers();
 
@@ -62,16 +54,7 @@ export default async function InviteSignupPage({
   if (!usable.ok || !allowed) redirect(`/i/${code}`);
 
   const existingChat = cookieChat?.data ?? ipChat?.data ?? null;
-  let forcePayStep = pay === "1";
-
-  if (existingChat) {
-    const paidOk =
-      !(await ownerRequiresPaidSub(existingChat.owner_id)) ||
-      (await chatHasPaidAccess(existingChat.id, existingChat.owner_id));
-    if (paidOk) redirect("/home");
-    // Signed up but hasn't paid yet → stay here and show the card form.
-    forcePayStep = true;
-  }
+  if (existingChat) redirect("/home");
 
   const { data: ownerUser } = await db.auth.admin.getUserById(invite!.owner_id);
   const meta = (ownerUser?.user?.user_metadata ?? {}) as {
@@ -81,7 +64,6 @@ export default async function InviteSignupPage({
     invite_button_text?: string;
   };
   const ownerName = meta.display_name || "Lolyfans";
-  const plan = subPlanFromMetadata(meta as Record<string, unknown>);
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
@@ -94,19 +76,16 @@ export default async function InviteSignupPage({
 
         <div className="text-center -mt-2">
           <p className="text-muted text-sm">
-            {forcePayStep && plan.priceCents > 0
-              ? `Complete your subscription to chat with ${ownerName}.`
-              : `Sign up with your email to subscribe to ${ownerName} and start chatting.`}
+            Sign up with your email to join {ownerName}&apos;s private Telegram
+            channel.
           </p>
         </div>
 
         <JoinForm
           code={code}
-          buttonText={meta.invite_button_text}
+          buttonText={meta.invite_button_text || "Join the channel"}
           ownerId={invite!.owner_id}
           ownerName={ownerName}
-          plan={plan}
-          initialPayStep={forcePayStep && plan.priceCents > 0}
         />
       </div>
     </main>
