@@ -41,6 +41,9 @@ export type TgPeerKey =
   | `channel:${string}:${string}`
   | `chat:${string}`;
 
+/** Outgoing delivery state: sent to Telegram, or read by the peer. */
+export type TgReceipt = "sent" | "read";
+
 export type TgDialog = {
   peer: string;
   title: string;
@@ -50,6 +53,9 @@ export type TgDialog = {
   preview: string;
   date: number;
   photoUrl: string | null;
+  /** True when the preview message was sent by us. */
+  lastOut: boolean;
+  lastReceipt: TgReceipt | null;
 };
 
 export type TgMessage = {
@@ -59,6 +65,8 @@ export type TgMessage = {
   date: number;
   hasMedia: boolean;
   mediaKind: "image" | "video" | "other" | null;
+  /** Outgoing only: single check = sent, double = read. */
+  receipt: TgReceipt | null;
 };
 
 function apiCreds(): { apiId: number; apiHash: string } {
@@ -288,6 +296,22 @@ function messagePreview(msg: unknown): string {
   return "";
 }
 
+function asMsgId(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "bigint") return Number(value);
+  if (value && typeof value === "object" && "value" in value) {
+    return Number((value as { value: unknown }).value);
+  }
+  return Number(value) || 0;
+}
+
+function receiptForOutgoing(
+  messageId: number,
+  readOutboxMaxId: number
+): TgReceipt {
+  return messageId > 0 && messageId <= readOutboxMaxId ? "read" : "sent";
+}
+
 /** List recent Telegram dialogs (DMs, groups, channels) for the connected account. */
 export async function tgListDialogs(opts: {
   session: string;
@@ -312,13 +336,18 @@ export async function tgListDialogs(opts: {
         broadcast?: boolean;
         megagroup?: boolean;
       };
-      message?: unknown;
+      message?: { id?: unknown; out?: boolean; message?: string; media?: unknown };
+      dialog?: { readOutboxMaxId?: unknown };
     }>;
 
     return dialogs
       .filter((d) => d.entity)
       .map((d) => {
         const entity = d.entity!;
+        const msg = d.message;
+        const lastOut = !!msg?.out;
+        const msgId = asMsgId(msg?.id);
+        const readOut = asMsgId(d.dialog?.readOutboxMaxId);
         return {
           peer: entityPeerKey(entity),
           title: d.title || entity.username || "Telegram",
@@ -328,6 +357,8 @@ export async function tgListDialogs(opts: {
           preview: messagePreview(d.message),
           date: typeof d.date === "number" ? d.date : 0,
           photoUrl: null,
+          lastOut,
+          lastReceipt: lastOut ? receiptForOutgoing(msgId, readOut) : null,
         };
       });
   } finally {
@@ -352,6 +383,24 @@ function mediaKindOf(media: unknown): TgMessage["mediaKind"] {
   return "other";
 }
 
+/** Peer’s read-outbox watermark (highest outgoing message id they’ve opened). */
+async function fetchReadOutboxMaxId(
+  client: AnyClient,
+  peer: unknown
+): Promise<number> {
+  try {
+    const { Api } = await gramjs();
+    const res = (await client.invoke(
+      new Api.messages.GetPeerDialogs({
+        peers: [new Api.InputDialogPeer({ peer: peer as never })],
+      })
+    )) as { dialogs?: Array<{ readOutboxMaxId?: unknown }> };
+    return asMsgId(res.dialogs?.[0]?.readOutboxMaxId);
+  } catch {
+    return 0;
+  }
+}
+
 /** Recent messages in one Telegram dialog. */
 export async function tgGetMessages(opts: {
   session: string;
@@ -361,28 +410,46 @@ export async function tgGetMessages(opts: {
   const client = await connect(opts.session);
   try {
     const peer = await resolvePeer(opts.peer);
-    const messages = (await client.getMessages(peer, {
-      limit: opts.limit ?? 40,
-    })) as Array<{
-      id?: number;
-      message?: string;
-      out?: boolean;
-      date?: number;
-      media?: unknown;
-    }>;
+    const [messages, readOutboxMaxId] = await Promise.all([
+      client.getMessages(peer, {
+        limit: opts.limit ?? 40,
+      }) as Promise<
+        Array<{
+          id?: number;
+          message?: string;
+          out?: boolean;
+          date?: number;
+          media?: unknown;
+        }>
+      >,
+      fetchReadOutboxMaxId(client, peer),
+    ]);
+
+    // Clear our unread badge for this chat (mirrors opening it in Telegram).
+    try {
+      const { Api } = await gramjs();
+      await client.invoke(
+        new Api.messages.ReadHistory({ peer: peer as never, maxId: 0 })
+      );
+    } catch {
+      // non-fatal
+    }
 
     return messages
       .filter((m) => m && typeof m.id === "number")
       .map((m) => {
         const kind = mediaKindOf(m.media);
         const text = typeof m.message === "string" ? m.message : "";
+        const out = !!m.out;
+        const id = m.id as number;
         return {
-          id: m.id as number,
+          id,
           text,
-          out: !!m.out,
+          out,
           date: typeof m.date === "number" ? m.date : 0,
           hasMedia: !!m.media,
           mediaKind: kind,
+          receipt: out ? receiptForOutgoing(id, readOutboxMaxId) : null,
         };
       })
       // GramJS returns newest-first; UI wants oldest-first.

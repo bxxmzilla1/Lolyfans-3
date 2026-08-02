@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { formatTime } from "@/lib/utils";
 import { IconSearch, IconSend, IconUser } from "./Icons";
+import TelegramReceipt from "./TelegramReceipt";
 
 type Dialog = {
   peer: string;
@@ -14,6 +15,8 @@ type Dialog = {
   unread: number;
   preview: string;
   date: number;
+  lastOut: boolean;
+  lastReceipt: "sent" | "read" | null;
 };
 
 function peerHref(peer: string, title: string) {
@@ -179,6 +182,9 @@ export default function TelegramChatList() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
+                    {d.lastOut && (
+                      <TelegramReceipt receipt={d.lastReceipt} />
+                    )}
                     <p className="text-xs text-muted truncate flex-1">
                       {kind ? `${kind} · ` : ""}
                       {d.preview || (d.username ? `@${d.username}` : "Telegram")}
