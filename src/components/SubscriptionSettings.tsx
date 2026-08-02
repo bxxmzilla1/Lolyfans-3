@@ -28,15 +28,17 @@ const BILLING_ADJECTIVE: Record<Billing, string> = {
 /**
  * Settings → Subscriptions: the profile gates a private Telegram channel
  * behind a Stripe charge — a daily or monthly subscription, or a single
- * one-time payment for lifetime access. Recurring plans can add a 1-day free
- * trial (Stripe charges automatically when the trial ends). The creator also
- * pastes the private channel invite link fans are sent to after paying.
+ * one-time payment for lifetime access. Recurring plans can add a free trial
+ * of any length (Stripe charges automatically when the trial ends). The
+ * creator also pastes the private channel invite link fans are sent to after
+ * paying.
  */
 export default function SubscriptionSettings() {
   const [paid, setPaid] = useState(false);
   const [price, setPrice] = useState("");
   const [billing, setBilling] = useState<Billing>("day");
   const [trialOn, setTrialOn] = useState(false);
+  const [trialDays, setTrialDays] = useState("1");
   const [telegramLink, setTelegramLink] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -95,7 +97,9 @@ export default function SubscriptionSettings() {
             ? rawInterval
             : "day"
         );
-        setTrialOn(Math.floor(Number(meta.sub_trial_days) || 0) > 0);
+        const savedTrialDays = Math.floor(Number(meta.sub_trial_days) || 0);
+        setTrialOn(savedTrialDays > 0);
+        if (savedTrialDays > 0) setTrialDays(String(savedTrialDays));
         setTelegramLink(String(meta.sub_telegram_link ?? ""));
       });
   }, []);
@@ -107,9 +111,13 @@ export default function SubscriptionSettings() {
   const priceLabel = `$${(priceCents / 100).toFixed(2).replace(/\.00$/, "")}`;
 
   const recurring = billing !== "lifetime";
+  // Stripe caps trial_period_days at 730; we keep a saner 365 ceiling.
+  const trialDaysNum = Math.floor(Number(trialDays)) || 0;
+  const trialActive = paid && recurring && trialOn;
+  const trialInvalid = trialActive && (trialDaysNum < 1 || trialDaysNum > 365);
 
   async function save() {
-    if (priceInvalid || linkInvalid) return;
+    if (priceInvalid || linkInvalid || trialInvalid) return;
     setSaving(true);
     try {
       await supabaseBrowser().auth.updateUser({
@@ -117,7 +125,7 @@ export default function SubscriptionSettings() {
           sub_price_cents: priceCents,
           sub_interval: billing,
           // Trials only make sense on recurring billing.
-          sub_trial_days: paid && recurring && trialOn ? 1 : 0,
+          sub_trial_days: trialActive ? trialDaysNum : 0,
           sub_discount_pct: 0,
           sub_telegram_link: normalizeTelegramLink(linkTrimmed),
         },
@@ -217,14 +225,13 @@ export default function SubscriptionSettings() {
           </div>
 
           {recurring && (
-            <div className="rounded-xl border border-line bg-card2 px-3 py-2.5">
+            <div className="rounded-xl border border-line bg-card2 px-3 py-2.5 space-y-2.5">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold">1-day free trial</p>
+                  <p className="text-sm font-semibold">Free trial</p>
                   <p className="text-xs text-muted">
-                    Fans join free for 1 day — after the trial ends, Stripe
-                    charges the {BILLING_ADJECTIVE[billing]} price
-                    automatically.
+                    Fans join free — after the trial ends, Stripe charges the{" "}
+                    {BILLING_ADJECTIVE[billing]} price automatically.
                   </p>
                 </div>
                 <button
@@ -240,6 +247,27 @@ export default function SubscriptionSettings() {
                   />
                 </button>
               </div>
+              {trialOn && (
+                <div className="flex items-center gap-2">
+                  <input
+                    value={trialDays}
+                    onChange={(e) =>
+                      setTrialDays(e.target.value.replace(/\D/g, "").slice(0, 3))
+                    }
+                    inputMode="numeric"
+                    placeholder="1"
+                    className="w-20 bg-card border border-line rounded-xl px-3 py-2.5 text-sm text-center placeholder:text-muted focus:border-accent outline-none"
+                  />
+                  <span className="text-sm text-muted">
+                    day{trialDaysNum === 1 ? "" : "s"} free
+                  </span>
+                </div>
+              )}
+              {trialInvalid && (
+                <p className="text-xs text-red-400">
+                  Trial must be between 1 and 365 days
+                </p>
+              )}
             </div>
           )}
         </>
@@ -278,16 +306,20 @@ export default function SubscriptionSettings() {
           <p className="text-xs text-muted text-center">
             {billing === "lifetime"
               ? "One-time payment · lifetime access"
-              : trialOn
-                ? `1 day free trial · then ${priceLabel} / ${billing}`
-                : `${priceLabel} / ${billing}`}
+              : `${
+                  trialOn
+                    ? `${trialDaysNum || 1} day${
+                        (trialDaysNum || 1) === 1 ? "" : "s"
+                      } free trial · then ${priceLabel} / ${billing}`
+                    : `${priceLabel} / ${billing}`
+                } · Cancel anytime`}
           </p>
         )}
       </div>
 
       <button
         onClick={save}
-        disabled={saving || priceInvalid || linkInvalid}
+        disabled={saving || priceInvalid || linkInvalid || trialInvalid}
         className="w-full bg-accent text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
       >
         {saved ? "Saved!" : saving ? "Saving…" : "Save subscription settings"}
