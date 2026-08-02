@@ -32,6 +32,8 @@ export async function getUnlock(id: string): Promise<TelegramUnlock | null> {
 export async function markPaidAndDeliver(opts: {
   unlock: TelegramUnlock;
   chatId?: string | null;
+  /** Telegram user who paid (from the Login Widget cookie), if known. */
+  tgUserId?: number | null;
   paymentIntentId?: string | null;
 }): Promise<void> {
   const db = supabaseAdmin();
@@ -50,6 +52,15 @@ export async function markPaidAndDeliver(opts: {
         opts.paymentIntentId ?? unlock.stripe_payment_intent_id ?? null,
     })
     .eq("id", unlock.id);
+
+  // Best-effort, in its own statement so a missing column (migration not run
+  // yet) can never block the paid/delivery update above.
+  if (opts.tgUserId) {
+    await db
+      .from("telegram_unlocks")
+      .update({ paid_tg_user_id: opts.tgUserId })
+      .eq("id", unlock.id);
+  }
 
   const session = await tgSessionFor(unlock.owner_id);
   if (!session) return; // Telegram got disconnected — payment still recorded.

@@ -113,6 +113,14 @@ export default function TelegramSettings() {
         </div>
       )}
 
+      <div className="rounded-xl border border-line bg-card2 px-3.5 py-3 text-xs text-muted">
+        Optional: with <b>TELEGRAM_BOT_TOKEN</b> and{" "}
+        <b>TELEGRAM_BOT_USERNAME</b> set on the server (and the site domain set
+        via @BotFather&apos;s /setdomain), unlock pages show a &quot;Log in with
+        Telegram&quot; button — fans&apos; cards are then saved to their
+        Telegram identity for one-tap unlocks, no sign-up needed.
+      </div>
+
       <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3.5 py-3 text-xs text-muted">
         Automating a personal account is against Telegram&apos;s Terms of
         Service and can get the account limited. Keep volume low and use at your

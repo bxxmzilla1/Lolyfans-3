@@ -11,6 +11,7 @@ import {
 } from "@/lib/payments";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
 import { getUnlock, markPaidAndDeliver } from "@/lib/telegramUnlock";
+import { saveTgFanPaymentMethod } from "@/lib/telegramLogin";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 
@@ -59,10 +60,22 @@ export async function POST(req: NextRequest) {
     // card, so handle it before the chat-scoped branches below.
     if (pi.metadata?.kind === "tg-unlock" && pi.metadata.unlockId) {
       const unlock = await getUnlock(pi.metadata.unlockId);
+      const tgUserId = Number(pi.metadata.tgUserId) || null;
+      // Save the card against the Telegram identity so the next unlock is
+      // one tap (backup for the client-side complete call).
+      if (tgUserId) {
+        const pmId =
+          typeof pi.payment_method === "string"
+            ? pi.payment_method
+            : pi.payment_method?.id ?? null;
+        const custId = typeof pi.customer === "string" ? pi.customer : null;
+        await saveTgFanPaymentMethod(tgUserId, custId, pmId);
+      }
       if (unlock) {
         await markPaidAndDeliver({
           unlock,
           chatId: pi.metadata.chatId ?? null,
+          tgUserId,
           paymentIntentId: pi.id,
         });
       }

@@ -707,6 +707,7 @@ create table if not exists telegram_unlocks (
   tg_peer text not null,    -- @username or phone the teaser was sent to
   status text not null default 'pending', -- pending | paid
   paid_chat_id uuid references chats(id) on delete set null,
+  paid_tg_user_id bigint,   -- Telegram user who paid (when logged in via the widget)
   stripe_payment_intent_id text,
   paid_at timestamptz,
   delivered_at timestamptz,
@@ -715,6 +716,22 @@ create table if not exists telegram_unlocks (
 alter table telegram_unlocks enable row level security;
 create index if not exists telegram_unlocks_owner_idx
   on telegram_unlocks (owner_id, created_at desc);
+alter table telegram_unlocks
+  add column if not exists paid_tg_user_id bigint;
+
+-- Telegram Login Widget fans: verified Telegram identity + saved Stripe card
+-- for one-tap unlocks (see migration-telegram-login.sql for commentary).
+create table if not exists telegram_fans (
+  tg_user_id bigint primary key,
+  username text,
+  first_name text,
+  photo_url text,
+  stripe_customer_id text,
+  stripe_payment_method_id text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table telegram_fans enable row level security;
 
 -- Public storage bucket for chat media and vault files.
 -- file_size_limit null = no per-bucket cap (project global Storage limit applies).
