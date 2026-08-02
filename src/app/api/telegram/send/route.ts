@@ -3,8 +3,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { requestOrigin } from "@/lib/smsNotify";
-import { tgSessionFor, tgSendTeaser, tgDeliverMedia } from "@/lib/telegram";
+import {
+  tgSessionFor,
+  tgSendTeaser,
+  tgDeliverMedia,
+  tgCacheMedia,
+} from "@/lib/telegram";
 import { savedCardChatForPeer } from "@/lib/telegramUnlock";
+
+// Sending a PPV uploads the full clear video to Telegram (Saved Messages
+// cache for instant unlock delivery) — give it the full window.
+export const maxDuration = 300;
 
 /** Short unguessable token for the /payment/<code> link (8 base62 chars). */
 function shortPayCode(): string {
@@ -163,6 +172,20 @@ export async function POST(req: NextRequest) {
         .from("telegram_unlocks")
         .update({ tg_message_id: messageId })
         .eq("id", unlock.id);
+    }
+    // Pre-upload the clear media to Saved Messages so the unlock delivery
+    // is an instant server-side copy instead of a minutes-long re-upload.
+    // Best-effort — without it, delivery falls back to the slow path.
+    try {
+      const cachedId = await tgCacheMedia({ session, mediaPath, mediaType });
+      if (cachedId) {
+        await db
+          .from("telegram_unlocks")
+          .update({ tg_cached_message_id: cachedId })
+          .eq("id", unlock.id);
+      }
+    } catch {
+      // ignore — slow delivery still works
     }
   } catch (err) {
     // Roll back the row so a failed send doesn't leave a dangling link.

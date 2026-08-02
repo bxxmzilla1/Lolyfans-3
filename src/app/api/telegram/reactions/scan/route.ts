@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { tgSessionFor, telegramConfigured } from "@/lib/telegram";
 import {
@@ -7,13 +7,91 @@ import {
 } from "@/lib/telegramUnlock";
 
 export const dynamic = "force-dynamic";
-// Video deliveries can take minutes — give the worker the full window.
+// The background loop runs ~50s per cron tick; deliveries can add more.
 export const maxDuration = 300;
+
+// How long one cron invocation keeps scanning, and how often it re-checks.
+// The next cron tick (1/min) takes over right as this window closes, so
+// reactions are picked up within a few seconds around the clock.
+const LOOP_WINDOW_MS = 50_000;
+const LOOP_STEP_MS = 5_000;
+
+// One loop per warm instance — overlapping crons just ack and exit.
+let loopRunning = false;
+
+/** One pass: retry undelivered media, then charge new reactions. */
+async function scanOnce(): Promise<void> {
+  // Creators worth visiting: pending teasers (reactions to charge) plus
+  // paid-but-undelivered unlocks (deliveries to retry).
+  const since = new Date(Date.now() - 14 * 86400_000).toISOString();
+  const db = supabaseAdmin();
+  const [{ data: pending }, { data: undelivered }] = await Promise.all([
+    db
+      .from("telegram_unlocks")
+      .select("owner_id")
+      .eq("status", "pending")
+      .not("tg_message_id", "is", null)
+      .gte("created_at", since)
+      .limit(200),
+    db
+      .from("telegram_unlocks")
+      .select("owner_id")
+      .in("status", ["paid", "delivering"])
+      .is("delivered_at", null)
+      .gte("created_at", since)
+      .limit(200),
+  ]);
+  const deliverOwners = new Set(
+    (undelivered ?? []).map((r) => String(r.owner_id))
+  );
+  const owners = [
+    ...new Set(
+      [...(pending ?? []), ...(undelivered ?? [])].map((r) => String(r.owner_id))
+    ),
+  ].slice(0, 20);
+
+  for (const ownerId of owners) {
+    try {
+      // Deliveries first — fans who already paid shouldn't wait behind scans.
+      if (deliverOwners.has(ownerId)) await retryUndeliveredUnlocks(ownerId);
+      const session = await tgSessionFor(ownerId).catch(() => null);
+      if (!session) continue;
+      await chargeReactionUnlocks(ownerId, session);
+    } catch {
+      // one creator failing shouldn't stop the rest
+    }
+  }
+}
+
+/** Keep scanning until the next cron tick takes over. */
+async function scanLoop(): Promise<void> {
+  if (loopRunning) return;
+  loopRunning = true;
+  try {
+    const deadline = Date.now() + LOOP_WINDOW_MS;
+    while (Date.now() < deadline) {
+      const started = Date.now();
+      try {
+        await scanOnce();
+      } catch {
+        // keep looping
+      }
+      const wait = LOOP_STEP_MS - (Date.now() - started);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    }
+  } finally {
+    loopRunning = false;
+  }
+}
 
 /**
  * Background worker for reaction-to-pay: scans every creator's pending PPVs
- * for double-tap reactions and charges saved cards, independent of anyone
- * having the app open.
+ * for double-tap reactions, charges saved cards, and retries undelivered
+ * media — independent of anyone having the app open.
+ *
+ * Responds immediately (so short-timeout pingers like cron-job.org never
+ * fail), then keeps scanning in the background every few seconds until the
+ * next cron tick takes over.
  *
  * Trigger it every minute with a scheduler:
  *   - Vercel Cron (vercel.json) — sends Authorization: Bearer <CRON_SECRET>
@@ -38,45 +116,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Telegram is not configured" }, { status: 503 });
   }
 
-  // Creators worth visiting: pending teasers (reactions to charge) plus
-  // paid-but-undelivered unlocks (deliveries to retry).
-  const since = new Date(Date.now() - 14 * 86400_000).toISOString();
-  const db = supabaseAdmin();
-  const [{ data: pending }, { data: undelivered }] = await Promise.all([
-    db
-      .from("telegram_unlocks")
-      .select("owner_id")
-      .eq("status", "pending")
-      .not("tg_message_id", "is", null)
-      .gte("created_at", since)
-      .limit(200),
-    db
-      .from("telegram_unlocks")
-      .select("owner_id")
-      .in("status", ["paid", "delivering"])
-      .is("delivered_at", null)
-      .gte("created_at", since)
-      .limit(200),
-  ]);
-  const owners = [
-    ...new Set(
-      [...(pending ?? []), ...(undelivered ?? [])].map((r) => String(r.owner_id))
-    ),
-  ].slice(0, 20);
-
-  let scanned = 0;
-  for (const ownerId of owners) {
-    try {
-      // Deliveries first — fans who already paid shouldn't wait behind scans.
-      await retryUndeliveredUnlocks(ownerId);
-      const session = await tgSessionFor(ownerId).catch(() => null);
-      if (!session) continue;
-      await chargeReactionUnlocks(ownerId, session);
-      scanned++;
-    } catch {
-      // one creator failing shouldn't stop the rest
-    }
-  }
-
-  return NextResponse.json({ ok: true, owners: owners.length, scanned });
+  const alreadyLooping = loopRunning;
+  if (!alreadyLooping) after(scanLoop);
+  return NextResponse.json({ ok: true, looping: !alreadyLooping });
 }

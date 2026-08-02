@@ -1026,29 +1026,97 @@ export async function tgReactedMessageIds(opts: {
 }
 
 /** Deliver the clear media into the fan's DM after they pay. */
+/** Telegram-friendly file name so media renders as playable video / photo. */
+function mediaFileName(mediaPath: string, mediaType: "image" | "video"): string {
+  const base = mediaPath.split("/").pop() || "";
+  return /\.[a-z0-9]{2,5}$/i.test(base)
+    ? base
+    : mediaType === "video"
+      ? "media.mp4"
+      : "media.jpg";
+}
+
+/**
+ * Upload the clear media once into the creator's Saved Messages. Unlock
+ * delivery then re-sends this copy by reference — Telegram duplicates it
+ * server-side in about a second, no matter how big the video is.
+ */
+export async function tgCacheMedia(opts: {
+  session: string;
+  mediaPath: string;
+  mediaType: "image" | "video";
+}): Promise<number | null> {
+  const client = await connect(opts.session);
+  try {
+    const { CustomFile } = await gramjs();
+    const file = await downloadMedia(opts.mediaPath);
+    const sent = await client.sendFile("me", {
+      file: new CustomFile(
+        mediaFileName(opts.mediaPath, opts.mediaType),
+        file.length,
+        "",
+        file
+      ),
+      caption: "🔒 PPV copy — keep this so unlocks deliver instantly",
+      forceDocument: false,
+      supportsStreaming: opts.mediaType === "video",
+    });
+    const id = (sent as { id?: unknown } | null)?.id;
+    return typeof id === "number" && id > 0 ? id : null;
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
 export async function tgDeliverMedia(opts: {
   session: string;
   peer: string;
   mediaPath: string;
   mediaType: "image" | "video";
   caption?: string;
+  /** Saved Messages copy uploaded at send time — enables instant delivery. */
+  cachedMessageId?: number | null;
 }): Promise<void> {
   const client = await connect(opts.session);
   try {
     const { CustomFile } = await gramjs();
     const peer = await resolvePeer(opts.peer);
+    const caption = opts.caption ?? "✅ Unlocked — enjoy!";
+
+    // Instant path: re-send the pre-uploaded Saved Messages copy. Fetching
+    // it right before sending refreshes the file reference, so this stays
+    // valid indefinitely. Falls through to a full upload if the creator
+    // deleted the copy.
+    if (opts.cachedMessageId) {
+      try {
+        const cached = (await client.getMessages("me", {
+          ids: [opts.cachedMessageId],
+        })) as Array<{ media?: unknown } | null>;
+        const media = cached?.[0]?.media;
+        if (media) {
+          await client.sendFile(peer, {
+            file: media,
+            caption,
+            videoNote: false,
+            forceDocument: false,
+            supportsStreaming: opts.mediaType === "video",
+          });
+          return;
+        }
+      } catch {
+        // fall through to the full upload
+      }
+    }
+
     const file = await downloadMedia(opts.mediaPath);
-    // Keep the real file name (extension) so Telegram renders a playable
-    // video / proper photo instead of a generic unnamed document.
-    const base = opts.mediaPath.split("/").pop() || "";
-    const name = /\.[a-z0-9]{2,5}$/i.test(base)
-      ? base
-      : opts.mediaType === "video"
-        ? "media.mp4"
-        : "media.jpg";
     await client.sendFile(peer, {
-      file: new CustomFile(name, file.length, "", file),
-      caption: opts.caption ?? "✅ Unlocked — enjoy!",
+      file: new CustomFile(
+        mediaFileName(opts.mediaPath, opts.mediaType),
+        file.length,
+        "",
+        file
+      ),
+      caption,
       videoNote: false,
       forceDocument: false,
       supportsStreaming: opts.mediaType === "video",

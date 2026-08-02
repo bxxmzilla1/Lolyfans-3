@@ -44,6 +44,10 @@ create index if not exists telegram_unlocks_owner_idx
 alter table telegram_unlocks add column if not exists short_code text unique;
 alter table telegram_unlocks add column if not exists tg_message_id bigint;
 
+-- Saved Messages copy of the clear media, uploaded when the PPV is sent.
+-- Unlock delivery re-sends it by reference (instant server-side copy).
+alter table telegram_unlocks add column if not exists tg_cached_message_id bigint;
+
 -- Server-only tables (accessed with the service key); RLS keeps the anon key out.
 alter table telegram_accounts enable row level security;
 alter table telegram_unlocks enable row level security;

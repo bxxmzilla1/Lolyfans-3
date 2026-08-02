@@ -16,6 +16,8 @@ export type TelegramUnlock = {
   delivered_at: string | null;
   short_code?: string | null;
   tg_message_id?: number | null;
+  /** Saved Messages copy of the clear media — enables instant delivery. */
+  tg_cached_message_id?: number | null;
 };
 
 export async function getUnlock(id: string): Promise<TelegramUnlock | null> {
@@ -131,6 +133,7 @@ export async function deliverUnlock(
       peer: unlock.tg_peer,
       mediaPath: unlock.media_path,
       mediaType: unlock.media_type,
+      cachedMessageId: unlock.tg_cached_message_id ?? null,
     });
     await db
       .from("telegram_unlocks")
