@@ -110,47 +110,57 @@ export default function VaultManager() {
   } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // When the vault sits next to an open chat, outline each item by its send
-  // status in THAT chat: orange = sent free, red = locked & never unlocked,
-  // green = locked & unlocked. No outline = never sent in this chat.
+  // Outline each item by its send status: orange = sent free, red = locked &
+  // never unlocked, green = locked & unlocked (bought). Next to an open chat
+  // the scope is that chat; on the standalone vault page it covers every
+  // Telegram send. No outline = never sent in that scope.
   const pathname = usePathname();
-  const chatId = pathname?.match(/^\/inbox\/([^/?#]+)/)?.[1] ?? null;
+  const tgPeerRaw = pathname?.match(/^\/inbox\/tg\/([^/?#]+)/)?.[1] ?? null;
+  const tgPeer = tgPeerRaw ? decodeURIComponent(tgPeerRaw) : null;
+  const chatId = tgPeer
+    ? null
+    : pathname?.match(/^\/inbox\/([^/?#]+)/)?.[1] ?? null;
   const [sendStatus, setSendStatus] = useState<Record<string, SendStatus>>({});
 
   const statusInflightRef = useRef(false);
   const loadSendStatus = useCallback(async () => {
-    if (!chatId || statusInflightRef.current) return;
+    if (statusInflightRef.current) return;
     statusInflightRef.current = true;
     try {
-      const res = await fetch(`/api/vault/status?chatId=${chatId}`).catch(() => null);
+      const query = chatId
+        ? `?chatId=${chatId}`
+        : tgPeer
+          ? `?peer=${encodeURIComponent(tgPeer)}`
+          : "";
+      const res = await fetch(`/api/vault/status${query}`).catch(() => null);
       if (!res?.ok) return;
       const data = await res.json().catch(() => null);
       setSendStatus((data?.status as Record<string, SendStatus>) ?? {});
     } finally {
       statusInflightRef.current = false;
     }
-  }, [chatId]);
+  }, [chatId, tgPeer]);
 
   useEffect(() => {
     setSendStatus({});
-    if (!chatId) return;
     // Immediate refresh on chat switch — this is the important path.
     loadSendStatus();
-    // Live updates: repaint when something is sent or the fan unlocks.
-    const supabase = supabaseBrowser();
+    // Live updates for legacy chats: repaint when something is sent or the
+    // fan unlocks. Telegram/global scopes rely on the backup poll below.
+    const supabase = chatId ? supabaseBrowser() : null;
     const channel = supabase
-      .channel(`chat:${chatId}`)
+      ?.channel(`chat:${chatId}`)
       .on("broadcast", { event: "new-message" }, () => loadSendStatus())
       .on("broadcast", { event: "message-unlocked" }, () => loadSendStatus())
       .on("broadcast", { event: "blur-drain-progress" }, () => loadSendStatus());
-    channel.subscribe();
+    channel?.subscribe();
     // Gentle backup poll — 1 Hz was 503-ing the deployment.
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") loadSendStatus();
     }, 5000);
     return () => {
       clearInterval(timer);
-      supabase.removeChannel(channel);
+      if (supabase && channel) supabase.removeChannel(channel);
     };
   }, [chatId, loadSendStatus]);
 
@@ -733,7 +743,7 @@ export default function VaultManager() {
         </p>
       ) : (
         <>
-        {chatId && (
+        {Object.keys(sendStatus).length > 0 && (
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
             <span className="inline-flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-orange-400" />
@@ -741,11 +751,11 @@ export default function VaultManager() {
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-red-500" />
-              Locked · not unlocked
+              Locked · not bought
             </span>
             <span className="inline-flex items-center gap-1.5">
               <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
-              Unlocked
+              Bought
             </span>
           </div>
         )}
@@ -812,9 +822,9 @@ export default function VaultManager() {
                   )}
                 </>
               )}
-              {/* Send-status outline for the open chat — drawn on top of the
-                  thumbnail so it can't hide behind the media. */}
-              {!selectMode && chatId && sendStatus[item.media_path] && (
+              {/* Send-status outline — drawn on top of the thumbnail so it
+                  can't hide behind the media. */}
+              {!selectMode && sendStatus[item.media_path] && (
                 <span
                   className={`absolute inset-0 rounded-md border-4 pointer-events-none ${
                     STATUS_BORDER[sendStatus[item.media_path]]

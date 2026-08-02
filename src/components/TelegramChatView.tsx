@@ -15,6 +15,8 @@ type TgMessage = {
   hasMedia: boolean;
   mediaKind: "image" | "video" | "gif" | "sticker" | "other" | null;
   receipt: "sent" | "read" | null;
+  /** PPV teaser state: "paid" turns the bubble green. */
+  ppv?: "paid" | "pending" | null;
 };
 
 /**
@@ -270,7 +272,9 @@ export default function TelegramChatView({
               <div
                 className={`max-w-[80%] rounded-2xl overflow-hidden text-sm ${
                   m.out
-                    ? "bg-accent text-white rounded-br-md"
+                    ? `${
+                        m.ppv === "paid" ? "bg-green-600" : "bg-accent"
+                      } text-white rounded-br-md`
                     : "bg-card2 border border-line rounded-bl-md"
                 }`}
               >

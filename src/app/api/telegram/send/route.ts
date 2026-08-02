@@ -68,6 +68,21 @@ export async function POST(req: NextRequest) {
         mediaType,
         caption,
       });
+      // Record the free send so the vault can flag this media as
+      // "sent free" (status highlights). Best-effort — the media is
+      // already delivered, so a logging hiccup must not fail the request.
+      try {
+        await supabaseAdmin().from("telegram_unlocks").insert({
+          owner_id: ownerId,
+          media_path: mediaPath,
+          media_type: mediaType,
+          price_cents: 0,
+          tg_peer: peer,
+          status: "free",
+        });
+      } catch {
+        // ignore
+      }
       return NextResponse.json({ ok: true, free: true });
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Could not send the message";

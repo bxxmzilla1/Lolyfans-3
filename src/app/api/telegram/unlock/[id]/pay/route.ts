@@ -26,6 +26,11 @@ export async function POST(
   if (unlock.status === "paid" || unlock.delivered_at) {
     return NextResponse.json({ ok: true, alreadyUnlocked: true });
   }
+  // A reaction charge is being processed right now — never start a second
+  // payment for the same PPV.
+  if (unlock.status === "charging") {
+    return NextResponse.json({ ok: true, alreadyUnlocked: true });
+  }
 
   const s = stripe();
   const db = supabaseAdmin();
@@ -46,8 +51,20 @@ export async function POST(
     savedPm = (data?.stripe_payment_method_id as string | null) ?? null;
   }
 
-  // One-tap: charge the saved card immediately, then deliver.
+  // One-tap: charge the saved card immediately, then deliver. The atomic
+  // status claim below means the reaction charger and this route can never
+  // both charge the same PPV — whoever claims first wins.
   if (chat && savedCustomer && savedPm) {
+    const { data: claimed } = await db
+      .from("telegram_unlocks")
+      .update({ status: "charging" })
+      .eq("id", unlock.id)
+      .in("status", ["pending", "react_failed"])
+      .select("id");
+    if (!claimed?.length) {
+      // Someone else (a reaction) is already charging or has paid it.
+      return NextResponse.json({ ok: true, alreadyUnlocked: true });
+    }
     try {
       const pi = await s.paymentIntents.create({
         amount: unlock.price_cents,
@@ -72,6 +89,13 @@ export async function POST(
         // fall through to the wizard anyway
       }
     }
+    // Charge didn't go through — release the claim so the card wizard
+    // (below) or a later attempt can take over.
+    await db
+      .from("telegram_unlocks")
+      .update({ status: "pending" })
+      .eq("id", unlock.id)
+      .eq("status", "charging");
   }
 
   // Card wizard: a PaymentIntent the in-page Payment Element confirms. Save
