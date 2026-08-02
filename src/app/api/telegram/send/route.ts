@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { requestOrigin } from "@/lib/smsNotify";
 import { tgSessionFor, tgSendTeaser, tgDeliverMedia } from "@/lib/telegram";
+import { savedCardChatForPeer } from "@/lib/telegramUnlock";
 
 /** Short unguessable token for the /payment/<code> link (8 base62 chars). */
 function shortPayCode(): string {
@@ -112,6 +113,10 @@ export async function POST(req: NextRequest) {
   const link = shortCode
     ? `${origin}/payment/${shortCode}`
     : `${origin}/u/${unlock.id}`;
+  // Fans with a card on file pay by reacting to the teaser (DMs only), so
+  // they get a double-tap prompt instead of the payment link.
+  const isDm = !peer.startsWith("channel:") && !peer.startsWith("chat:");
+  const reactionPay = isDm && !!(await savedCardChatForPeer(ownerId, peer));
   // Price lives on the blurred media overlay; caption is optional note + tap link.
   const safeCaption = caption
     .replace(/&/g, "&amp;")
@@ -119,7 +124,9 @@ export async function POST(req: NextRequest) {
     .replace(/>/g, "&gt;");
   const teaserCaption = [
     safeCaption,
-    `🔓 <b><a href="${link}">Tap Here To Unlock</a></b>`,
+    reactionPay
+      ? `❤️ <b>Double-tap this message to unlock</b>`
+      : `🔓 <b><a href="${link}">Tap Here To Unlock</a></b>`,
   ]
     .filter(Boolean)
     .join("\n\n");

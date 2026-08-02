@@ -88,6 +88,39 @@ export async function markPaidAndDeliver(opts: {
 }
 
 /**
+ * Chat holding a saved card for this Telegram peer, if any — i.e. the fan
+ * has paid this creator before and their card is on file, so reaction-to-pay
+ * (and one-tap web pay) will work for them.
+ */
+export async function savedCardChatForPeer(
+  ownerId: string,
+  peer: string
+): Promise<string | null> {
+  const db = supabaseAdmin();
+  const { data: prior } = await db
+    .from("telegram_unlocks")
+    .select("paid_chat_id")
+    .eq("owner_id", ownerId)
+    .eq("tg_peer", peer)
+    .eq("status", "paid")
+    .not("paid_chat_id", "is", null)
+    .order("paid_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const chatId = (prior?.paid_chat_id as string | null) ?? null;
+  if (!chatId) return null;
+
+  const { data: chat } = await db
+    .from("chats")
+    .select("stripe_customer_id, stripe_payment_method_id")
+    .eq("id", chatId)
+    .maybeSingle();
+  return chat?.stripe_customer_id && chat?.stripe_payment_method_id
+    ? chatId
+    : null;
+}
+
+/**
  * Reaction-to-pay: fans who already paid once (saved card) can unlock a PPV
  * by double-tapping (reacting to) the teaser message in Telegram.
  *
@@ -143,17 +176,7 @@ export async function chargeReactionUnlocks(
 
     // The fan's saved card: whatever chat their last paid unlock from this
     // peer was charged to.
-    const { data: prior } = await db
-      .from("telegram_unlocks")
-      .select("paid_chat_id")
-      .eq("owner_id", ownerId)
-      .eq("tg_peer", peer)
-      .eq("status", "paid")
-      .not("paid_chat_id", "is", null)
-      .order("paid_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const chatId = (prior?.paid_chat_id as string | null) ?? null;
+    const chatId = await savedCardChatForPeer(ownerId, peer);
     if (!chatId) continue; // never paid before — reaction can't charge them
 
     const { data: chat } = await db
