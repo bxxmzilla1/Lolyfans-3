@@ -1,9 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Portal from "./Portal";
 import AdminCodeDialog from "./AdminCodeDialog";
 import { IconCard, IconCheck, IconSearch, IconTrash } from "./Icons";
+
+/** Rows drawn at once; the rest are reachable through search. */
+const ROW_WINDOW = 200;
 
 type ChatRow = {
   id: string;
@@ -34,6 +37,18 @@ export default function MassDeleteChats({
   const [askCode, setAskCode] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // The inbox list stops at 1000 chats; the delete covers everything, so ask
+  // the server for the real total to report honest numbers.
+  const [total, setTotal] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch("/api/chats/mass-delete")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.total === "number") setTotal(data.total);
+      })
+      .catch(() => {});
+  }, []);
 
   const nameOf = (c: ChatRow) => c.custom_name || c.guest_name;
 
@@ -56,7 +71,7 @@ export default function MassDeleteChats({
     });
   }
 
-  const visible = useMemo(() => {
+  const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = q
       ? chats.filter((c) =>
@@ -73,7 +88,13 @@ export default function MassDeleteChats({
     });
   }, [chats, search, keep]);
 
-  const deleteCount = chats.length - keep.size;
+  // Rendering thousands of rows at once locks the sheet up — show a window
+  // and let search reach the rest.
+  const visible = matches.slice(0, ROW_WINDOW);
+  const hiddenRows = matches.length - visible.length;
+
+  const chatTotal = Math.max(total ?? chats.length, chats.length);
+  const deleteCount = chatTotal - keep.size;
 
   function toggle(id: string) {
     setKeep((prev) => {
@@ -114,7 +135,8 @@ export default function MassDeleteChats({
           <div className="min-w-0">
             <p className="font-bold text-lg">Delete all chats</p>
             <p className="text-muted text-xs">
-              {deleteCount} of {chats.length} will be deleted
+              {deleteCount.toLocaleString("en-US")} of{" "}
+              {chatTotal.toLocaleString("en-US")} will be deleted
               {keep.size > 0 ? ` · ${keep.size} kept` : ""}
             </p>
           </div>
@@ -250,6 +272,13 @@ export default function MassDeleteChats({
                 </p>
               )}
             </div>
+
+            {hiddenRows > 0 && (
+              <p className="text-xs text-muted text-center">
+                {hiddenRows.toLocaleString("en-US")} more not shown — search by
+                name to find them. They&apos;ll still be deleted.
+              </p>
+            )}
 
             {error && <p className="text-red-400 text-sm">{error}</p>}
           </div>
