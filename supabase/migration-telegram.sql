@@ -38,6 +38,12 @@ create table if not exists telegram_unlocks (
 create index if not exists telegram_unlocks_owner_idx
   on telegram_unlocks (owner_id, created_at desc);
 
+-- Short pay-link token (lolyfans.com/payment/<code>) and the Telegram id of
+-- the teaser message, so a double-tap reaction on it can auto-charge a fan
+-- with a saved card. Safe to re-run.
+alter table telegram_unlocks add column if not exists short_code text unique;
+alter table telegram_unlocks add column if not exists tg_message_id bigint;
+
 -- Server-only tables (accessed with the service key); RLS keeps the anon key out.
 alter table telegram_accounts enable row level security;
 alter table telegram_unlocks enable row level security;

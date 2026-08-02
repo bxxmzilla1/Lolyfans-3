@@ -919,8 +919,12 @@ export async function tgSendTeaser(opts: {
   mediaType: "image" | "video";
   caption: string;
   priceCents: number;
-}): Promise<void> {
+}): Promise<number | null> {
   const client = await connect(opts.session);
+  const sentId = (res: unknown): number | null => {
+    const id = (res as { id?: unknown } | null)?.id;
+    return typeof id === "number" && id > 0 ? id : null;
+  };
   try {
     const { CustomFile } = await gramjs();
     const peer = await resolvePeer(opts.peer);
@@ -937,23 +941,23 @@ export async function tgSendTeaser(opts: {
         "image",
         opts.priceCents
       );
-      await client.sendFile(peer, {
+      const sent = await client.sendFile(peer, {
         file: new CustomFile("teaser.jpg", blurred.length, "", blurred),
         ...sendOpts,
       });
-      return;
+      return sentId(sent);
     }
 
     const original = await downloadMedia(opts.mediaPath);
     // Best: a short blurred clip that shows as a real video bubble.
     try {
       const clip = await blurredVideoClip(original, opts.priceCents);
-      await client.sendFile(peer, {
+      const sent = await client.sendFile(peer, {
         file: new CustomFile("teaser.mp4", clip.length, "", clip),
         ...sendOpts,
         supportsStreaming: true,
       });
-      return;
+      return sentId(sent);
     } catch {
       // fall through to the still frame
     }
@@ -963,19 +967,59 @@ export async function tgSendTeaser(opts: {
         await blurredVideoFrame(original),
         opts.priceCents
       );
-      await client.sendFile(peer, {
+      const sent = await client.sendFile(peer, {
         file: new CustomFile("teaser.jpg", frame.length, "", frame),
         ...sendOpts,
       });
-      return;
+      return sentId(sent);
     } catch {
       // fall through to plain text
     }
     // Last resort: text bubble with the HTML unlock link.
-    await client.sendMessage(peer, {
+    const sent = await client.sendMessage(peer, {
       message: opts.caption,
       parseMode: "html",
     });
+    return sentId(sent);
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
+/**
+ * Which of our messages got a reaction from the other side? Telegram's
+ * double-tap "like" shows up here. Our own reactions carry `chosenOrder`,
+ * so a message counts only when someone else's reaction is on it.
+ */
+export async function tgReactedMessageIds(opts: {
+  session: string;
+  peer: string;
+  ids: number[];
+}): Promise<Set<number>> {
+  const reacted = new Set<number>();
+  if (!opts.ids.length) return reacted;
+  const client = await connect(opts.session);
+  try {
+    const peer = await resolvePeer(opts.peer);
+    const messages = (await client.getMessages(peer, {
+      ids: opts.ids,
+    })) as Array<{
+      id?: number;
+      reactions?: {
+        results?: Array<{ count?: number; chosenOrder?: number | null }>;
+      };
+    } | null>;
+    for (const m of messages) {
+      if (!m || typeof m.id !== "number") continue;
+      const results = m.reactions?.results ?? [];
+      const othersCount = results.reduce((sum, r) => {
+        const count = Number(r?.count) || 0;
+        const mine = r?.chosenOrder !== undefined && r?.chosenOrder !== null ? 1 : 0;
+        return sum + Math.max(0, count - mine);
+      }, 0);
+      if (othersCount > 0) reacted.add(m.id);
+    }
+    return reacted;
   } finally {
     await client.disconnect().catch(() => {});
   }

@@ -1,8 +1,19 @@
+import { randomBytes } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { requestOrigin } from "@/lib/smsNotify";
 import { tgSessionFor, tgSendTeaser, tgDeliverMedia } from "@/lib/telegram";
+
+/** Short unguessable token for the /payment/<code> link (8 base62 chars). */
+function shortPayCode(): string {
+  const alphabet =
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  const bytes = randomBytes(8);
+  let out = "";
+  for (const b of bytes) out += alphabet[b % alphabet.length];
+  return out;
+}
 
 /**
  * Creator sends a vault item into a fan's Telegram DM. With a price it's a
@@ -69,24 +80,38 @@ export async function POST(req: NextRequest) {
   }
 
   const db = supabaseAdmin();
-  const { data: unlock, error } = await db
+  const row = {
+    owner_id: ownerId,
+    media_path: mediaPath,
+    media_type: mediaType,
+    price_cents: priceCents,
+    tg_peer: peer,
+    status: "pending",
+  };
+  let shortCode: string | null = shortPayCode();
+  let { data: unlock, error } = await db
     .from("telegram_unlocks")
-    .insert({
-      owner_id: ownerId,
-      media_path: mediaPath,
-      media_type: mediaType,
-      price_cents: priceCents,
-      tg_peer: peer,
-      status: "pending",
-    })
+    .insert({ ...row, short_code: shortCode })
     .select()
     .single();
+  if (error || !unlock) {
+    // short_code column missing (migration not run yet) or a one-in-a-
+    // trillion collision — fall back to the long /u/<id> link.
+    shortCode = null;
+    ({ data: unlock, error } = await db
+      .from("telegram_unlocks")
+      .insert(row)
+      .select()
+      .single());
+  }
   if (error || !unlock) {
     return NextResponse.json({ error: "Could not create the unlock link" }, { status: 500 });
   }
 
   const origin = requestOrigin(req.headers);
-  const link = `${origin}/u/${unlock.id}`;
+  const link = shortCode
+    ? `${origin}/payment/${shortCode}`
+    : `${origin}/u/${unlock.id}`;
   // Price lives on the blurred media overlay; caption is optional note + tap link.
   const safeCaption = caption
     .replace(/&/g, "&amp;")
@@ -100,7 +125,7 @@ export async function POST(req: NextRequest) {
     .join("\n\n");
 
   try {
-    await tgSendTeaser({
+    const messageId = await tgSendTeaser({
       session,
       peer,
       mediaPath,
@@ -108,6 +133,15 @@ export async function POST(req: NextRequest) {
       caption: teaserCaption,
       priceCents,
     });
+    // Remember the teaser message so a double-tap reaction on it can
+    // auto-charge a fan with a saved card. Best-effort (column may not
+    // exist until the migration runs).
+    if (messageId) {
+      await db
+        .from("telegram_unlocks")
+        .update({ tg_message_id: messageId })
+        .eq("id", unlock.id);
+    }
   } catch (err) {
     // Roll back the row so a failed send doesn't leave a dangling link.
     await db.from("telegram_unlocks").delete().eq("id", unlock.id);

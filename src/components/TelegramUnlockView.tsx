@@ -85,65 +85,62 @@ export default function TelegramUnlockView({
 
   return (
     <div className="min-h-dvh bg-bg text-fg flex flex-col items-center justify-center p-5">
-      <div className="w-full max-w-sm space-y-5">
+      <div className="w-full max-w-xs space-y-4">
         {/* Creator */}
-        <div className="flex items-center gap-3 justify-center">
+        <div className="flex items-center gap-2.5 justify-center">
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={avatarUrl}
               alt={ownerName}
-              className="w-11 h-11 rounded-full object-cover bg-card2"
+              className="w-9 h-9 rounded-full object-cover bg-card2"
             />
           ) : (
-            <div className="w-11 h-11 rounded-full bg-card2 flex items-center justify-center">
-              <IconUser className="w-5 h-5 text-muted" />
+            <div className="w-9 h-9 rounded-full bg-card2 flex items-center justify-center">
+              <IconUser className="w-4 h-4 text-muted" />
             </div>
           )}
-          <p className="font-semibold flex items-center gap-1">
+          <p className="font-semibold text-sm flex items-center gap-1">
             {ownerName}
             {verified && <IconVerified className="w-4 h-4 text-sky-500" />}
           </p>
         </div>
 
-        {/* Locked / unlocked media card — real blurred teaser underneath */}
-        <div className="relative aspect-[4/5] rounded-2xl overflow-hidden border border-line bg-card2">
+        {/* Locked / unlocked media card. The teaser image already carries the
+            lock badge and price, so nothing else is stacked in the middle. */}
+        <div className="relative w-full max-w-[270px] mx-auto aspect-[4/5] rounded-2xl overflow-hidden border border-line bg-card2">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={`/api/telegram/unlock/${id}/teaser`}
             alt=""
-            className="absolute inset-0 w-full h-full object-cover scale-105"
+            className="absolute inset-0 w-full h-full object-cover"
           />
-          <div className="absolute inset-0 bg-black/35 backdrop-blur-[2px]" />
-          <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6">
-            {unlocked ? (
-              <>
-                <div className="w-14 h-14 rounded-2xl bg-green-500 flex items-center justify-center">
-                  <IconCheck className="w-7 h-7 text-white" />
-                </div>
-                <p className="font-bold text-lg drop-shadow">Unlocked!</p>
-                <p className="text-sm text-white/85 drop-shadow">
-                  Your {mediaType} was sent to your Telegram chat with {ownerName}.
-                  Open Telegram to view it.
-                </p>
-              </>
-            ) : (
-              <>
-                <div className="w-14 h-14 rounded-2xl ig-gradient glow-accent flex items-center justify-center">
-                  {mediaType === "video" ? (
-                    <IconPlay className="w-6 h-6 text-white translate-x-px" />
-                  ) : (
-                    <IconLock className="w-6 h-6 text-white" />
-                  )}
-                </div>
-                <p className="font-bold text-lg drop-shadow">Locked {mediaType}</p>
-                <p className="text-sm text-white/85 drop-shadow">
-                  Unlock to have it delivered to your Telegram chat with{" "}
-                  {ownerName}.
-                </p>
-              </>
-            )}
-          </div>
+          {unlocked ? (
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 text-center px-5 bg-black/55">
+              <div className="w-12 h-12 rounded-2xl bg-green-500 flex items-center justify-center">
+                <IconCheck className="w-6 h-6 text-white" />
+              </div>
+              <p className="font-bold drop-shadow">Unlocked!</p>
+              <p className="text-xs text-white/85 drop-shadow">
+                Your {mediaType} was sent to your Telegram chat with{" "}
+                {ownerName}. Open Telegram to view it.
+              </p>
+            </div>
+          ) : (
+            <div className="absolute inset-x-0 bottom-0 px-4 pt-10 pb-3 text-center bg-gradient-to-t from-black/70 to-transparent">
+              <p className="font-semibold text-sm text-white drop-shadow flex items-center justify-center gap-1.5">
+                {mediaType === "video" ? (
+                  <IconPlay className="w-3.5 h-3.5" />
+                ) : (
+                  <IconLock className="w-3.5 h-3.5" />
+                )}
+                Locked {mediaType}
+              </p>
+              <p className="text-[11px] text-white/80 drop-shadow">
+                Delivered to your Telegram chat after you unlock it.
+              </p>
+            </div>
+          )}
         </div>
 
         {/* Pay area */}
