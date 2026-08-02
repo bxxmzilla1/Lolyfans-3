@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createToken, GUEST_COOKIE, cookieOptions } from "@/lib/session";
@@ -6,29 +7,54 @@ import { hashPassword, verifyPassword } from "@/lib/password";
 import { broadcast } from "@/lib/realtime";
 import { ownerRequiresPaidSub } from "@/lib/subscriptionAccess";
 import { recordInviteEvent } from "@/lib/inviteEvents";
+import { getTelegramFan, telegramFanRow } from "@/lib/telegramLogin";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
- * Creates (or resumes) a guest chat after sign-up: the guest registers with
- * an email + password. No verification step — the account works right away.
+ * Creates (or resumes) a guest chat after sign-up. Two ways in:
+ *  - classic form: name + email + password, or
+ *  - `telegram: true`: the identity comes from the verified Telegram Login
+ *    Widget cookie — no form at all. The account is keyed on a synthetic
+ *    email derived from the Telegram user id, so the same Telegram user
+ *    always resumes the same chat with this creator.
  */
 export async function POST(req: NextRequest) {
-  const { code, name, email, password } = await req.json();
+  const body = await req.json();
+  const { code, name, email, password } = body;
 
   if (!code) {
     return NextResponse.json({ error: "Invalid link" }, { status: 400 });
   }
-  const emailStr = String(email || "").trim().toLowerCase();
-  if (!EMAIL_RE.test(emailStr)) {
-    return NextResponse.json({ error: "Enter a valid email address" }, { status: 400 });
-  }
+
+  const viaTelegram = body.telegram === true;
+  let emailStr: string;
+  let tgName: string | null = null;
   const passwordStr = String(password || "");
-  if (passwordStr.length < 6) {
-    return NextResponse.json(
-      { error: "Password must be at least 6 characters" },
-      { status: 400 }
-    );
+
+  if (viaTelegram) {
+    const tgFan = await getTelegramFan();
+    if (!tgFan) {
+      return NextResponse.json(
+        { error: "Log in with Telegram first" },
+        { status: 401 }
+      );
+    }
+    const row = await telegramFanRow(tgFan.id);
+    const username = row?.username ?? tgFan.username;
+    tgName = username ? `@${username}` : row?.first_name || "Telegram user";
+    emailStr = `tg-${tgFan.id}@telegram.fan`;
+  } else {
+    emailStr = String(email || "").trim().toLowerCase();
+    if (!EMAIL_RE.test(emailStr)) {
+      return NextResponse.json({ error: "Enter a valid email address" }, { status: 400 });
+    }
+    if (passwordStr.length < 6) {
+      return NextResponse.json(
+        { error: "Password must be at least 6 characters" },
+        { status: 400 }
+      );
+    }
   }
 
   const db = supabaseAdmin();
@@ -60,7 +86,9 @@ export async function POST(req: NextRequest) {
   const paidProfile = await ownerRequiresPaidSub(invite!.owner_id);
 
   if (existing) {
-    if (!verifyPassword(passwordStr, existing.guest_password || "")) {
+    // Telegram joins are already verified by the widget signature — no
+    // password to check on resume.
+    if (!viaTelegram && !verifyPassword(passwordStr, existing.guest_password || "")) {
       return NextResponse.json(
         { error: "This email is already registered, but the password is wrong" },
         { status: 403 }
@@ -97,9 +125,10 @@ export async function POST(req: NextRequest) {
     return res;
   }
 
-  // The name typed at sign-up; auto-generate one only as a fallback.
+  // The name typed at sign-up (or the Telegram identity); auto-generate one
+  // only as a fallback.
   const guestName =
-    String(name || "").trim().slice(0, 40) ||
+    (viaTelegram ? tgName || "" : String(name || "").trim()).slice(0, 40) ||
     `Guest ${Math.floor(1000 + Math.random() * 9000)}`;
   const row = {
     owner_id: invite!.owner_id,
@@ -108,7 +137,9 @@ export async function POST(req: NextRequest) {
     guest_country: country,
     guest_ip: ip,
     guest_email: emailStr,
-    guest_password: hashPassword(passwordStr),
+    // Telegram accounts have no password — store a random one so the row
+    // can never be logged into with an empty string.
+    guest_password: hashPassword(viaTelegram ? crypto.randomUUID() : passwordStr),
   };
   // Paid profiles: the chat stays pending (hidden from the creator's list)
   // until the fan finishes adding payment details.

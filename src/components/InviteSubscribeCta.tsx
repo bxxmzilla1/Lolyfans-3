@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Portal from "./Portal";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { elementsEnabled } from "@/lib/stripeClient";
@@ -8,6 +8,21 @@ import { subCaption, type SubPlan } from "@/lib/subscriptionPlan";
 import { IconEye, IconEyeOff } from "./Icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/** Payload the Telegram Login Widget hands to the onauth callback. */
+type TgAuthUser = {
+  id: number;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+  auth_date: number;
+  hash: string;
+};
+
+// Each CTA instance gets its own global onauth callback name, so the two
+// copies on the invite profile page never clobber each other.
+let widgetSeq = 0;
 
 type Intent = {
   mode: "payment" | "setup";
@@ -17,9 +32,12 @@ type Intent = {
 };
 
 /**
- * Invite-profile "Join Private Telegram Channel" button. Keeps the profile
- * page visible behind a blur and runs sign-up + the same 3-step Stripe card
- * wizard used in chat — no navigation away to /signup.
+ * Invite-profile join CTA. When the Telegram Login Widget is configured, the
+ * button IS the widget: one tap logs the fan in with their Telegram identity,
+ * creates their account from it (no name/email/password form), then opens the
+ * Stripe card sheet (paid) or goes straight into the channel (free). Without
+ * the widget it falls back to the classic sign-up form + card wizard, all
+ * over this profile page — no navigation away to /signup.
  */
 export default function InviteSubscribeCta({
   code,
@@ -29,6 +47,10 @@ export default function InviteSubscribeCta({
   initialOpen = false,
   /** Already has a guest session for this creator (skip the sign-up form). */
   alreadyJoined = false,
+  /** Login-widget bot (@ stripped); null = widget not configured. */
+  botUsername = null,
+  /** Fan already logged in with Telegram (from the cookie). */
+  tgLoggedIn = false,
 }: {
   code: string;
   ownerId: string;
@@ -37,6 +59,8 @@ export default function InviteSubscribeCta({
   plan: SubPlan;
   initialOpen?: boolean;
   alreadyJoined?: boolean;
+  botUsername?: string | null;
+  tgLoggedIn?: boolean;
 }) {
   const paid = plan.priceCents > 0;
   // Both free and paid profiles gate the private Telegram channel now.
@@ -57,6 +81,16 @@ export default function InviteSubscribeCta({
   const [busy, setBusy] = useState(false);
   const [intent, setIntent] = useState<Intent | null>(null);
   const [intentError, setIntentError] = useState("");
+  // Telegram widget path: joining state + errors shown under the CTA itself.
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState("");
+  const [tgReady, setTgReady] = useState(tgLoggedIn);
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const [cbName] = useState(() => `onTelegramAuthCta${++widgetSeq}`);
+
+  // The widget replaces the join button for brand-new visitors only;
+  // returning guests (unpaid) keep the button that reopens the card sheet.
+  const useWidget = !!botUsername && !alreadyJoined && !tgReady;
 
   useEffect(() => {
     if (initialOpen && paid) {
@@ -109,6 +143,89 @@ export default function InviteSubscribeCta({
     // No channel configured yet — land on the fan home feed.
     window.location.href = "/home";
   }
+
+  /**
+   * Telegram path: the widget (or an earlier login cookie) already verified
+   * who they are — create/resume their account from that identity, then open
+   * the card sheet (paid) or go straight into the channel (free).
+   */
+  async function tgJoin() {
+    if (joining) return;
+    setJoining(true);
+    setJoinError("");
+    try {
+      const res = await fetch("/api/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, telegram: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setJoining(false);
+        setJoinError(data?.error || "Could not join");
+        return;
+      }
+      if (data.needsPayment) {
+        setJoining(false);
+        if (!elementsEnabled()) {
+          setJoinError("Payments are not configured. Please try again later.");
+          return;
+        }
+        setStep("card");
+        setOpen(true);
+        return;
+      }
+      // Free profile — joining stays true while we navigate to Telegram.
+      await goToChannel();
+    } catch {
+      setJoining(false);
+      setJoinError("Could not join");
+    }
+  }
+
+  // Mount the Telegram Login Widget in place of the join button. It replaces
+  // the script tag with an iframe button and calls our per-instance global
+  // callback with the signed payload, which /api/telegram/auth verifies.
+  useEffect(() => {
+    const holder = widgetRef.current;
+    if (!useWidget || !botUsername || !holder) return;
+
+    const w = window as unknown as Record<string, unknown>;
+    w[cbName] = async (user: TgAuthUser) => {
+      setJoinError("");
+      try {
+        const res = await fetch("/api/telegram/auth", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(user),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.ok) {
+          setJoinError(data.error || "Telegram login failed");
+          return;
+        }
+        setTgReady(true);
+        await tgJoin();
+      } catch {
+        setJoinError("Telegram login failed");
+      }
+    };
+
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.async = true;
+    script.setAttribute("data-telegram-login", botUsername);
+    script.setAttribute("data-size", "large");
+    script.setAttribute("data-radius", "24");
+    script.setAttribute("data-onauth", `${cbName}(user)`);
+    holder.appendChild(script);
+
+    return () => {
+      holder.innerHTML = "";
+      delete w[cbName];
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useWidget, botUsername, cbName]);
 
   async function signup() {
     if (busy) return;
@@ -189,13 +306,21 @@ export default function InviteSubscribeCta({
     setOpen(true);
   }
 
-  const button = (
+  // Brand-new visitor with the widget configured → the button IS the widget.
+  // Returning guests / already-logged-in Telegram fans get the classic button
+  // (which resumes the card sheet or joins with their Telegram identity).
+  const button = useWidget ? (
+    <div ref={widgetRef} className="flex justify-center min-h-11" />
+  ) : (
     <button
       type="button"
-      onClick={openSheet}
-      className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold text-center active:opacity-80 transition-opacity"
+      onClick={
+        alreadyJoined || !botUsername ? openSheet : () => void tgJoin()
+      }
+      disabled={joining}
+      className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold text-center active:opacity-80 transition-opacity disabled:opacity-60"
     >
-      {joinLabel}
+      {joining ? "Joining…" : joinLabel}
     </button>
   );
 
@@ -208,6 +333,9 @@ export default function InviteSubscribeCta({
         {button}
         {caption && (
           <p className="text-xs text-muted text-center">{caption}</p>
+        )}
+        {joinError && (
+          <p className="text-xs text-red-400 text-center">{joinError}</p>
         )}
       </div>
 
