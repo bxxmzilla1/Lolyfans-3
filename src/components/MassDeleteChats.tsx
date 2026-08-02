@@ -3,13 +3,15 @@
 import { useMemo, useState } from "react";
 import Portal from "./Portal";
 import AdminCodeDialog from "./AdminCodeDialog";
-import { IconCheck, IconSearch, IconTrash } from "./Icons";
+import { IconCard, IconCheck, IconSearch, IconTrash } from "./Icons";
 
 type ChatRow = {
   id: string;
   guest_name: string;
   custom_name: string | null;
   guest_country: string | null;
+  /** Card on file — these fans can one-tap purchase, so they're worth keeping. */
+  stripe_payment_method_id: string | null;
 };
 
 /**
@@ -34,6 +36,25 @@ export default function MassDeleteChats({
   const [error, setError] = useState("");
 
   const nameOf = (c: ChatRow) => c.custom_name || c.guest_name;
+
+  const cardHolders = useMemo(
+    () => chats.filter((c) => !!c.stripe_payment_method_id),
+    [chats]
+  );
+  const allCardsKept =
+    cardHolders.length > 0 && cardHolders.every((c) => keep.has(c.id));
+
+  /** One tap to spare (or stop sparing) everyone with a card on file. */
+  function toggleCardHolders() {
+    setKeep((prev) => {
+      const next = new Set(prev);
+      for (const c of cardHolders) {
+        if (allCardsKept) next.delete(c.id);
+        else next.add(c.id);
+      }
+      return next;
+    });
+  }
 
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -118,6 +139,40 @@ export default function MassDeleteChats({
               </p>
             </div>
 
+            {cardHolders.length > 0 && (
+              <button
+                onClick={toggleCardHolders}
+                className={`w-full flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-colors ${
+                  allCardsKept
+                    ? "bg-accent/10 border-accent"
+                    : "bg-card2 border-line hover:border-line2"
+                }`}
+              >
+                <IconCard
+                  className={`w-5 h-5 shrink-0 ${
+                    allCardsKept ? "text-accent" : "text-muted"
+                  }`}
+                />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm font-semibold">
+                    Keep everyone with a card registered
+                  </span>
+                  <span className="block text-xs text-muted">
+                    {cardHolders.length}{" "}
+                    {cardHolders.length === 1 ? "fan has" : "fans have"} a card on
+                    file
+                  </span>
+                </span>
+                <span
+                  className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 ${
+                    allCardsKept ? "bg-accent border-accent" : "border-line"
+                  }`}
+                >
+                  {allCardsKept && <IconCheck className="w-3 h-3 text-white" />}
+                </span>
+              </button>
+            )}
+
             <div className="relative">
               <IconSearch className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
@@ -163,8 +218,13 @@ export default function MassDeleteChats({
                       )}
                     </span>
                     <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-medium truncate">
-                        {nameOf(c)}
+                      <span className="flex items-center gap-1.5 text-sm font-medium min-w-0">
+                        {c.stripe_payment_method_id && (
+                          <span title="Card registered" className="shrink-0 text-accent">
+                            <IconCard className="w-3.5 h-3.5" />
+                          </span>
+                        )}
+                        <span className="truncate">{nameOf(c)}</span>
                       </span>
                       <span
                         className={`block text-xs ${
