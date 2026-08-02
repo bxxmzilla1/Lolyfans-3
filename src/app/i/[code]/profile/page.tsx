@@ -1,7 +1,6 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { after } from "next/server";
-import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
@@ -11,8 +10,8 @@ import { postStats } from "@/lib/posts";
 import { applyUserGeoTokens, visitorGeoParts, visitorLocation } from "@/lib/geo";
 import { formatCount, mediaUrl } from "@/lib/utils";
 import CreatorBanner from "@/components/CreatorBanner";
-import { resumeHrefForChatId } from "@/lib/guestResume";
-import { subCaption, subCtaLabel } from "@/lib/subscriptionPlan";
+import InviteSubscribeCta from "@/components/InviteSubscribeCta";
+import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import {
   IconChat,
   IconHeart,
@@ -24,16 +23,19 @@ import {
 export const dynamic = "force-dynamic";
 
 /**
- * Step 2 of an invite link: a locked preview of the creator's profile.
- * One blurred post, no footer menu, no Message buttons — just a Follow
- * button that leads to sign-up.
+ * Invite link profile preview ("Profile page directly" or step after the
+ * landing page). The Join Telegram / Subscribe button opens a Stripe card
+ * sheet over this page — the profile stays visible in the background.
  */
 export default async function InviteProfilePreviewPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ code: string }>;
+  searchParams: Promise<{ pay?: string }>;
 }) {
   const { code } = await params;
+  const { pay } = await searchParams;
   const db = supabaseAdmin();
   const requestHeaders = await headers();
 
@@ -41,14 +43,17 @@ export default async function InviteProfilePreviewPage({
   const visitorIp = ipFromHeaders(requestHeaders);
 
   const [cookieChat, ipChat, inviteRes] = await Promise.all([
-    // Already signed up? Straight back into the full experience.
     guestChatId
-      ? db.from("chats").select("id").eq("id", guestChatId).maybeSingle()
+      ? db
+          .from("chats")
+          .select("id, owner_id")
+          .eq("id", guestChatId)
+          .maybeSingle()
       : Promise.resolve(null),
     visitorIp
       ? db
           .from("chats")
-          .select("id")
+          .select("id, owner_id")
           .eq("guest_ip", visitorIp)
           .order("last_message_at", { ascending: false })
           .limit(1)
@@ -56,8 +61,21 @@ export default async function InviteProfilePreviewPage({
       : Promise.resolve(null),
     db.from("invites").select("*").eq("code", code).single<Invite>(),
   ]);
-  if (cookieChat?.data) redirect(await resumeHrefForChatId(cookieChat.data.id));
-  if (ipChat?.data) redirect("/api/resume");
+
+  // Returning guests: paid → chat / channel; unpaid → stay on this profile
+  // so the Join Telegram card sheet can open over it (never bounce to /signup).
+  let alreadyJoined = false;
+  let openPay = pay === "1";
+  const existing = cookieChat?.data ?? null;
+  if (existing) {
+    const dest = await guestAccessDestination(existing.id, existing.owner_id);
+    if (dest.allowed) redirect(dest.href);
+    alreadyJoined = true;
+    openPay = true;
+  } else if (ipChat?.data) {
+    // Restore the guest cookie, then come back here with ?pay=1 if unpaid.
+    redirect(`/api/resume?next=${encodeURIComponent(`/i/${code}/profile`)}`);
+  }
 
   const invite = inviteRes.data;
 
@@ -136,11 +154,13 @@ export default async function InviteProfilePreviewPage({
 
   const followers = profile.followerBase + (realFollowers ?? 0);
   const posts = postCount ?? 0;
-  // Price label mirrors the creator's Settings → Subscriptions plan.
-  const ctaRight = subCtaLabel(profile.plan);
-  const ctaCaption = subCaption(profile.plan);
-  const ctaLeft =
-    profile.plan.priceCents > 0 ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE";
+  const ctaProps = {
+    code,
+    ownerId,
+    ownerName: profile.name,
+    plan: profile.plan,
+    alreadyJoined,
+  };
 
   return (
     <div className="min-h-dvh pb-10">
@@ -176,20 +196,16 @@ export default async function InviteProfilePreviewPage({
               </p>
             )}
 
-            {/* Full-width subscription bar under the bio, like OnlyFans */}
+            {/* Full-width join bar — opens Stripe over this profile page */}
             <div className="pt-1 space-y-2">
-              <Link
-                href={`/i/${code}/signup`}
-                className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold flex items-center justify-between gap-3 active:opacity-80 transition-opacity"
-              >
-                <span className="text-left">{ctaLeft}</span>
-                <span className="shrink-0">{ctaRight}</span>
-              </Link>
-              {ctaCaption && (
-                <p className="text-xs text-muted text-center">{ctaCaption}</p>
-              )}
+              <InviteSubscribeCta
+                {...ctaProps}
+                initialOpen={openPay && profile.plan.priceCents > 0}
+              />
               <p className="text-xs text-muted text-center">
-                You must subscribe to this profile to send a message
+                {profile.plan.priceCents > 0
+                  ? "Subscribe to join the private Telegram channel"
+                  : "You must subscribe to this profile to send a message"}
               </p>
             </div>
           </div>
@@ -255,15 +271,12 @@ export default async function InviteProfilePreviewPage({
 
         {/* Subscribe gate under the locked feed */}
         <div className="border-t border-line px-4 py-6 text-center space-y-3">
-          <p className="text-sm font-semibold">Subscribe to this creator to see more</p>
-          <Link
-            href={`/i/${code}/signup`}
-            className="w-full py-3.5 px-6 rounded-full bg-accent text-white text-base font-semibold flex items-center justify-between gap-3 active:opacity-80 transition-opacity"
-          >
-            <span className="text-left">{ctaLeft}</span>
-            <span className="shrink-0">{ctaRight}</span>
-          </Link>
-          {ctaCaption && <p className="text-xs text-muted">{ctaCaption}</p>}
+          <p className="text-sm font-semibold">
+            {profile.plan.priceCents > 0
+              ? "Join the private Telegram channel to see more"
+              : "Subscribe to this creator to see more"}
+          </p>
+          <InviteSubscribeCta {...ctaProps} />
         </div>
       </main>
     </div>
