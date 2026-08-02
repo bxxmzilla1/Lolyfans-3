@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto";
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { requestOrigin } from "@/lib/smsNotify";
@@ -175,18 +175,23 @@ export async function POST(req: NextRequest) {
     }
     // Pre-upload the clear media to Saved Messages so the unlock delivery
     // is an instant server-side copy instead of a minutes-long re-upload.
-    // Best-effort — without it, delivery falls back to the slow path.
-    try {
-      const cachedId = await tgCacheMedia({ session, mediaPath, mediaType });
-      if (cachedId) {
-        await db
-          .from("telegram_unlocks")
-          .update({ tg_cached_message_id: cachedId })
-          .eq("id", unlock.id);
+    // Runs after the response so the creator isn't stuck on "Sending…"
+    // while a large video uploads. Best-effort — without it, delivery
+    // falls back to the slow path.
+    const unlockId = unlock.id;
+    after(async () => {
+      try {
+        const cachedId = await tgCacheMedia({ session, mediaPath, mediaType });
+        if (cachedId) {
+          await supabaseAdmin()
+            .from("telegram_unlocks")
+            .update({ tg_cached_message_id: cachedId })
+            .eq("id", unlockId);
+        }
+      } catch {
+        // ignore — slow delivery still works
       }
-    } catch {
-      // ignore — slow delivery still works
-    }
+    });
   } catch (err) {
     // Roll back the row so a failed send doesn't leave a dangling link.
     await db.from("telegram_unlocks").delete().eq("id", unlock.id);

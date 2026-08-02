@@ -827,6 +827,78 @@ async function runFfmpeg(args: string[], timeout = 45000): Promise<void> {
   await promisify(execFile)(ffmpegPath, args, { timeout });
 }
 
+/** ffmpeg's stderr for the given args (it prints media info there). */
+async function ffmpegStderr(args: string[]): Promise<string> {
+  const ffmpegPath = (await import("ffmpeg-static")).default as unknown as
+    | string
+    | null;
+  if (!ffmpegPath) return "";
+  const { execFile } = await import("child_process");
+  return await new Promise((resolve) => {
+    execFile(ffmpegPath, args, { timeout: 20000 }, (_err, _stdout, stderr) =>
+      resolve(String(stderr || ""))
+    );
+  });
+}
+
+/**
+ * Real video attributes (dimensions, duration, thumbnail) for a Telegram
+ * upload. Without these Telegram shows the video squashed and forces a
+ * download instead of streaming it.
+ */
+async function videoUploadExtras(original: Buffer): Promise<{
+  attributes: unknown[];
+  thumb: Buffer | null;
+}> {
+  const fs = await import("fs/promises");
+  const os = await import("os");
+  const path = await import("path");
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tg-meta-"));
+  try {
+    const inFile = path.join(dir, "in.bin");
+    const frameFile = path.join(dir, "frame.jpg");
+    await fs.writeFile(inFile, original);
+
+    // One decoded frame carries the display dimensions (rotation applied).
+    await runFfmpeg(["-y", "-i", inFile, "-frames:v", "1", frameFile]);
+    const frame = await fs.readFile(frameFile);
+    const sharp = (await import("sharp")).default;
+    const meta = await sharp(frame).metadata();
+    const w = meta.width ?? 0;
+    const h = meta.height ?? 0;
+
+    // `ffmpeg -i` (no output) fails but prints "Duration: HH:MM:SS.cc".
+    const info = await ffmpegStderr(["-i", inFile]);
+    const dur = info.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+    const duration = dur
+      ? Math.round(Number(dur[1]) * 3600 + Number(dur[2]) * 60 + Number(dur[3]))
+      : 0;
+
+    if (!w || !h) return { attributes: [], thumb: null };
+
+    const thumb = await sharp(frame)
+      .resize(320, 320, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 70 })
+      .toBuffer();
+    const { Api } = await gramjs();
+    return {
+      attributes: [
+        new Api.DocumentAttributeVideo({
+          duration,
+          w,
+          h,
+          supportsStreaming: true,
+        }),
+      ],
+      thumb,
+    };
+  } catch {
+    return { attributes: [], thumb: null };
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 
 /**
  * Blurred video teaser: the first seconds, downscaled, heavily blurred and
@@ -1050,6 +1122,10 @@ export async function tgCacheMedia(opts: {
   try {
     const { CustomFile } = await gramjs();
     const file = await downloadMedia(opts.mediaPath);
+    const extras =
+      opts.mediaType === "video"
+        ? await videoUploadExtras(file)
+        : { attributes: [], thumb: null };
     const sent = await client.sendFile("me", {
       file: new CustomFile(
         mediaFileName(opts.mediaPath, opts.mediaType),
@@ -1060,6 +1136,10 @@ export async function tgCacheMedia(opts: {
       caption: "🔒 PPV copy — keep this so unlocks deliver instantly",
       forceDocument: false,
       supportsStreaming: opts.mediaType === "video",
+      ...(extras.attributes.length
+        ? { attributes: extras.attributes as never }
+        : {}),
+      ...(extras.thumb ? { thumb: extras.thumb } : {}),
     });
     const id = (sent as { id?: unknown } | null)?.id;
     return typeof id === "number" && id > 0 ? id : null;
@@ -1109,6 +1189,10 @@ export async function tgDeliverMedia(opts: {
     }
 
     const file = await downloadMedia(opts.mediaPath);
+    const extras =
+      opts.mediaType === "video"
+        ? await videoUploadExtras(file)
+        : { attributes: [], thumb: null };
     await client.sendFile(peer, {
       file: new CustomFile(
         mediaFileName(opts.mediaPath, opts.mediaType),
@@ -1120,6 +1204,10 @@ export async function tgDeliverMedia(opts: {
       videoNote: false,
       forceDocument: false,
       supportsStreaming: opts.mediaType === "video",
+      ...(extras.attributes.length
+        ? { attributes: extras.attributes as never }
+        : {}),
+      ...(extras.thumb ? { thumb: extras.thumb } : {}),
     });
   } finally {
     await client.disconnect().catch(() => {});
