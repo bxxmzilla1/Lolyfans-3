@@ -1,4 +1,6 @@
-/** Fan chats tab — content is rendered by the persistent GuestShell layout. */
+import { redirect } from "next/navigation";
+
+/** Fans no longer have a chats tab — old links land on the Home feed. */
 export default function GuestChatsPage() {
-  return null;
+  redirect("/home");
 }

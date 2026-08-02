@@ -42,16 +42,16 @@ export default function JoinForm({
   const [opening, setOpening] = useState(false);
   const router = useRouter();
 
-  function openChat() {
-    // Loading skeleton so the page never looks frozen while /chat renders.
+  function openHome() {
+    // Loading skeleton so the page never looks frozen while the shell renders.
     setOpening(true);
-    router.push("/chat");
+    router.push("/home");
     router.refresh();
   }
 
-  /** After the subscription payment: straight into the creator's private
-   *  Telegram channel when one is configured, otherwise the chat. */
-  async function afterPaid() {
+  /** After joining (free) or paying: straight into the creator's private
+   *  Telegram channel when one is configured, otherwise the fan home feed. */
+  async function afterJoined() {
     if (ownerId) {
       try {
         const res = await fetch(`/api/payments/subscribe/link?ownerId=${ownerId}`);
@@ -63,7 +63,7 @@ export default function JoinForm({
         }
       } catch {}
     }
-    openChat();
+    openHome();
   }
 
   async function join(e: React.FormEvent) {
@@ -114,7 +114,8 @@ export default function JoinForm({
       setPayStep(true);
       return;
     }
-    openChat();
+    // Free profile: joined — try the Telegram channel first.
+    await afterJoined();
   }
 
   if (payStep && ownerId && plan) {
@@ -125,7 +126,7 @@ export default function JoinForm({
             ownerId={ownerId}
             ownerName={ownerName}
             plan={plan}
-            onSuccess={() => void afterPaid()}
+            onSuccess={() => void afterJoined()}
           />
         </div>
         {opening && <OpeningSkeleton />}
@@ -191,7 +192,7 @@ export default function JoinForm({
         </button>
       </form>
 
-      {/* Chat skeleton shown from sign-up until /chat finishes loading,
+      {/* Skeleton shown from sign-up until the next page finishes loading,
           so the page never looks frozen. */}
       {opening && <OpeningSkeleton />}
     </>
@@ -218,7 +219,7 @@ function OpeningSkeleton() {
         <div className="h-12 rounded-2xl bg-card2 border border-line animate-pulse" />
       </div>
       <p className="absolute inset-x-0 top-1/2 text-center text-muted text-sm">
-        Opening chat…
+        Opening…
       </p>
     </div>
   );

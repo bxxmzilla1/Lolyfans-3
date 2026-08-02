@@ -16,7 +16,7 @@ export default async function GuestLoginPage() {
       .select("id")
       .eq("id", guestChatId)
       .maybeSingle();
-    if (existing) redirect("/chats");
+    if (existing) redirect("/home");
   }
 
   return (

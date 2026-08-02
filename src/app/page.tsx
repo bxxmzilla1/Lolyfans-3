@@ -34,7 +34,7 @@ export default async function Home({
       .select("id")
       .eq("id", guestChatId)
       .maybeSingle();
-    if (existing) redirect("/chat");
+    if (existing) redirect("/home");
   }
 
   // Returning guest without a usable cookie (none at all, or one pointing at a

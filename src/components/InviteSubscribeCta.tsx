@@ -106,7 +106,8 @@ export default function InviteSubscribeCta({
         return;
       }
     } catch {}
-    window.location.href = "/chat";
+    // No channel configured yet — land on the fan home feed.
+    window.location.href = "/home";
   }
 
   async function signup() {

@@ -30,7 +30,7 @@ export default function GuestLoginForm() {
       return;
     }
     // Unpaid paid-profile accounts go back to the card step, not the app.
-    router.push(typeof data.redirect === "string" ? data.redirect : "/chats");
+    router.push(typeof data.redirect === "string" ? data.redirect : "/home");
     router.refresh();
   }
 

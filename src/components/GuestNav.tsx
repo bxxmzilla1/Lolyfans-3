@@ -1,24 +1,20 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useGuestShell } from "./GuestShellContext";
-import { useInboxSignals, type ChatOwnerPair } from "@/lib/useInboxSignals";
 import GuestAppPresence from "./GuestAppPresence";
 import Logo from "./Logo";
-import { IconChat, IconHome, IconUser } from "./Icons";
+import { IconHome, IconUser } from "./Icons";
 
 /**
- * Guest navigation: Home, Chats, Profile. Soft-pushes the URL so the fan
- * shell can keep panels mounted and switch instantly.
+ * Guest navigation: Home and Profile only. Fans reach creators through the
+ * private Telegram channel, so there's no in-app chat tab. Soft-pushes the URL
+ * so the fan shell can keep panels mounted and switch instantly.
  */
 export default function GuestNav() {
   const pathname = usePathname();
   const router = useRouter();
   const [, startTransition] = useTransition();
-  const shell = useGuestShell();
-  const [fallbackUnread, setFallbackUnread] = useState(0);
-  const [pairs, setPairs] = useState<ChatOwnerPair[]>([]);
   const mobileNavRef = useRef<HTMLElement>(null);
 
   // Publish the footer's real rendered height (incl. safe-area inset) as a
@@ -39,47 +35,6 @@ export default function GuestNav() {
     };
   }, []);
 
-  const loadFallback = useCallback(async () => {
-    try {
-      const res = await fetch("/api/guest/chats");
-      const json = await res.json();
-      setFallbackUnread(json.unread ?? 0);
-      setPairs(json.chats ?? []);
-    } catch {
-      // offline
-    }
-  }, []);
-
-  // Outside the shell (/chat, /p/...) there's no bootstrap unread — fetch it,
-  // then keep a slow poll as a safety net behind the realtime signals.
-  useEffect(() => {
-    if (shell.hasShell) return;
-    loadFallback();
-    const timer = setInterval(loadFallback, 30000);
-    return () => clearInterval(timer);
-  }, [shell.hasShell, pathname, loadFallback]);
-
-  // Chat page just marked a conversation as read — refresh the footer badge.
-  useEffect(() => {
-    function onRead() {
-      if (shell.hasShell) shell.refresh();
-      else loadFallback();
-    }
-    window.addEventListener("guest-chat-read", onRead);
-    return () => window.removeEventListener("guest-chat-read", onRead);
-  }, [shell, loadFallback]);
-
-  // Instant badge: refetch the moment a message lands in any of our chats.
-  // Inside the shell this is off (empty pairs) — GuestShell handles it there.
-  useInboxSignals(shell.hasShell ? [] : pairs, () => {
-    // Give the open chat's read-marker a beat to land first, so a message
-    // being read right now doesn't flash the badge.
-    setTimeout(loadFallback, 800);
-  });
-
-  const unread = shell.hasShell ? shell.unread : fallbackUnread;
-  const onChats = pathname === "/chats";
-
   function go(href: string) {
     startTransition(() => {
       router.push(href);
@@ -87,26 +42,9 @@ export default function GuestNav() {
   }
 
   const tabs = [
-    { href: "/home", label: "Home", icon: IconHome, badge: 0 },
-    {
-      href: "/chats",
-      label: "Chats",
-      icon: IconChat,
-      badge: onChats ? 0 : unread,
-    },
-    { href: "/profile", label: "Profile", icon: IconUser, badge: 0 },
+    { href: "/home", label: "Home", icon: IconHome },
+    { href: "/profile", label: "Profile", icon: IconUser },
   ];
-
-  function Badge({ count, className }: { count: number; className?: string }) {
-    if (count <= 0) return null;
-    return (
-      <span
-        className={`min-w-[18px] h-[18px] px-1 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center ${className || ""}`}
-      >
-        {count > 99 ? "99+" : count}
-      </span>
-    );
-  }
 
   return (
     <>
@@ -121,7 +59,7 @@ export default function GuestNav() {
           </p>
         </div>
         <nav className="flex-1 px-3 space-y-1">
-          {tabs.map(({ href, label, icon: Icon, badge }) => {
+          {tabs.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
               <button
@@ -136,7 +74,6 @@ export default function GuestNav() {
               >
                 <Icon className="w-5.5 h-5.5" />
                 {label}
-                <Badge count={badge} className="ml-auto" />
               </button>
             );
           })}
@@ -147,8 +84,8 @@ export default function GuestNav() {
         ref={mobileNavRef}
         className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-line2 bg-card/90 backdrop-blur-lg pb-[env(safe-area-inset-bottom)]"
       >
-        <div className="max-w-lg mx-auto grid grid-cols-3">
-          {tabs.map(({ href, label, icon: Icon, badge }) => {
+        <div className="max-w-lg mx-auto grid grid-cols-2">
+          {tabs.map(({ href, label, icon: Icon }) => {
             const active = pathname === href;
             return (
               <button
@@ -162,7 +99,6 @@ export default function GuestNav() {
               >
                 <span className="relative">
                   <Icon className="w-6 h-6" />
-                  <Badge count={badge} className="absolute -top-1.5 -right-2" />
                 </span>
               </button>
             );

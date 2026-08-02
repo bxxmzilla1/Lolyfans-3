@@ -1,6 +1,5 @@
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import Link from "next/link";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
@@ -9,6 +8,7 @@ import { formatCount, mediaUrl } from "@/lib/utils";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
+import MessageCreatorButton from "@/components/MessageCreatorButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
 import { IconMapPin, IconVerified } from "@/components/Icons";
@@ -114,12 +114,10 @@ export default async function CreatorProfilePage({
             bannerPath={profile.bannerPath}
             actions={
               hasChatWithOwner ? (
-                <Link
-                  href="/chat"
+                <MessageCreatorButton
+                  ownerId={ownerId}
                   className="px-5 py-2 rounded-full bg-card border border-line2 text-sm font-semibold"
-                >
-                  Message
-                </Link>
+                />
               ) : undefined
             }
           />

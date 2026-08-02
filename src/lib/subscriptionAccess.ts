@@ -63,17 +63,18 @@ export async function inviteCodeForChat(chatId: string): Promise<string | null> 
 
 /**
  * Where a returning guest should land. Paid creators with no subscription
- * stay on the signup payment step — never /chat or the fan shell.
+ * stay on the signup payment step — never the fan shell. Fans no longer have
+ * an in-app chat tab, so allowed guests land on the Home feed.
  */
 export async function guestAccessDestination(
   chatId: string,
   ownerId: string
 ): Promise<{ allowed: boolean; href: string }> {
   if (!(await ownerRequiresPaidSub(ownerId))) {
-    return { allowed: true, href: "/chat" };
+    return { allowed: true, href: "/home" };
   }
   if (await chatHasPaidAccess(chatId, ownerId)) {
-    return { allowed: true, href: "/chat" };
+    return { allowed: true, href: "/home" };
   }
   const code = await inviteCodeForChat(chatId);
   return {

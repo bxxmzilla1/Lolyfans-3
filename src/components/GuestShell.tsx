@@ -6,9 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import GuestNav from "./GuestNav";
 import { GuestShellProvider } from "./GuestShellContext";
 import { useInboxSignals } from "@/lib/useInboxSignals";
-import GuestChatList from "./GuestChatList";
 import GuestProfileEditor from "./GuestProfileEditor";
-import GuestIncomingMediaGate from "./GuestIncomingMediaGate";
 import FollowButton from "./FollowButton";
 import PostFeed from "./PostFeed";
 import {
@@ -145,26 +143,17 @@ export default function GuestShell() {
   const [loading, setLoading] = useState(() => !getGuestBootstrapCache());
   // Track visited tabs in state so React re-renders when a new tab mounts.
   const [visited, setVisited] = useState<Set<string>>(() => {
-    const t =
-      pathname === "/chats"
-        ? "chats"
-        : pathname === "/profile"
-        ? "profile"
-        : "home";
+    const t = pathname === "/profile" ? "profile" : "home";
     return new Set([t]);
   });
 
-  const tab =
-    pathname === "/chats"
-      ? "chats"
-      : pathname === "/profile"
-      ? "profile"
-      : "home";
+  // Fans only have Home and Profile now — everything else falls back to Home.
+  const tab = pathname === "/profile" ? "profile" : "home";
 
   // Once bootstrap lands, mount every tab so later switches are pure show/hide.
   useEffect(() => {
     if (!data) return;
-    setVisited(new Set(["home", "chats", "profile"]));
+    setVisited(new Set(["home", "profile"]));
   }, [data]);
 
   const refresh = useCallback(() => {
@@ -254,7 +243,6 @@ export default function GuestShell() {
 
   useEffect(() => {
     router.prefetch("/home");
-    router.prefetch("/chats");
     router.prefetch("/profile");
   }, [router]);
 
@@ -282,16 +270,6 @@ export default function GuestShell() {
                 <HomePanel data={data.home} />
               </div>
             )}
-            {visited.has("chats") && (
-              <div
-                className={tab === "chats" ? "block" : "hidden"}
-                aria-hidden={tab !== "chats"}
-              >
-                <PanelShell title="Chats">
-                  <GuestChatList chats={data.chats} />
-                </PanelShell>
-              </div>
-            )}
             {visited.has("profile") && (
               <div
                 className={tab === "profile" ? "block" : "hidden"}
@@ -309,12 +287,6 @@ export default function GuestShell() {
         )}
         <GuestNav />
       </div>
-      {/* Incoming creator photos/videos take over even while browsing Home. */}
-      {data && (
-        <GuestIncomingMediaGate
-          pairs={data.chats.map((c) => ({ chatId: c.id, ownerId: c.ownerId }))}
-        />
-      )}
     </GuestShellProvider>
   );
 }

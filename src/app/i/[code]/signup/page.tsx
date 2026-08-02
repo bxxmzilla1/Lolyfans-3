@@ -68,7 +68,7 @@ export default async function InviteSignupPage({
     const paidOk =
       !(await ownerRequiresPaidSub(existingChat.owner_id)) ||
       (await chatHasPaidAccess(existingChat.id, existingChat.owner_id));
-    if (paidOk) redirect("/chat");
+    if (paidOk) redirect("/home");
     // Signed up but hasn't paid yet → stay here and show the card form.
     forcePayStep = true;
   }
