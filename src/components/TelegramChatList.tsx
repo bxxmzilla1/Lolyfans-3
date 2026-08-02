@@ -168,15 +168,30 @@ export default function TelegramChatList() {
                   active ? "bg-accent/10" : "hover:bg-card2"
                 }`}
               >
-                <div className="w-12 h-12 rounded-full bg-card2 flex items-center justify-center shrink-0 overflow-hidden">
+                <div className="relative w-12 h-12 rounded-full bg-card2 flex items-center justify-center shrink-0 overflow-hidden">
                   {d.photoUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={d.photoUrl}
-                      alt=""
-                      className="w-full h-full object-cover"
-                      draggable={false}
-                    />
+                    <>
+                      {/* Instant blurry placeholder from the dialog payload… */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={d.photoUrl}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover"
+                        draggable={false}
+                      />
+                      {/* …replaced by the clear photo once it downloads. */}
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`/api/telegram/avatar?peer=${encodeURIComponent(d.peer)}`}
+                        alt=""
+                        loading="lazy"
+                        className="absolute inset-0 w-full h-full object-cover"
+                        draggable={false}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                    </>
                   ) : (
                     <IconUser className="w-5 h-5 text-muted" />
                   )}

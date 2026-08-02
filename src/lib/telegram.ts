@@ -31,6 +31,10 @@ type AnyClient = {
     opts?: Record<string, unknown>
   ) => Promise<Buffer | string | null>;
   getInputEntity: (peer: unknown) => Promise<unknown>;
+  downloadProfilePhoto: (
+    entity: unknown,
+    opts?: Record<string, unknown>
+  ) => Promise<Buffer | string | undefined | null>;
   getMe: () => Promise<{ username?: string; phone?: string }>;
   session: { save: () => string };
 };
@@ -383,6 +387,33 @@ export async function tgListDialogs(opts: {
           lastReceipt: lastOut ? receiptForOutgoing(msgId, readOut) : null,
         };
       });
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
+/** Clear small profile photo for one dialog (webp, ~128px). */
+export async function tgDownloadProfilePhoto(opts: {
+  session: string;
+  peer: string;
+}): Promise<Buffer | null> {
+  const client = await connect(opts.session);
+  try {
+    const resolved = await resolvePeer(opts.peer);
+    const entity = await client.getInputEntity(resolved);
+    const raw = await client.downloadProfilePhoto(entity, { isBig: false });
+    if (!raw) return null;
+    const buf = Buffer.isBuffer(raw)
+      ? raw
+      : typeof raw === "string"
+        ? await (await import("fs/promises")).readFile(raw)
+        : null;
+    if (!buf?.length) return null;
+    const sharp = (await import("sharp")).default;
+    return await sharp(buf)
+      .resize(128, 128, { fit: "cover" })
+      .webp({ quality: 70 })
+      .toBuffer();
   } finally {
     await client.disconnect().catch(() => {});
   }
