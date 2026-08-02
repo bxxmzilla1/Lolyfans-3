@@ -71,7 +71,7 @@ export default function TelegramUnlockView({
   // payload, which our API verifies against the bot token.
   useEffect(() => {
     const holder = widgetRef.current;
-    if (!botUsername || tgLogin || unlocked || !holder) return;
+    if (!botUsername || tgLogin || unlocked || intent || !holder) return;
 
     window.onTelegramAuth = async (user: TgAuthUser) => {
       try {
@@ -109,7 +109,7 @@ export default function TelegramUnlockView({
       holder.innerHTML = "";
       delete window.onTelegramAuth;
     };
-  }, [botUsername, tgLogin, unlocked]);
+  }, [botUsername, tgLogin, unlocked, intent]);
 
   async function pay() {
     if (busy) return;
