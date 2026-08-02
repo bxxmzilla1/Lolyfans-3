@@ -37,6 +37,8 @@ type WizardProps = {
   /** Present a payment as a card verification: no label/price in the header,
    *  the confirm button says "Verify card". The charge still happens. */
   presentAsVerify?: boolean;
+  /** Hide the wizard's own ✕ when the host UI already shows a close button. */
+  hideClose?: boolean;
   countryGuess: string | null;
   /** Receives the PaymentIntent id ("payment") or SetupIntent id ("setup"). */
   onSuccess: (intentId: string) => Promise<void> | void;
@@ -49,6 +51,7 @@ function CardWizard({
   amountCents = 0,
   label = "Purchase",
   presentAsVerify = false,
+  hideClose = false,
   countryGuess,
   onSuccess,
   onCancel,
@@ -176,15 +179,17 @@ function CardWizard({
             Step {step} of 3 · {STEP_TITLES[step - 1]}
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onCancel}
-          disabled={paying}
-          aria-label="Cancel payment"
-          className="shrink-0 w-7 h-7 rounded-full bg-card border border-line text-muted flex items-center justify-center text-sm disabled:opacity-50"
-        >
-          ✕
-        </button>
+        {!hideClose && (
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={paying}
+            aria-label="Cancel payment"
+            className="shrink-0 w-7 h-7 rounded-full bg-card border border-line text-muted flex items-center justify-center text-sm disabled:opacity-50"
+          >
+            ✕
+          </button>
+        )}
       </div>
 
       {/* Progress bar */}

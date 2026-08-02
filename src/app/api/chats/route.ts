@@ -23,8 +23,14 @@ export async function GET() {
       .order("created_at", { ascending: true }),
   ]);
 
-  const { data: chats, error } = chatsRes;
+  const { data: rawChats, error } = chatsRes;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Pending = a paid-profile sign-up that never finished adding payment
+  // details. Not a real fan yet, so keep them out of the inbox entirely.
+  const chats = (rawChats ?? []).filter(
+    (c) => !(c as { pending?: boolean }).pending
+  );
 
   type Preview = {
     chat_id: string;

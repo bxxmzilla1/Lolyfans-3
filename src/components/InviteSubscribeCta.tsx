@@ -334,9 +334,17 @@ export default function InviteSubscribeCta({
                   }
                   label={
                     plan.trialDays > 0
-                      ? "1-day free trial"
-                      : "Daily channel access"
+                      ? `${plan.trialDays}-day free trial`
+                      : plan.interval === "lifetime"
+                        ? "Lifetime channel access"
+                        : plan.interval === "day"
+                          ? "Daily channel access"
+                          : plan.interval === "week"
+                            ? "Weekly channel access"
+                            : "Monthly channel access"
                   }
+                  // The sheet header already has a ✕ — one close button only.
+                  hideClose
                   countryGuess={null}
                   onSuccess={onCardSuccess}
                   onCancel={() => {

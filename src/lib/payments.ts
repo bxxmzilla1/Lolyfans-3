@@ -247,6 +247,25 @@ export async function saveStripePaymentMethod(
   await supabaseAdmin().from("chats").update(patch).eq("id", chatId);
 }
 
+/**
+ * Paid-profile sign-ups are created `pending` (hidden from the creator's chat
+ * list) until payment details are done. Flip the flag on activation and ping
+ * the inbox so the chat appears — the "new-chat" broadcast /api/join skips
+ * for paid profiles happens here instead.
+ */
+export async function revealPendingChat(chatId: string, ownerId: string) {
+  const db = supabaseAdmin();
+  const { data: chat } = await db
+    .from("chats")
+    .select("pending")
+    .eq("id", chatId)
+    .maybeSingle();
+  // Column missing (migration not run) or already visible: nothing to do.
+  if (!chat || !(chat as { pending?: boolean }).pending) return;
+  await db.from("chats").update({ pending: false }).eq("id", chatId);
+  await broadcast(`inbox:${ownerId}`, "new-chat", { chatId });
+}
+
 /** Record a paid lifetime subscription (idempotent) and keep the fan following. */
 export async function recordLifetimeSubscription(opts: {
   chatId: string;
@@ -270,6 +289,7 @@ export async function recordLifetimeSubscription(opts: {
     { chat_id: opts.chatId, owner_id: opts.ownerId },
     { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
   );
+  await revealPendingChat(opts.chatId, opts.ownerId);
 }
 
 /**
@@ -315,6 +335,9 @@ export async function syncSubscription(sub: Stripe.Subscription) {
       { chat_id: chatId, owner_id: ownerId },
       { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
     );
+  }
+  if (status === "active" || status === "trialing") {
+    await revealPendingChat(chatId, ownerId);
   }
 }
 

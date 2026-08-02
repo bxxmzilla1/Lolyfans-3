@@ -411,6 +411,11 @@ alter table chats add column if not exists guest_phone text;
 alter table chats add column if not exists guest_email text;
 alter table chats add column if not exists guest_password text;
 
+-- Paid-profile sign-ups stay "pending" (hidden from the creator's chat list)
+-- until the fan finishes adding payment details; the flag is cleared when the
+-- subscription or one-time payment activates.
+alter table chats add column if not exists pending boolean not null default false;
+
 -- One account per email per owner: the same email always resumes the same
 -- chat (with the right password) instead of creating duplicates.
 create unique index if not exists chats_owner_email_idx

@@ -73,6 +73,9 @@ export async function POST(req: NextRequest) {
         await db.from("chats").update({ guest_ip: ip }).eq("id", existing.id);
       }
       if (!paidProfile) {
+        // Profile is free (again): a chat parked as pending from an earlier
+        // paid sign-up becomes a normal visible chat.
+        await db.from("chats").update({ pending: false }).eq("id", existing.id);
         await db
           .from("follows")
           .upsert(
@@ -98,22 +101,30 @@ export async function POST(req: NextRequest) {
   const guestName =
     String(name || "").trim().slice(0, 40) ||
     `Guest ${Math.floor(1000 + Math.random() * 9000)}`;
-  const { data: chat, error } = await db
+  const row = {
+    owner_id: invite!.owner_id,
+    invite_id: invite!.id,
+    guest_name: guestName,
+    guest_country: country,
+    guest_ip: ip,
+    guest_email: emailStr,
+    guest_password: hashPassword(passwordStr),
+  };
+  // Paid profiles: the chat stays pending (hidden from the creator's list)
+  // until the fan finishes adding payment details.
+  let { data: chat, error } = await db
     .from("chats")
-    .insert({
-      owner_id: invite!.owner_id,
-      invite_id: invite!.id,
-      guest_name: guestName,
-      guest_country: country,
-      guest_ip: ip,
-      guest_email: emailStr,
-      guest_password: hashPassword(passwordStr),
-    })
+    .insert({ ...row, pending: paidProfile })
     .select()
     .single();
+  if (error && /pending/i.test(error.message)) {
+    // Migration not applied yet — sign-ups must keep working.
+    ({ data: chat, error } = await db.from("chats").insert(row).select().single());
+  }
   if (error || !chat) {
     return NextResponse.json({ error: "Could not create chat" }, { status: 500 });
   }
+  const chatId = chat.id as string;
 
   // Bookkeeping after the response is sent. Paid profiles defer follow +
   // welcome until the subscription is confirmed (see subscribe/activate).
@@ -127,30 +138,31 @@ export async function POST(req: NextRequest) {
     await recordInviteEvent({
       inviteId: invite!.id,
       kind: "signup",
-      chatId: chat.id,
+      chatId,
       ip,
       country,
     });
 
     if (paidProfile) {
-      await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id });
+      // No "new-chat" ping yet — the chat is pending until the fan finishes
+      // payment (revealPendingChat notifies the inbox on activation).
       return;
     }
 
     await db
       .from("follows")
       .upsert(
-        { chat_id: chat.id, owner_id: invite!.owner_id },
+        { chat_id: chatId, owner_id: invite!.owner_id },
         { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
       );
-    await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id });
+    await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId });
   });
 
   const res = NextResponse.json({
     ok: true,
-    chatId: chat.id,
+    chatId,
     needsPayment: paidProfile,
   });
-  res.cookies.set(GUEST_COOKIE, createToken({ chatId: chat.id, name: guestName }), cookieOptions);
+  res.cookies.set(GUEST_COOKIE, createToken({ chatId, name: guestName }), cookieOptions);
   return res;
 }
