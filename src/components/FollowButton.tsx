@@ -62,12 +62,14 @@ export default function FollowButton({
     return true;
   }
 
-  // Subscribed fans get the channel link ready so the button opens it
-  // instantly.
+  // Joined fans (paid subscribers OR free followers) get the channel link
+  // ready so the full button opens it instantly. The compact discovery
+  // button (small) stays a plain follow toggle — no channel redirect.
   useEffect(() => {
-    if (paid && subscribed) void fetchTelegramLink();
+    if (small) return;
+    if ((paid && subscribed) || (!paid && following)) void fetchTelegramLink();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paid, subscribed]);
+  }, [paid, subscribed, following, small]);
 
   // Back from a payment: either a hosted Checkout session (?session_id=) or a
   // rare 3-D Secure redirect from the in-page form (?sub= / ?pi=). Confirm,
@@ -200,12 +202,46 @@ export default function FollowButton({
     await cancelPaid();
   }
 
+  /** Free join: follow (if needed), then straight into the channel. */
+  async function joinFree() {
+    if (busy) return;
+    if (!following) await toggleFollow();
+    await openTelegram();
+  }
+
+  /** Already following (free): open the channel, or leave if no link. */
+  async function openOrUnfollow() {
+    if (busy) return;
+    if (await openTelegram()) return;
+    await toggleFollow();
+  }
+
   const active = paid ? subscribed : following;
-  const onClick = paid ? (subscribed ? openOrCancel : subscribePaid) : toggleFollow;
-  // Price stays off the button; the caption underneath carries trial + price.
-  const caption = paid && plan && !subscribed ? subCaption(plan) : null;
-  const joinLabel = paid ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE";
-  const subscribedLabel = paid && tgLink ? "OPEN TELEGRAM CHANNEL" : "Subscribed";
+  const onClick = paid
+    ? subscribed
+      ? openOrCancel
+      : subscribePaid
+    : small
+      ? toggleFollow
+      : following
+        ? openOrUnfollow
+        : joinFree;
+  // Price stays off the button; the caption underneath carries trial + price
+  // (paid) or "Free to join" (free).
+  const caption = paid
+    ? plan && !subscribed
+      ? subCaption(plan)
+      : null
+    : following
+      ? null
+      : "Free to join";
+  // Both free and paid profiles gate the private Telegram channel now.
+  const joinLabel = "JOIN PRIVATE TELEGRAM CHANNEL";
+  const subscribedLabel = tgLink
+    ? "OPEN TELEGRAM CHANNEL"
+    : paid
+      ? "Subscribed"
+      : "Following";
 
   const button = (
     <button
@@ -224,11 +260,13 @@ export default function FollowButton({
       }`}
     >
       {active
-        ? subscribedLabel
-        : small
+        ? small
           ? paid
-            ? "JOIN"
-            : "SUBSCRIBE"
+            ? "Subscribed"
+            : "Following"
+          : subscribedLabel
+        : small
+          ? "JOIN"
           : busy
             ? "…"
             : joinLabel}
@@ -288,7 +326,18 @@ export default function FollowButton({
       </button>
     );
 
-  if (!caption && !cancelLink) {
+  // Free followers whose button now opens Telegram get a small "Leave" link.
+  const leaveLink = !paid && following && !!tgLink && !small && (
+    <button
+      onClick={toggleFollow}
+      disabled={busy}
+      className="w-full text-center text-xs text-muted hover:text-fg transition-colors disabled:opacity-50"
+    >
+      Leave
+    </button>
+  );
+
+  if ((!caption && !cancelLink && !leaveLink) || small) {
     return (
       <>
         {button}
@@ -296,18 +345,12 @@ export default function FollowButton({
       </>
     );
   }
-  if (small)
-    return (
-      <>
-        {button}
-        {sheet}
-      </>
-    );
   return (
     <div className="space-y-1.5">
       {button}
       {caption && <p className="text-xs text-muted text-center">{caption}</p>}
       {cancelLink}
+      {leaveLink}
       {sheet}
     </div>
   );

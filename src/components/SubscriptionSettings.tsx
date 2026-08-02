@@ -300,11 +300,12 @@ export default function SubscriptionSettings() {
           Fans will see
         </p>
         <div className="w-full px-5 py-3 rounded-full bg-accent text-white text-sm font-semibold text-center">
-          {paid ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE"}
+          JOIN PRIVATE TELEGRAM CHANNEL
         </div>
-        {paid && (
-          <p className="text-xs text-muted text-center">
-            {billing === "lifetime"
+        <p className="text-xs text-muted text-center">
+          {!paid
+            ? "Free to join"
+            : billing === "lifetime"
               ? "One-time payment · lifetime access"
               : `${
                   trialOn
@@ -313,8 +314,7 @@ export default function SubscriptionSettings() {
                       } free trial · then ${priceLabel} / ${billing}`
                     : `${priceLabel} / ${billing}`
                 } · Cancel anytime`}
-          </p>
-        )}
+        </p>
       </div>
 
       <button

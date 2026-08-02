@@ -24,7 +24,6 @@ type Intent = {
 export default function InviteSubscribeCta({
   code,
   ownerId,
-  ownerName,
   plan,
   /** Returning unpaid guest — open the card sheet immediately. */
   initialOpen = false,
@@ -33,16 +32,18 @@ export default function InviteSubscribeCta({
 }: {
   code: string;
   ownerId: string;
-  ownerName: string;
+  /** Kept for callers; the sheet no longer shows the creator's name. */
+  ownerName?: string;
   plan: SubPlan;
   initialOpen?: boolean;
   alreadyJoined?: boolean;
 }) {
   const paid = plan.priceCents > 0;
-  const joinLabel = paid ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE";
+  // Both free and paid profiles gate the private Telegram channel now.
+  const joinLabel = "JOIN PRIVATE TELEGRAM CHANNEL";
   // The price never rides on the button — the caption below carries the
-  // trial + daily price instead.
-  const caption = subCaption(plan);
+  // trial + daily price (paid) or "Free to join" (free).
+  const caption = paid ? subCaption(plan) : "Free to join";
 
   const [open, setOpen] = useState(initialOpen && paid);
   const [step, setStep] = useState<"signup" | "card">(
@@ -148,7 +149,8 @@ export default function InviteSubscribeCta({
       setStep("card");
       return;
     }
-    window.location.href = "/chat";
+    // Free profile: joining is enough — send them into the private channel.
+    await goToChannel();
   }
 
   async function onCardSuccess(intentId: string) {
@@ -225,11 +227,7 @@ export default function InviteSubscribeCta({
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between gap-3">
-                <p className="font-bold">
-                  {paid
-                    ? "Join Private Telegram Channel"
-                    : `Subscribe to ${ownerName}`}
-                </p>
+                <p className="font-bold">Join Private Telegram Channel</p>
                 <button
                   type="button"
                   onClick={() => {
@@ -250,7 +248,7 @@ export default function InviteSubscribeCta({
                     Create a free account, then{" "}
                     {paid
                       ? "add your card to join the channel."
-                      : "start chatting."}
+                      : "join the private channel."}
                   </p>
                   <input
                     type="text"
@@ -314,7 +312,7 @@ export default function InviteSubscribeCta({
                       ? "Signing up…"
                       : paid
                         ? "Continue to payment"
-                        : "Start chatting"}
+                        : "Join the channel"}
                   </button>
                 </div>
               ) : intentError ? (

@@ -196,18 +196,14 @@ export default async function InviteProfilePreviewPage({
               </p>
             )}
 
-            {/* Full-width join bar — opens Stripe over this profile page */}
+            {/* Full-width join bar — opens Stripe over this profile page.
+                The CTA carries its own caption (trial + price, or "Free to
+                join"). */}
             <div className="pt-1 space-y-2">
               <InviteSubscribeCta
                 {...ctaProps}
                 initialOpen={openPay && profile.plan.priceCents > 0}
               />
-              {/* Paid profiles: the CTA's own caption shows trial + price. */}
-              {profile.plan.priceCents <= 0 && (
-                <p className="text-xs text-muted text-center">
-                  You must subscribe to this profile to send a message
-                </p>
-              )}
             </div>
           </div>
         </section>
