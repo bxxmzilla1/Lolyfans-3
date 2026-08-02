@@ -72,7 +72,8 @@ export type TgMessage = {
   out: boolean;
   date: number;
   hasMedia: boolean;
-  mediaKind: "image" | "video" | "other" | null;
+  /** "gif" = animated (GIFs + video stickers, autoplay loop); "sticker" = static sticker. */
+  mediaKind: "image" | "video" | "gif" | "sticker" | "other" | null;
   /** Outgoing only: single check = sent, double = read. */
   receipt: TgReceipt | null;
 };
@@ -448,6 +449,12 @@ export async function tgSetArchived(opts: {
   }
 }
 
+/** Mime type of a message's document media ("" when not a document). */
+function docMimeOf(media: unknown): string {
+  const doc = (media as { document?: { mimeType?: string } } | null)?.document;
+  return String(doc?.mimeType || "");
+}
+
 function mediaKindOf(media: unknown): TgMessage["mediaKind"] {
   if (!media || typeof media !== "object") return null;
   const cls = String((media as { className?: string }).className || "");
@@ -456,13 +463,31 @@ function mediaKindOf(media: unknown): TgMessage["mediaKind"] {
     const doc = (media as { document?: { mimeType?: string; attributes?: Array<{ className?: string }> } })
       .document;
     const mime = String(doc?.mimeType || "");
-    if (mime.startsWith("video/") || doc?.attributes?.some((a) => String(a.className || "").includes("Video"))) {
+    const attrs = (doc?.attributes ?? []).map((a) => String(a.className || ""));
+    // Stickers first — video stickers (webm) would otherwise match "video/".
+    if (mime === "application/x-tgsticker" || attrs.some((a) => a.includes("Sticker"))) {
+      return mime.startsWith("video/") ? "gif" : "sticker";
+    }
+    // Telegram "GIFs" are mp4 documents flagged animated.
+    if (attrs.some((a) => a.includes("Animated"))) return "gif";
+    // A real .gif file animates fine in an <img>, so treat it as an image.
+    if (mime === "image/gif") return "image";
+    if (mime.startsWith("video/") || attrs.some((a) => a.includes("Video"))) {
       return "video";
     }
     if (mime.startsWith("image/")) return "image";
     return "other";
   }
   return "other";
+}
+
+/** Best-effort mime sniff for downloaded thumbs (webp stickers vs jpeg). */
+function sniffImageMime(data: Buffer): string {
+  if (data.length > 12 && data.toString("ascii", 0, 4) === "RIFF" && data.toString("ascii", 8, 12) === "WEBP") {
+    return "image/webp";
+  }
+  if (data.length > 4 && data[0] === 0x89 && data[1] === 0x50) return "image/png";
+  return "image/jpeg";
 }
 
 /** Peer’s read-outbox watermark (highest outgoing message id they’ve opened). */
@@ -556,7 +581,13 @@ export async function tgDownloadMessageMedia(opts: {
     const msg = messages[0];
     if (!msg?.media) return null;
     const kind = mediaKindOf(msg.media);
-    const raw = await client.downloadMedia(msg, { thumb: 1 });
+    const docMime = docMimeOf(msg.media);
+    // GIFs and stickers need the real file so they animate / stay crisp.
+    // Animated .tgs stickers can't render in a browser, so fall back to thumb.
+    const wantFull =
+      kind === "gif" ||
+      (kind === "sticker" && docMime !== "application/x-tgsticker");
+    const raw = await client.downloadMedia(msg, wantFull ? {} : { thumb: 1 });
     if (!raw) return null;
     const data = Buffer.isBuffer(raw)
       ? raw
@@ -565,11 +596,19 @@ export async function tgDownloadMessageMedia(opts: {
         : null;
     if (!data?.length) return null;
     const mime =
-      kind === "video"
-        ? "video/mp4"
-        : kind === "image"
-          ? "image/jpeg"
-          : "application/octet-stream";
+      kind === "gif"
+        ? docMime.startsWith("video/")
+          ? docMime
+          : "video/mp4"
+        : kind === "sticker"
+          ? wantFull
+            ? docMime || "image/webp"
+            : sniffImageMime(data)
+          : kind === "video"
+            ? "video/mp4"
+            : kind === "image"
+              ? "image/jpeg"
+              : "application/octet-stream";
     return { data, mime };
   } finally {
     await client.disconnect().catch(() => {});

@@ -13,7 +13,7 @@ type TgMessage = {
   out: boolean;
   date: number;
   hasMedia: boolean;
-  mediaKind: "image" | "video" | "other" | null;
+  mediaKind: "image" | "video" | "gif" | "sticker" | "other" | null;
   receipt: "sent" | "read" | null;
 };
 
@@ -274,6 +274,33 @@ export default function TelegramChatView({
                     : "bg-card2 border border-line rounded-bl-md"
                 }`}
               >
+                {m.hasMedia && m.mediaKind === "sticker" && (
+                  <div className="p-2">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={mediaSrc(m.id)}
+                      alt="Sticker"
+                      className="w-36 h-36 object-contain"
+                      loading="lazy"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                  </div>
+                )}
+                {m.hasMedia && m.mediaKind === "gif" && (
+                  <div className="relative bg-black/20">
+                    <video
+                      src={mediaSrc(m.id)}
+                      autoPlay
+                      muted
+                      loop
+                      playsInline
+                      preload="metadata"
+                      className="w-full max-h-72 object-cover"
+                    />
+                  </div>
+                )}
                 {m.hasMedia &&
                   (m.mediaKind === "image" ||
                     m.mediaKind === "video" ||
