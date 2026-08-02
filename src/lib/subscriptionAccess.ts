@@ -78,7 +78,9 @@ export async function guestAccessDestination(
   const code = await inviteCodeForChat(chatId);
   return {
     allowed: false,
-    href: code ? `/i/${code}/signup?pay=1` : "/",
+    // Unpaid fans go to the invite profile preview: the Join Telegram card
+    // sheet opens over it (?pay=1) so the profile stays visible behind.
+    href: code ? `/i/${code}/profile?pay=1` : "/",
   };
 }
 
