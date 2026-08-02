@@ -12,13 +12,18 @@ import { IconCheck, IconSend } from "./Icons";
 export default function SendToTelegram({
   mediaPath,
   mediaType,
+  initialPeer,
+  peerLabel,
   onClose,
 }: {
   mediaPath: string;
   mediaType: "image" | "video";
+  /** Prefill / lock the destination (from an open Telegram inbox chat). */
+  initialPeer?: string;
+  peerLabel?: string;
   onClose: () => void;
 }) {
-  const [peer, setPeer] = useState("");
+  const [peer, setPeer] = useState(initialPeer ?? "");
   const [price, setPrice] = useState("");
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
@@ -27,6 +32,7 @@ export default function SendToTelegram({
 
   const priceCents = Math.round(parseFloat(price) * 100) || 0;
   const invalid = !peer.trim() || priceCents < 100;
+  const peerLocked = Boolean(initialPeer);
 
   async function send() {
     if (busy || invalid) return;
@@ -104,16 +110,27 @@ export default function SendToTelegram({
                 <label className="text-sm font-semibold">
                   Fan&apos;s Telegram
                 </label>
-                <input
-                  value={peer}
-                  onChange={(e) => setPeer(e.target.value)}
-                  placeholder="@username or +1555…"
-                  className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
-                />
-                <p className="text-xs text-muted">
-                  You must have an existing Telegram chat with this person (or
-                  their privacy must allow messages).
-                </p>
+                {peerLocked ? (
+                  <div className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm truncate">
+                    {peerLabel ||
+                      (peer.startsWith("@") || peer.startsWith("+")
+                        ? peer
+                        : "This chat")}
+                  </div>
+                ) : (
+                  <input
+                    value={peer}
+                    onChange={(e) => setPeer(e.target.value)}
+                    placeholder="@username or +1555…"
+                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+                  />
+                )}
+                {!peerLocked && (
+                  <p className="text-xs text-muted">
+                    You must have an existing Telegram chat with this person (or
+                    their privacy must allow messages).
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">

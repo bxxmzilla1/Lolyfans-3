@@ -35,8 +35,15 @@ export async function POST(req: NextRequest) {
   if (!peer) {
     return NextResponse.json({ error: "Enter the fan's @username or phone" }, { status: 400 });
   }
-  // Accept "@name", "name", or a phone; normalise a bare username to @name.
-  if (!peer.startsWith("@") && !/^\+?\d{6,15}$/.test(peer)) peer = `@${peer}`;
+  // Accept peer keys from the Telegram inbox (user:/channel:/chat:),
+  // "@name", bare username, or phone.
+  const isPeerKey =
+    peer.startsWith("user:") ||
+    peer.startsWith("channel:") ||
+    peer.startsWith("chat:");
+  if (!isPeerKey && !peer.startsWith("@") && !/^\+?\d{6,15}$/.test(peer)) {
+    peer = `@${peer}`;
+  }
 
   const db = supabaseAdmin();
   const { data: unlock, error } = await db

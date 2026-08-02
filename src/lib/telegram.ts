@@ -21,8 +21,39 @@ type AnyClient = {
   invoke: (req: unknown) => Promise<unknown>;
   sendFile: (peer: unknown, opts: Record<string, unknown>) => Promise<unknown>;
   sendMessage: (peer: unknown, opts: Record<string, unknown>) => Promise<unknown>;
+  getDialogs: (opts?: Record<string, unknown>) => Promise<unknown[]>;
+  getMessages: (
+    peer: unknown,
+    opts?: Record<string, unknown>
+  ) => Promise<unknown[]>;
   getMe: () => Promise<{ username?: string; phone?: string }>;
   session: { save: () => string };
+};
+
+/** Stable peer key used in the inbox URL and send APIs. */
+export type TgPeerKey =
+  | `@${string}`
+  | `user:${string}:${string}`
+  | `channel:${string}:${string}`
+  | `chat:${string}`;
+
+export type TgDialog = {
+  peer: string;
+  title: string;
+  username: string | null;
+  kind: "user" | "group" | "channel";
+  unread: number;
+  preview: string;
+  date: number;
+  photoUrl: string | null;
+};
+
+export type TgMessage = {
+  id: number;
+  text: string;
+  out: boolean;
+  date: number;
+  hasMedia: boolean;
 };
 
 function apiCreds(): { apiId: number; apiHash: string } {
@@ -177,6 +208,178 @@ export async function tgSessionFor(ownerId: string): Promise<string | null> {
   return data.session as string;
 }
 
+/**
+ * Turn a peer key (@user / phone / user:id:hash / channel:id:hash) into a
+ * value GramJS sendMessage / sendFile accepts.
+ */
+async function resolvePeer(peer: string): Promise<unknown> {
+  const p = peer.trim();
+  if (!p) throw new Error("Missing Telegram peer");
+
+  if (p.startsWith("user:")) {
+    const [, id, accessHash] = p.split(":");
+    const { Api } = await gramjs();
+    return new Api.InputPeerUser({
+      userId: bigInt(id),
+      accessHash: bigInt(accessHash || "0"),
+    });
+  }
+  if (p.startsWith("channel:")) {
+    const [, id, accessHash] = p.split(":");
+    const { Api } = await gramjs();
+    return new Api.InputPeerChannel({
+      channelId: bigInt(id),
+      accessHash: bigInt(accessHash || "0"),
+    });
+  }
+  if (p.startsWith("chat:")) {
+    const [, id] = p.split(":");
+    const { Api } = await gramjs();
+    return new Api.InputPeerChat({ chatId: bigInt(id) });
+  }
+
+  // @username, bare username, or phone — GramJS resolves these as strings.
+  if (!p.startsWith("@") && !/^\+?\d{6,15}$/.test(p)) return `@${p}`;
+  return p;
+}
+
+/** GramJS TL types expect big-integer's BigInteger, not native bigint. */
+function bigInt(value: string): // eslint-disable-next-line @typescript-eslint/no-explicit-any
+any {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require("big-integer")(value);
+}
+
+function entityPeerKey(entity: {
+  className?: string;
+  id?: unknown;
+  accessHash?: unknown;
+  username?: string;
+}): string {
+  const username = entity.username ? String(entity.username) : "";
+  if (username) return `@${username}`;
+  const id = String(entity.id ?? "");
+  const hash = String(entity.accessHash ?? "0");
+  const cls = entity.className || "";
+  if (cls.includes("Channel")) return `channel:${id}:${hash}`;
+  if (cls.includes("Chat") && !cls.includes("User")) return `chat:${id}`;
+  return `user:${id}:${hash}`;
+}
+
+function entityKind(entity: { className?: string; broadcast?: boolean; megagroup?: boolean }): TgDialog["kind"] {
+  const cls = entity.className || "";
+  if (cls.includes("User")) return "user";
+  if (cls.includes("Channel") && entity.broadcast && !entity.megagroup) return "channel";
+  return "group";
+}
+
+function messagePreview(msg: unknown): string {
+  if (!msg || typeof msg !== "object") return "";
+  const m = msg as { message?: string; media?: unknown };
+  if (typeof m.message === "string" && m.message.trim()) {
+    return m.message.trim().slice(0, 120);
+  }
+  if (m.media) return "📎 Media";
+  return "";
+}
+
+/** List recent Telegram dialogs (DMs, groups, channels) for the connected account. */
+export async function tgListDialogs(opts: {
+  session: string;
+  limit?: number;
+}): Promise<TgDialog[]> {
+  const client = await connect(opts.session);
+  try {
+    const dialogs = (await client.getDialogs({
+      limit: opts.limit ?? 80,
+    })) as Array<{
+      title?: string;
+      unreadCount?: number;
+      date?: number;
+      isUser?: boolean;
+      isGroup?: boolean;
+      isChannel?: boolean;
+      entity?: {
+        className?: string;
+        id?: unknown;
+        accessHash?: unknown;
+        username?: string;
+        broadcast?: boolean;
+        megagroup?: boolean;
+      };
+      message?: unknown;
+    }>;
+
+    return dialogs
+      .filter((d) => d.entity)
+      .map((d) => {
+        const entity = d.entity!;
+        return {
+          peer: entityPeerKey(entity),
+          title: d.title || entity.username || "Telegram",
+          username: entity.username ? String(entity.username) : null,
+          kind: entityKind(entity),
+          unread: d.unreadCount ?? 0,
+          preview: messagePreview(d.message),
+          date: typeof d.date === "number" ? d.date : 0,
+          photoUrl: null,
+        };
+      });
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
+/** Recent messages in one Telegram dialog. */
+export async function tgGetMessages(opts: {
+  session: string;
+  peer: string;
+  limit?: number;
+}): Promise<TgMessage[]> {
+  const client = await connect(opts.session);
+  try {
+    const peer = await resolvePeer(opts.peer);
+    const messages = (await client.getMessages(peer, {
+      limit: opts.limit ?? 40,
+    })) as Array<{
+      id?: number;
+      message?: string;
+      out?: boolean;
+      date?: number;
+      media?: unknown;
+    }>;
+
+    return messages
+      .filter((m) => m && typeof m.id === "number")
+      .map((m) => ({
+        id: m.id as number,
+        text: typeof m.message === "string" ? m.message : m.media ? "📎 Media" : "",
+        out: !!m.out,
+        date: typeof m.date === "number" ? m.date : 0,
+        hasMedia: !!m.media,
+      }))
+      // GramJS returns newest-first; UI wants oldest-first.
+      .reverse();
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
+/** Send a plain text reply into a Telegram dialog. */
+export async function tgSendText(opts: {
+  session: string;
+  peer: string;
+  text: string;
+}): Promise<void> {
+  const client = await connect(opts.session);
+  try {
+    const peer = await resolvePeer(opts.peer);
+    await client.sendMessage(peer, { message: opts.text });
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
 /** Run the bundled ffmpeg binary with the given args (throws on failure). */
 async function runFfmpeg(args: string[]): Promise<void> {
   const ffmpegPath = (await import("ffmpeg-static")).default as unknown as
@@ -257,6 +460,7 @@ export async function tgSendTeaser(opts: {
 }): Promise<void> {
   const client = await connect(opts.session);
   try {
+    const peer = await resolvePeer(opts.peer);
     if (opts.mediaType === "image") {
       const sharp = (await import("sharp")).default;
       const original = await downloadMedia(opts.mediaPath);
@@ -266,7 +470,7 @@ export async function tgSendTeaser(opts: {
         .blur(40)
         .jpeg({ quality: 60 })
         .toBuffer();
-      await client.sendFile(opts.peer, {
+      await client.sendFile(peer, {
         file: blurred,
         caption: opts.caption,
         forceDocument: false,
@@ -281,7 +485,7 @@ export async function tgSendTeaser(opts: {
     try {
       const { CustomFile } = await gramjs();
       const clip = await blurredVideoClip(original);
-      await client.sendFile(opts.peer, {
+      await client.sendFile(peer, {
         file: new CustomFile("teaser.mp4", clip.length, "", clip),
         caption: opts.caption,
         forceDocument: false,
@@ -294,7 +498,7 @@ export async function tgSendTeaser(opts: {
     // Good: a blurred still frame from the video.
     try {
       const frame = await blurredVideoFrame(original);
-      await client.sendFile(opts.peer, {
+      await client.sendFile(peer, {
         file: frame,
         caption: opts.caption,
         forceDocument: false,
@@ -304,7 +508,7 @@ export async function tgSendTeaser(opts: {
       // fall through to plain text
     }
     // Last resort: the old text bubble with the link.
-    await client.sendMessage(opts.peer, {
+    await client.sendMessage(peer, {
       message: `🔒 Locked video\n\n${opts.caption}`,
     });
   } finally {
@@ -323,6 +527,7 @@ export async function tgDeliverMedia(opts: {
   const client = await connect(opts.session);
   try {
     const { CustomFile } = await gramjs();
+    const peer = await resolvePeer(opts.peer);
     const file = await downloadMedia(opts.mediaPath);
     // Keep the real file name (extension) so Telegram renders a playable
     // video / proper photo instead of a generic unnamed document.
@@ -332,7 +537,7 @@ export async function tgDeliverMedia(opts: {
       : opts.mediaType === "video"
         ? "media.mp4"
         : "media.jpg";
-    await client.sendFile(opts.peer, {
+    await client.sendFile(peer, {
       file: new CustomFile(name, file.length, "", file),
       caption: opts.caption ?? "✅ Unlocked — enjoy!",
       videoNote: false,
