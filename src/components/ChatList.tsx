@@ -8,7 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { chatPreviewLabel, type ChatPreview } from "@/lib/chatPreview";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
-import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSend, IconTrash } from "./Icons";
+import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSearch, IconSend, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
 import MassMessage from "./MassMessage";
@@ -152,6 +152,9 @@ export default function ChatList() {
   const [categories, setCategories] = useState<Category[]>(categoriesCache ?? []);
   // "all" or a category id
   const [activeCat, setActiveCat] = useState<string>("all");
+  // Name / country / link search — matches across every chat, not just the
+  // active category, so a fan is always findable.
+  const [search, setSearch] = useState("");
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [newCatOpen, setNewCatOpen] = useState(false);
@@ -470,9 +473,23 @@ export default function ChatList() {
     );
   }
 
-  // Main section: chats marked for "All" plus safety net for uncategorized ones
+  const query = search.trim().toLowerCase();
+  const matchesSearch = (c: ChatRow) =>
+    [
+      c.custom_name,
+      c.guest_name,
+      c.guest_country,
+      c.invites?.label,
+      c.invites?.code,
+    ].some((field) => field?.toLowerCase().includes(query));
+
+  // Main section: chats marked for "All" plus safety net for uncategorized
+  // ones. A search looks through every chat instead, so fans in other
+  // categories still turn up.
   const filteredChats = (
-    activeCat === "all"
+    query
+      ? chats.filter(matchesSearch)
+      : activeCat === "all"
       ? chats.filter((c) => c.in_all || c.categories.length === 0)
       : chats.filter((c) => c.categories.includes(activeCat))
   ).filter((c) => !onlineOnly || onlineIds.has(c.id));
@@ -513,6 +530,30 @@ export default function ChatList() {
 
   return (
     <div>
+      {/* Search: name, renamed name, country or invite link — mobile + desktop */}
+      <div className="px-3 pb-2">
+        <div className="relative">
+          <IconSearch className="w-4 h-4 text-muted absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            type="search"
+            placeholder="Search chats"
+            aria-label="Search chats"
+            className="w-full bg-card2 border border-line rounded-xl pl-9 pr-9 py-2 text-sm placeholder:text-muted focus:border-accent outline-none transition-colors [&::-webkit-search-cancel-button]:hidden"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch("")}
+              aria-label="Clear search"
+              className="absolute right-2 top-1/2 -translate-y-1/2 w-6 h-6 rounded-lg text-muted hover:text-fg flex items-center justify-center"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Category tabs + multi-select — desktop web view only */}
       <div className="hidden lg:block px-3 pb-2 space-y-2">
         {/* Mass message: prominent, always at the very top */}
@@ -671,7 +712,9 @@ export default function ChatList() {
 
       {visibleChats.length === 0 ? (
         <p className="px-5 py-8 text-center text-muted text-sm">
-          {onlineOnly
+          {query
+            ? `No chats match “${search.trim()}”.`
+            : onlineOnly
             ? "No one is online right now."
             : "No chats in this category yet. Use Select to add some."}
         </p>
@@ -797,7 +840,8 @@ export default function ChatList() {
       {hiddenCount > 0 && (
         <div className="px-3 py-3 text-center space-y-1.5">
           <p className="text-muted text-xs">
-            Showing the {visibleChats.length} most recent of {filteredChats.length} chats
+            Showing the {visibleChats.length} most recent of {filteredChats.length}{" "}
+            {query ? "matching chats" : "chats"}
           </p>
           <button
             onClick={() => updateListLimit("0")}
