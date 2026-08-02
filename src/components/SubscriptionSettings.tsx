@@ -211,14 +211,9 @@ export default function SubscriptionSettings() {
         <div className="w-full px-5 py-3 rounded-full bg-accent text-white text-sm font-semibold flex items-center justify-between gap-3">
           <span>{paid ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE"}</span>
           <span className="shrink-0">
-            {!paid ? "FREE" : trialOn ? "1 day free trial" : `${priceLabel} / day`}
+            {!paid ? "FREE" : `${priceLabel} / day`}
           </span>
         </div>
-        {paid && trialOn && (
-          <p className="text-xs text-muted text-center">
-            Then {priceLabel} / day
-          </p>
-        )}
       </div>
 
       <button

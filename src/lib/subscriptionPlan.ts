@@ -77,26 +77,20 @@ export function subFirstPeriodCents(plan: SubPlan): number {
   return Math.round((plan.priceCents * (100 - plan.discountPct)) / 100);
 }
 
-/** Right-hand side of the SUBSCRIBE button. */
+/**
+ * Right-hand side of the SUBSCRIBE button. Always the recurring price — the
+ * trial is applied at checkout but never advertised on the button.
+ */
 export function subCtaLabel(plan: SubPlan): string {
   if (plan.priceCents <= 0) return "FREE";
-  if (plan.trialDays > 0)
-    return `${plan.trialDays} ${plan.trialDays === 1 ? "day" : "days"} free trial`;
   if (plan.discountPct > 0)
     return `${subDollars(subFirstPeriodCents(plan))} first ${plan.interval}`;
   return subPriceLabel(plan);
 }
 
-/** Small print under the SUBSCRIBE button for trials / discounts. */
+/** Small print under the SUBSCRIBE button. */
 export function subCaption(plan: SubPlan): string | null {
   if (plan.priceCents <= 0) return null;
   if (plan.interval === "lifetime") return "One-time payment · lifetime access";
-  const full = subPriceLabel(plan);
-  if (plan.trialDays > 0 && plan.discountPct > 0) {
-    return `Then ${plan.discountPct}% off your first ${plan.interval} (${subDollars(
-      subFirstPeriodCents(plan)
-    )}), then ${full}`;
-  }
-  if (plan.trialDays > 0 || plan.discountPct > 0) return `Then ${full}`;
   return null;
 }
