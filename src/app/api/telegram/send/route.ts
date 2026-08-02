@@ -64,11 +64,14 @@ export async function POST(req: NextRequest) {
 
   const origin = requestOrigin(req.headers);
   const link = `${origin}/u/${unlock.id}`;
-  const dollars = `$${(priceCents / 100).toFixed(2).replace(/\.00$/, "")}`;
+  // Price lives on the blurred media overlay; caption is optional note + tap link.
+  const safeCaption = caption
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
   const teaserCaption = [
-    caption,
-    `🔒 Unlock this ${mediaType} — ${dollars}`,
-    link,
+    safeCaption,
+    `<a href="${link}">Tap Here to unlock</a>`,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -80,6 +83,7 @@ export async function POST(req: NextRequest) {
       mediaPath,
       mediaType,
       caption: teaserCaption,
+      priceCents,
     });
   } catch (err) {
     // Roll back the row so a failed send doesn't leave a dangling link.

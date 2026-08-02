@@ -17,7 +17,11 @@ export async function GET(
   }
 
   try {
-    const jpeg = await buildBlurredStill(unlock.media_path, unlock.media_type);
+    const jpeg = await buildBlurredStill(
+      unlock.media_path,
+      unlock.media_type,
+      unlock.price_cents
+    );
     return new NextResponse(new Uint8Array(jpeg), {
       headers: {
         "Content-Type": "image/jpeg",

@@ -427,24 +427,93 @@ export async function tgDownloadMessageMedia(opts: {
   }
 }
 
+function dollarsLabel(cents: number): string {
+  return `$${(cents / 100).toFixed(2).replace(/\.00$/, "")}`;
+}
+
+/**
+ * Centered lock + price badge (transparent PNG) composited onto teasers so the
+ * caption doesn't need to repeat the price.
+ */
+async function lockPriceBadgePng(priceCents: number, size = 220): Promise<Buffer> {
+  const sharp = (await import("sharp")).default;
+  const label = dollarsLabel(priceCents);
+  const svg = `
+<svg width="${size}" height="${size}" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="s" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <rect x="18" y="18" width="${size - 36}" height="${size - 36}" rx="36"
+        fill="rgba(0,0,0,0.58)" filter="url(#s)"/>
+  <!-- lock body -->
+  <rect x="${size / 2 - 22}" y="${size / 2 - 8}" width="44" height="36" rx="8" fill="#fff"/>
+  <!-- lock shackle -->
+  <path d="M ${size / 2 - 14} ${size / 2 - 8}
+           v -14
+           a 14 14 0 0 1 28 0
+           v 14"
+        fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round"/>
+  <circle cx="${size / 2}" cy="${size / 2 + 8}" r="5" fill="rgba(0,0,0,0.55)"/>
+  <text x="50%" y="${size - 48}" text-anchor="middle"
+        font-family="Arial, Helvetica, sans-serif" font-size="28" font-weight="700"
+        fill="#fff">${label}</text>
+</svg>`;
+  return sharp(Buffer.from(svg)).png().toBuffer();
+}
+
+async function compositeLockBadge(
+  image: Buffer,
+  priceCents: number
+): Promise<Buffer> {
+  const sharp = (await import("sharp")).default;
+  const meta = await sharp(image).metadata();
+  const w = meta.width || 600;
+  const h = meta.height || 600;
+  const badgeSize = Math.round(Math.min(w, h) * 0.42);
+  const badge = await lockPriceBadgePng(priceCents, Math.max(160, badgeSize));
+  const badgeMeta = await sharp(badge).metadata();
+  const bw = badgeMeta.width || badgeSize;
+  const bh = badgeMeta.height || badgeSize;
+  return sharp(image)
+    .composite([
+      {
+        input: badge,
+        left: Math.round((w - bw) / 2),
+        top: Math.round((h - bh) / 2),
+      },
+    ])
+    .jpeg({ quality: 70 })
+    .toBuffer();
+}
+
 /**
  * Blurred still preview of vault media — safe to show on the public unlock
- * page and to send as a Telegram photo teaser.
+ * page and to send as a Telegram photo teaser. Optional priceCents burns a
+ * lock + $amount badge onto the center.
  */
 export async function buildBlurredStill(
   mediaPath: string,
-  mediaType: "image" | "video"
+  mediaType: "image" | "video",
+  priceCents?: number
 ): Promise<Buffer> {
   const original = await downloadMedia(mediaPath);
+  let still: Buffer;
   if (mediaType === "video") {
-    return blurredVideoFrame(original);
+    still = await blurredVideoFrame(original);
+  } else {
+    const sharp = (await import("sharp")).default;
+    still = await sharp(original)
+      .resize(600, 600, { fit: "inside", withoutEnlargement: true })
+      .blur(40)
+      .jpeg({ quality: 60 })
+      .toBuffer();
   }
-  const sharp = (await import("sharp")).default;
-  return sharp(original)
-    .resize(600, 600, { fit: "inside", withoutEnlargement: true })
-    .blur(40)
-    .jpeg({ quality: 60 })
-    .toBuffer();
+  if (priceCents && priceCents > 0) {
+    return compositeLockBadge(still, priceCents);
+  }
+  return still;
 }
 
 /** Send a plain text reply into a Telegram dialog. */
@@ -476,8 +545,12 @@ async function runFfmpeg(args: string[]): Promise<void> {
 /**
  * Blurred video teaser: the first seconds, downscaled, heavily blurred and
  * muted — enough to see something is there, nothing usable before payment.
+ * When priceCents is set, a lock + $ badge is overlaid in the center.
  */
-async function blurredVideoClip(original: Buffer): Promise<Buffer> {
+async function blurredVideoClip(
+  original: Buffer,
+  priceCents?: number
+): Promise<Buffer> {
   const fs = await import("fs/promises");
   const os = await import("os");
   const path = await import("path");
@@ -486,18 +559,38 @@ async function blurredVideoClip(original: Buffer): Promise<Buffer> {
     const inFile = path.join(dir, "in.bin");
     const outFile = path.join(dir, "out.mp4");
     await fs.writeFile(inFile, original);
-    await runFfmpeg([
-      "-y",
-      "-i", inFile,
-      "-t", "3",
-      "-an",
-      "-vf", "scale=480:-2,boxblur=20:2",
-      "-c:v", "libx264",
-      "-preset", "veryfast",
-      "-pix_fmt", "yuv420p",
-      "-movflags", "+faststart",
-      outFile,
-    ]);
+
+    if (priceCents && priceCents > 0) {
+      const badgeFile = path.join(dir, "badge.png");
+      await fs.writeFile(badgeFile, await lockPriceBadgePng(priceCents, 200));
+      await runFfmpeg([
+        "-y",
+        "-i", inFile,
+        "-i", badgeFile,
+        "-t", "3",
+        "-an",
+        "-filter_complex",
+        "[0:v]scale=480:-2,boxblur=20:2[bg];[bg][1:v]overlay=(W-w)/2:(H-h)/2",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        outFile,
+      ]);
+    } else {
+      await runFfmpeg([
+        "-y",
+        "-i", inFile,
+        "-t", "3",
+        "-an",
+        "-vf", "scale=480:-2,boxblur=20:2",
+        "-c:v", "libx264",
+        "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        "-movflags", "+faststart",
+        outFile,
+      ]);
+    }
     return await fs.readFile(outFile);
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
@@ -528,9 +621,9 @@ async function blurredVideoFrame(original: Buffer): Promise<Buffer> {
 }
 
 /**
- * Send a locked teaser into a fan's DM: a heavily blurred preview plus the
- * caption with the unlock link. Images blur with sharp; videos become a
- * short blurred muted clip (or a blurred still frame if the clip encode
+ * Send a locked teaser into a fan's DM: blurred preview with lock+$ badge,
+ * plus an HTML caption (e.g. "Tap Here to unlock"). Images blur with sharp;
+ * videos become a short blurred muted clip (or a still frame if encode
  * fails), with a plain text message as the last resort.
  */
 export async function tgSendTeaser(opts: {
@@ -539,19 +632,28 @@ export async function tgSendTeaser(opts: {
   mediaPath: string;
   mediaType: "image" | "video";
   caption: string;
+  priceCents: number;
 }): Promise<void> {
   const client = await connect(opts.session);
   try {
     const { CustomFile } = await gramjs();
     const peer = await resolvePeer(opts.peer);
+    const sendOpts = {
+      caption: opts.caption,
+      parseMode: "html" as const,
+      forceDocument: false,
+    };
     if (opts.mediaType === "image") {
       // Named .jpg so Telegram renders a photo bubble (raw buffers often
       // become unnamed documents / text-only failures in some clients).
-      const blurred = await buildBlurredStill(opts.mediaPath, "image");
+      const blurred = await buildBlurredStill(
+        opts.mediaPath,
+        "image",
+        opts.priceCents
+      );
       await client.sendFile(peer, {
         file: new CustomFile("teaser.jpg", blurred.length, "", blurred),
-        caption: opts.caption,
-        forceDocument: false,
+        ...sendOpts,
       });
       return;
     }
@@ -559,32 +661,34 @@ export async function tgSendTeaser(opts: {
     const original = await downloadMedia(opts.mediaPath);
     // Best: a short blurred clip that shows as a real video bubble.
     try {
-      const clip = await blurredVideoClip(original);
+      const clip = await blurredVideoClip(original, opts.priceCents);
       await client.sendFile(peer, {
         file: new CustomFile("teaser.mp4", clip.length, "", clip),
-        caption: opts.caption,
-        forceDocument: false,
+        ...sendOpts,
         supportsStreaming: true,
       });
       return;
     } catch {
       // fall through to the still frame
     }
-    // Good: a blurred still frame from the video.
+    // Good: a blurred still frame from the video + lock badge.
     try {
-      const frame = await blurredVideoFrame(original);
+      const frame = await compositeLockBadge(
+        await blurredVideoFrame(original),
+        opts.priceCents
+      );
       await client.sendFile(peer, {
         file: new CustomFile("teaser.jpg", frame.length, "", frame),
-        caption: opts.caption,
-        forceDocument: false,
+        ...sendOpts,
       });
       return;
     } catch {
       // fall through to plain text
     }
-    // Last resort: the old text bubble with the link.
+    // Last resort: text bubble with the HTML unlock link.
     await client.sendMessage(peer, {
-      message: `🔒 Locked video\n\n${opts.caption}`,
+      message: opts.caption,
+      parseMode: "html",
     });
   } finally {
     await client.disconnect().catch(() => {});
