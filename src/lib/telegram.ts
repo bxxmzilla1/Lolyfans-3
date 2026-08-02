@@ -64,6 +64,8 @@ export type TgDialog = {
   /** True when the preview message was sent by us. */
   lastOut: boolean;
   lastReceipt: TgReceipt | null;
+  /** Pinned in Telegram — kept at the top of the inbox list. */
+  pinned: boolean;
 };
 
 export type TgMessage = {
@@ -337,6 +339,7 @@ export async function tgListDialogs(opts: {
       unreadCount?: number;
       date?: number;
       archived?: boolean;
+      pinned?: boolean;
       folderId?: number;
       isUser?: boolean;
       isGroup?: boolean;
@@ -389,6 +392,7 @@ export async function tgListDialogs(opts: {
           photoUrl,
           lastOut,
           lastReceipt: lastOut ? receiptForOutgoing(msgId, readOut) : null,
+          pinned: !!d.pinned,
         };
       });
   } finally {
@@ -418,6 +422,28 @@ export async function tgDownloadProfilePhoto(opts: {
       .resize(128, 128, { fit: "cover" })
       .webp({ quality: 70 })
       .toBuffer();
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
+/** Pin (or unpin) a dialog — mirrors pinning it in the Telegram app. */
+export async function tgSetPinned(opts: {
+  session: string;
+  peer: string;
+  pinned: boolean;
+}): Promise<void> {
+  const client = await connect(opts.session);
+  try {
+    const { Api } = await gramjs();
+    const resolved = await resolvePeer(opts.peer);
+    const input = await client.getInputEntity(resolved);
+    await client.invoke(
+      new Api.messages.ToggleDialogPin({
+        peer: new Api.InputDialogPeer({ peer: input as never }),
+        pinned: opts.pinned,
+      })
+    );
   } finally {
     await client.disconnect().catch(() => {});
   }

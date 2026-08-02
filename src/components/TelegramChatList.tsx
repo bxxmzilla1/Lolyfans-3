@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { formatTime } from "@/lib/utils";
-import { IconSearch, IconSend, IconUser } from "./Icons";
+import { IconPin, IconSearch, IconSend, IconUser } from "./Icons";
 import TelegramReceipt from "./TelegramReceipt";
 
 type Dialog = {
@@ -18,6 +18,7 @@ type Dialog = {
   photoUrl: string | null;
   lastOut: boolean;
   lastReceipt: "sent" | "read" | null;
+  pinned: boolean;
 };
 
 function peerHref(peer: string, title: string) {
@@ -73,15 +74,37 @@ export default function TelegramChatList() {
     return () => clearInterval(timer);
   }, [load]);
 
-  const q = search.trim().toLowerCase();
-  const filtered = (dialogs ?? []).filter((d) => {
-    if (!q) return true;
-    return (
-      d.title.toLowerCase().includes(q) ||
-      (d.username && d.username.toLowerCase().includes(q)) ||
-      d.preview.toLowerCase().includes(q)
+  async function togglePin(d: Dialog) {
+    const pinned = !d.pinned;
+    // Optimistic: flip locally so the row jumps to/from the top right away.
+    setDialogs(
+      (prev) =>
+        prev?.map((x) => (x.peer === d.peer ? { ...x, pinned } : x)) ?? prev
     );
-  });
+    try {
+      const res = await fetch("/api/telegram/pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ peer: d.peer, pinned }),
+      });
+      // Telegram rejects the pin (e.g. pin limit reached) — resync.
+      if (!res.ok) void load();
+    } catch {
+      void load();
+    }
+  }
+
+  const q = search.trim().toLowerCase();
+  const filtered = (dialogs ?? [])
+    .filter((d) => {
+      if (!q) return true;
+      return (
+        d.title.toLowerCase().includes(q) ||
+        (d.username && d.username.toLowerCase().includes(q)) ||
+        d.preview.toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => Number(b.pinned) - Number(a.pinned) || b.date - a.date);
 
   if (loading && !dialogs) {
     return (
@@ -164,7 +187,7 @@ export default function TelegramChatList() {
               <Link
                 key={d.peer}
                 href={href}
-                className={`flex items-center gap-3 px-4 py-3 transition-colors ${
+                className={`group flex items-center gap-3 px-4 py-3 transition-colors ${
                   active ? "bg-accent/10" : "hover:bg-card2"
                 }`}
               >
@@ -206,6 +229,23 @@ export default function TelegramChatList() {
                         {when}
                       </span>
                     )}
+                    <button
+                      type="button"
+                      aria-label={d.pinned ? "Unpin chat" : "Pin chat"}
+                      title={d.pinned ? "Unpin" : "Pin to top"}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void togglePin(d);
+                      }}
+                      className={`shrink-0 p-1 -m-1 rounded-md transition-colors ${
+                        d.pinned
+                          ? "text-accent hover:text-muted"
+                          : "text-muted/40 hover:text-accent"
+                      }`}
+                    >
+                      <IconPin className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                   <div className="flex items-center gap-2">
                     {d.lastOut && (
