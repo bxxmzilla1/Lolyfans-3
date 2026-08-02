@@ -55,7 +55,7 @@ export default function PinBlurDrainer({
           className="w-full h-auto max-h-[70vh] object-contain blur-2xl scale-110 pointer-events-none select-none"
         />
         <span className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/25">
-          <span className="w-14 h-14 rounded-2xl ig-gradient glow-accent flex items-center justify-center">
+          <span className="w-14 h-14 rounded-2xl bg-[#3c68ff] flex items-center justify-center">
             <IconLock className="w-7 h-7 text-white" />
           </span>
           <span className="px-5 py-2.5 rounded-full bg-white/15 border border-white/30 backdrop-blur-md text-white text-sm font-semibold">

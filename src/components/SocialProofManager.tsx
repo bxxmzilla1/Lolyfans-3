@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, formatTime } from "@/lib/utils";
 import ConfirmDialog from "./ConfirmDialog";
+import Portal from "./Portal";
+import { VaultPicker } from "./MassMessage";
 import {
   IconHeart,
   IconHeartFilled,
@@ -51,6 +53,7 @@ export default function SocialProofManager() {
   const [pinPath, setPinPath] = useState<string | null>(null);
   const [pinUploading, setPinUploading] = useState(false);
   const [pinError, setPinError] = useState("");
+  const [pinVaultOpen, setPinVaultOpen] = useState(false);
   const pinFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -130,6 +133,23 @@ export default function SocialProofManager() {
       data: { pin_blurdrainer_path: "" },
     });
     setPinPath(null);
+  }
+
+  async function pickPinFromVault(item: {
+    media_path: string;
+    media_type: "image" | "video";
+  }) {
+    if (item.media_type !== "video") {
+      setPinError("The Pin Blurdrainer needs a video — pick one from the Videos tab");
+      setPinVaultOpen(false);
+      return;
+    }
+    setPinError("");
+    setPinVaultOpen(false);
+    await supabaseBrowser().auth.updateUser({
+      data: { pin_blurdrainer_path: item.media_path },
+    });
+    setPinPath(item.media_path);
   }
 
   async function saveLikes() {
@@ -260,7 +280,7 @@ export default function SocialProofManager() {
               className="w-full max-h-56 object-cover blur-xl scale-110"
             />
             <span className="absolute inset-0 flex items-center justify-center bg-black/25">
-              <span className="w-10 h-10 rounded-xl ig-gradient flex items-center justify-center">
+              <span className="w-10 h-10 rounded-xl bg-[#3c68ff] flex items-center justify-center">
                 <IconLock className="w-5 h-5 text-white" />
               </span>
             </span>
@@ -271,9 +291,16 @@ export default function SocialProofManager() {
 
         <div className="flex gap-2">
           <button
-            onClick={() => pinFileRef.current?.click()}
+            onClick={() => setPinVaultOpen(true)}
             disabled={pinUploading}
             className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
+          >
+            Choose from vault
+          </button>
+          <button
+            onClick={() => pinFileRef.current?.click()}
+            disabled={pinUploading}
+            className="flex-1 rounded-xl bg-card2 border border-line text-sm font-semibold py-2.5 disabled:opacity-50"
           >
             {pinUploading
               ? "Uploading…"
@@ -301,6 +328,17 @@ export default function SocialProofManager() {
           }
         />
       </div>
+
+      {pinVaultOpen && (
+        <Portal>
+          <div className="fixed inset-0 z-[80]">
+            <VaultPicker
+              onPick={(item) => void pickPinFromVault(item)}
+              onClose={() => setPinVaultOpen(false)}
+            />
+          </div>
+        </Portal>
+      )}
 
       {/* Post picker */}
       <div className="space-y-2">
