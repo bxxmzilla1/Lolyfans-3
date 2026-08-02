@@ -12,7 +12,6 @@ import { formatCount, mediaUrl } from "@/lib/utils";
 import CreatorBanner from "@/components/CreatorBanner";
 import InviteSubscribeCta from "@/components/InviteSubscribeCta";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
-import { getTelegramFan, telegramLoginBotUsername } from "@/lib/telegramLogin";
 import {
   IconChat,
   IconHeart,
@@ -161,10 +160,6 @@ export default async function InviteProfilePreviewPage({
     ownerName: profile.name,
     plan: profile.plan,
     alreadyJoined,
-    // Telegram Login Widget replaces the join button when configured; fans
-    // who already logged in with Telegram get a one-tap join button instead.
-    botUsername: telegramLoginBotUsername(),
-    tgLoggedIn: !!(await getTelegramFan()),
   };
 
   return (
