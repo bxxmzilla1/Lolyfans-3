@@ -12,6 +12,11 @@ export type CouponPayload = {
 
 export const COUPON_PREFIX = "🎟️COUPON:";
 
+export function offerPriceLabel(cents: number): string {
+  const dollars = cents / 100;
+  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+}
+
 export function formatCouponMessage(c: CouponPayload): string {
   return (
     COUPON_PREFIX +

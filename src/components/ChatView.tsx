@@ -23,20 +23,11 @@ import {
   TIP_TOKEN_PRESETS,
   MIN_TIP_TOKENS,
   TOKEN_PACKS,
-  FIRST_TOPUP_OFFER_PACK_ID,
   formatTokens,
   packTotalTokens,
   perTokenLabel,
 } from "@/lib/tokens";
-import {
-  DEFAULT_POPUP_OFFER,
-  offerPriceLabel,
-  type PopupOffer,
-  type VerifyPopup,
-  type WelcomeOffer,
-} from "@/lib/popupOffer";
-import { formatCouponMessage } from "@/lib/coupon";
-import { paidSubPriceLabel } from "@/lib/paidSub";
+import { formatCouponMessage, offerPriceLabel } from "@/lib/coupon";
 import {
   IconBack,
   IconChat,
@@ -55,8 +46,6 @@ import {
 
 const MAX_ATTACHMENTS = 12;
 
-const OFFER_PACK = TOKEN_PACKS.find((p) => p.id === FIRST_TOPUP_OFFER_PACK_ID)!;
-
 export default function ChatView({
   chatId,
   role,
@@ -64,8 +53,6 @@ export default function ChatView({
   initialMessages,
   ownerId,
   peerName,
-  initialHasCard,
-  initialVerifyEnabled,
 }: {
   chatId: string;
   role: "owner" | "guest";
@@ -75,12 +62,6 @@ export default function ChatView({
   ownerId?: string;
   /** Guest side: creator's display name, shown on incoming locked media. */
   peerName?: string;
-  /**
-   * Guest side, server-rendered so Card Verify blurs media on the very first
-   * paint (no unblurred flash while the wallet fetch is in flight).
-   */
-  initialHasCard?: boolean;
-  initialVerifyEnabled?: boolean;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [text, setText] = useState("");
@@ -119,7 +100,6 @@ export default function ChatView({
   const [toppingUp, setToppingUp] = useState<string | null>(null);
   // In-flight guards readable from memoized bubbles' older closures.
   const unlockingRef = useRef(false);
-  const startingVerifyRef = useRef(false);
   // First purchase: the composer area swaps for the embedded 3-step card
   // wizard instead of redirecting to Stripe Checkout.
   const [cardTopup, setCardTopup] = useState<{
@@ -127,39 +107,12 @@ export default function ChatView({
     amountCents: number;
     tokens: number;
     country: string | null;
-    claim?: "custom" | "welcome";
   } | null>(null);
   // The message the fan tried to accept while short on tokens — it unlocks
   // automatically the moment their top-up lands.
   const pendingUnlockIdRef = useRef<string | null>(null);
-  // Card Verify: while there's no card on file, the creator's photos/videos
-  // render locked with a "Verify to view" button that opens the embedded
-  // card wizard — a SetupIntent, so nothing is charged. Both start from the
-  // server-rendered values so blurred media never flashes visible on load.
-  const [hasCard, setHasCard] = useState(initialHasCard ?? true);
-  const [verifyCfg, setVerifyCfg] = useState<VerifyPopup | null>(
-    initialVerifyEnabled === undefined ? null : { enabled: initialVerifyEnabled }
-  );
   const [startingVerify, setStartingVerify] = useState(false);
-  const [cardVerify, setCardVerify] = useState<{
-    clientSecret: string;
-    country: string | null;
-  } | null>(null);
-  // One-time offer for fans who never topped up: shown highlighted in the
-  // sheet, and as a popup after their first locked media.
-  const [firstOffer, setFirstOffer] = useState(false);
-  const [offerPopup, setOfferPopup] = useState(false);
-  const [offer, setOffer] = useState<PopupOffer>(DEFAULT_POPUP_OFFER);
-  const [welcomeOffer, setWelcomeOffer] = useState<WelcomeOffer | null>(null);
-  const [welcomeOfferPopup, setWelcomeOfferPopup] = useState(false);
-  const [customOffer, setCustomOffer] = useState<{
-    id: string;
-    tokens: number;
-    priceCents: number;
-    originalCents: number;
-  } | null>(null);
-  const [customOfferPopup, setCustomOfferPopup] = useState(false);
-  // Owner side: custom offer + Stripe payment link composers.
+  // Owner side: coupon + Stripe payment link composers.
   const [offerDialog, setOfferDialog] = useState<{
     tokens: string;
     price: string;
@@ -182,46 +135,6 @@ export default function ChatView({
   const [deciding, setDeciding] = useState(false);
   const [gateLeft, setGateLeft] = useState<number | null>(null);
   const gateIdRef = useRef<string | null>(null);
-  // Pay per Message: the creator's config + this chat's terms state. null
-  // until the wallet endpoint answers, so nothing gates prematurely.
-  const [ppm, setPpm] = useState<{
-    enabled: boolean;
-    showPopup: boolean;
-    priceCents: number;
-    priceTokens: number;
-    freeCreditCents: number;
-    freeTokens: number;
-    accepted: boolean;
-  } | null>(null);
-  const [acceptingPpm, setAcceptingPpm] = useState(false);
-  // PaidSub (guest side): first Token top-up at a discount + unlimited
-  // messaging. While offered && !paid, a full-screen popup blurs and blocks
-  // the whole chat; the only way through is the embedded card wizard.
-  const [paidSub, setPaidSub] = useState<{
-    offered: boolean;
-    paid: boolean;
-    tokens: number;
-    priceCents: number;
-    originalCents: number;
-  } | null>(null);
-  const [paidSubCard, setPaidSubCard] = useState<{
-    clientSecret: string;
-    country: string | null;
-    amountCents: number;
-    tokens: number;
-  } | null>(null);
-  const [startingPaidSub, setStartingPaidSub] = useState(false);
-  // PaidSub (owner side): the composer sheet to send/remove the offer.
-  const [paidSubDialog, setPaidSubDialog] = useState<{
-    loading: boolean;
-    busy?: boolean;
-    enabled?: boolean;
-    tokens?: number;
-    priceCents?: number;
-    originalCents?: number;
-    offered?: boolean;
-    paid?: boolean;
-  } | null>(null);
   // Voice notes: recording state + the moment between stop and message sent.
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -420,40 +333,6 @@ export default function ChatView({
         if (typingHideRef.current) clearTimeout(typingHideRef.current);
         typingHideRef.current = setTimeout(() => setPeerTyping(false), 3000);
       })
-      // Pay per Message balance changed server-side — refresh wallet tokens.
-      .on("broadcast", { event: "ppm-balance" }, () => {
-        if (role !== "guest") return;
-        void refreshWallet();
-      })
-      // PaidSub offer pushed / removed / paid — swap the blocking popup live.
-      .on("broadcast", { event: "paidsub" }, ({ payload }) => {
-        if (role !== "guest") return;
-        const p = payload as {
-          offered?: boolean;
-          paid?: boolean;
-          tokens?: number;
-          priceCents?: number;
-          originalCents?: number;
-        } | null;
-        setPaidSub((prev) => ({
-          offered: p?.offered ?? prev?.offered ?? false,
-          paid: p?.paid ?? prev?.paid ?? false,
-          tokens: p?.tokens ?? prev?.tokens ?? 0,
-          priceCents: p?.priceCents ?? prev?.priceCents ?? 0,
-          originalCents: p?.originalCents ?? prev?.originalCents ?? 0,
-        }));
-        if (p?.paid || p?.offered === false) setPaidSubCard(null);
-      })
-      .on("broadcast", { event: "custom-offer" }, ({ payload }) => {
-        if (role !== "guest") return;
-        const o = payload as {
-          id: string;
-          tokens: number;
-          priceCents: number;
-          originalCents: number;
-        };
-        if (o?.id) setCustomOffer(o);
-      })
       .subscribe();
     channelRef.current = channel;
 
@@ -483,9 +362,6 @@ export default function ChatView({
         const data = (await res.json()) as {
           balance?: number;
           hasCard?: boolean;
-          paidSubPending?: boolean;
-          ppmAccepted?: boolean;
-          ppmEnabled?: boolean;
           media?: {
             id: string;
             fan_decision: "accepted" | "rejected" | null;
@@ -499,9 +375,6 @@ export default function ChatView({
               chatId,
               balance: data.balance,
               hasCard: data.hasCard,
-              paidSubPending: data.paidSubPending,
-              ppmAccepted: data.ppmAccepted,
-              ppmEnabled: data.ppmEnabled,
             },
           })
         );
@@ -545,7 +418,7 @@ export default function ChatView({
     };
   }, [role, chatId]);
 
-  // Card Verify config, token wallet, PPM + PaidSub for this chat.
+  // Token wallet for this chat.
   const refreshWallet = useCallback(async () => {
     if (role !== "guest") return;
     try {
@@ -569,40 +442,6 @@ export default function ChatView({
             );
           }
         }
-        setFirstOffer(!!data.firstTopupOffer);
-        if (data.offer) setOffer(data.offer);
-        if (data.welcomeOffer) setWelcomeOffer(data.welcomeOffer);
-        if (data.verifyPopup) {
-          setVerifyCfg((prev) =>
-            JSON.stringify(prev) === JSON.stringify(data.verifyPopup)
-              ? prev
-              : data.verifyPopup
-          );
-        }
-        if (typeof data.hasCard === "boolean") setHasCard(data.hasCard);
-        setCustomOffer(data.customOffer?.id ? data.customOffer : null);
-        if (data.paidSub) {
-          setPaidSub((prev) =>
-            JSON.stringify(prev) === JSON.stringify(data.paidSub)
-              ? prev
-              : data.paidSub
-          );
-        }
-        if (data.ppm) {
-          const nextPpm = data.ppm.enabled ? data.ppm : null;
-          setPpm((prev) =>
-            JSON.stringify(prev) === JSON.stringify(nextPpm) ? prev : nextPpm
-          );
-          queueMicrotask(() =>
-            window.dispatchEvent(
-              new CustomEvent("loly-ppm", {
-                detail: data.ppm.enabled
-                  ? { chatId, ...data.ppm, balance: data.balance }
-                  : { chatId, enabled: false },
-              })
-            )
-          );
-        }
       }
     } catch {
       // The server-rendered values stay until the next refresh.
@@ -613,59 +452,6 @@ export default function ChatView({
     refreshWallet();
   }, [refreshWallet]);
 
-  // First locked media + never topped up → one-time offer popup once.
-  useEffect(() => {
-    if (role !== "guest" || !firstOffer || !offer.popupEnabled) return;
-    const hasLocked = messages.some(
-      (m) =>
-        m.sender === "owner" && m.locked && (m.price_cents ?? 0) > 0 && !m.unlocked
-    );
-    if (!hasLocked) return;
-    const seenKey = `lf-offer-seen:${chatId}`;
-    try {
-      if (localStorage.getItem(seenKey)) return;
-    } catch {}
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(seenKey, "1");
-      } catch {}
-      setOfferPopup(true);
-    }, offer.delaySeconds * 1000);
-    return () => clearTimeout(t);
-  }, [role, firstOffer, messages, chatId, offer.delaySeconds, offer.popupEnabled]);
-
-  // Welcome offer: greets the fan once per chat while they've never topped up.
-  useEffect(() => {
-    if (role !== "guest" || !firstOffer || !welcomeOffer?.enabled) return;
-    const seenKey = `lf-welcome-offer-seen:${chatId}`;
-    try {
-      if (localStorage.getItem(seenKey)) return;
-    } catch {}
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(seenKey, "1");
-      } catch {}
-      setWelcomeOfferPopup(true);
-    }, 1500);
-    return () => clearTimeout(t);
-  }, [role, firstOffer, welcomeOffer, chatId]);
-
-  // Creator-sent custom offer pops up once per offer.
-  useEffect(() => {
-    if (role !== "guest" || !customOffer) return;
-    const seenKey = `lf-custom-offer-seen:${customOffer.id}`;
-    try {
-      if (localStorage.getItem(seenKey)) return;
-    } catch {}
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(seenKey, "1");
-      } catch {}
-      setCustomOfferPopup(true);
-    }, 800);
-    return () => clearTimeout(t);
-  }, [role, customOffer]);
-
   // Preload Stripe.js while the fan still has credit: parsing the script and
   // mounting its iframes at the exact moment the card wizard swaps in is what
   // used to freeze phones. Idle-time load keeps the swap instant.
@@ -675,7 +461,7 @@ export default function ChatView({
     return () => window.clearTimeout(idle);
   }, [role]);
 
-  // Keep wallet / PPM state fresh (enable/disable, credit, declines).
+  // Keep the wallet balance fresh.
   useEffect(() => {
     if (role !== "guest") return;
     const timer = setInterval(() => {
@@ -683,12 +469,6 @@ export default function ChatView({
     }, 5000);
     return () => clearInterval(timer);
   }, [role, refreshWallet]);
-
-  // Card Verify: while the fan has no card on file, every photo/video from
-  // the creator renders locked ("Verify to view"). Tapping one opens the
-  // embedded card wizard directly (SetupIntent — no charge, no popup).
-  const verifyLockActive =
-    role === "guest" && !hasCard && !!verifyCfg?.enabled && elementsEnabled();
 
   // Incoming-media gate: creator photos/videos the fan hasn't decided on yet
   // show full screen (blurred) with Accept / Reject instead of in the chat.
@@ -790,7 +570,6 @@ export default function ChatView({
     }
     const messageId = gateCardSetup?.messageId;
     setGateCardSetup(null);
-    setHasCard(true);
     const msg = messages.find((m) => m.id === messageId) ?? pendingGate;
     if (msg && parseBlurDrainer(msg.blur_drainer)) {
       const ok = await decideGate(msg, "accept");
@@ -965,7 +744,7 @@ export default function ChatView({
 
   /** Buy a token pack: one tap with a saved card; first purchase opens the
    *  in-chat card wizard (or Stripe Checkout as fallback). */
-  async function topUp(packId: string, claim?: "custom" | "welcome") {
+  async function topUp(packId: string) {
     if (toppingUp) return;
     setToppingUp(packId);
     try {
@@ -975,18 +754,12 @@ export default function ChatView({
         body: JSON.stringify({
           chatId,
           packId,
-          claimOffer: claim,
           embedded: elementsEnabled(),
         }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.topped) {
         if (typeof data.balance === "number") setBalance(data.balance);
-        setFirstOffer(false);
-        setOfferPopup(false);
-        setWelcomeOfferPopup(false);
-        if (claim === "custom") setCustomOffer(null);
-        setCustomOfferPopup(false);
         setToppingUp(null);
         const pendingId = pendingUnlockIdRef.current;
         if (pendingId) {
@@ -1001,15 +774,11 @@ export default function ChatView({
       }
       if (res.ok && data.clientSecret) {
         setWalletOpen(false);
-        setOfferPopup(false);
-        setWelcomeOfferPopup(false);
-        setCustomOfferPopup(false);
         setCardTopup({
           clientSecret: data.clientSecret,
           amountCents: Number(data.amountCents ?? 0),
           tokens: Number(data.tokens ?? 0),
           country: data.country ?? null,
-          claim,
         });
         setToppingUp(null);
         return;
@@ -1031,7 +800,6 @@ export default function ChatView({
   }
 
   async function completeCardTopup(paymentIntentId: string) {
-    const claim = cardTopup?.claim;
     let data: { balance?: number; tokens?: number } = {};
     try {
       const res = await fetch("/api/payments/topup/complete", {
@@ -1044,13 +812,7 @@ export default function ChatView({
       // The webhook still credits the payment; the balance catches up.
     }
     setCardTopup(null);
-    setHasCard(true);
     if (typeof data.balance === "number") setBalance(data.balance);
-    setFirstOffer(false);
-    setOfferPopup(false);
-    setWelcomeOfferPopup(false);
-    if (claim === "custom") setCustomOffer(null);
-    setCustomOfferPopup(false);
     let couponId: string | null = null;
     try {
       couponId = sessionStorage.getItem("lf-pending-coupon");
@@ -1236,167 +998,6 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role, chatId]);
 
-  /** "Verify to view": start a SetupIntent and open the card wizard (no charge). */
-  async function startVerify() {
-    // Ref guard: memoized bubbles may call an older closure of this function,
-    // so the in-flight check can't rely on state.
-    if (startingVerifyRef.current) return;
-    startingVerifyRef.current = true;
-    setStartingVerify(true);
-    try {
-      const res = await fetch("/api/payments/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.clientSecret) {
-        setCardVerify({
-          clientSecret: data.clientSecret,
-          country: data.country ?? null,
-        });
-      } else {
-        alert(data.error || "Could not start verification");
-      }
-    } catch {
-      alert("Could not start verification");
-    }
-    startingVerifyRef.current = false;
-    setStartingVerify(false);
-  }
-
-  /** The wizard confirmed the SetupIntent: store the card server-side. */
-  async function completeVerify(setupIntentId: string) {
-    try {
-      await fetch("/api/payments/verify/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, setupIntentId }),
-      });
-    } catch {
-      // The card is already saved on Stripe's side; the wallet refresh
-      // catches up on next load.
-    }
-    setCardVerify(null);
-    setHasCard(true);
-    void refreshWallet();
-  }
-
-  /** PaidSub "Pay Now": start the one-time PaymentIntent for the wizard. */
-  async function startPaidSubPay() {
-    if (startingPaidSub) return;
-    setStartingPaidSub(true);
-    try {
-      const res = await fetch("/api/payments/paidsub", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.paid) {
-        setPaidSub((p) => (p ? { ...p, paid: true } : p));
-      } else if (res.ok && data.clientSecret) {
-        setPaidSubCard({
-          clientSecret: data.clientSecret,
-          country: data.country ?? null,
-          amountCents: Number(data.amountCents ?? 0),
-          tokens: Number(data.tokens ?? paidSub?.tokens ?? 0),
-        });
-      } else {
-        alert(data.error || "Could not start the payment");
-      }
-    } catch {
-      alert("Could not start the payment");
-    }
-    setStartingPaidSub(false);
-  }
-
-  /** The wizard confirmed PaidSub: credit Tokens + unlock unlimited messaging. */
-  async function completePaidSub(paymentIntentId: string) {
-    let tokens = paidSubCard?.tokens ?? paidSub?.tokens ?? 0;
-    try {
-      const res = await fetch("/api/payments/paidsub/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, paymentIntentId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        if (typeof data.balance === "number") setBalance(data.balance);
-        if (typeof data.tokens === "number") tokens = data.tokens;
-      }
-    } catch {
-      // The webhook still credits + marks paid; wallet refresh catches up.
-    }
-    setPaidSubCard(null);
-    setPaidSub((p) => (p ? { ...p, paid: true, offered: false } : p));
-    setHasCard(true);
-    setFirstOffer(false);
-    if (tokens > 0) {
-      setWalletNote(`+${formatTokens(tokens)} added · unlimited messaging unlocked`);
-      setWalletOpen(true);
-    }
-    void refreshWallet();
-  }
-
-  /** Owner: open the PaidSub sheet with this chat's live state. */
-  async function openPaidSubDialog() {
-    setPaidSubDialog({ loading: true });
-    try {
-      const res = await fetch(`/api/chats/paidsub?chatId=${chatId}`);
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setPaidSubDialog({ loading: false, ...data });
-      } else {
-        setPaidSubDialog(null);
-        alert(data.error || "Could not load PaidSub state");
-      }
-    } catch {
-      setPaidSubDialog(null);
-      alert("Could not load PaidSub state");
-    }
-  }
-
-  /** Owner: push the offer popup into the fan's chat, or take it down. */
-  async function paidSubAction(action: "offer" | "cancel") {
-    setPaidSubDialog((d) => (d ? { ...d, busy: true } : d));
-    try {
-      const res = await fetch("/api/chats/paidsub", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, action }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setPaidSubDialog(null);
-      } else {
-        setPaidSubDialog((d) => (d ? { ...d, busy: false } : d));
-        alert(data.error || "Could not update the offer");
-      }
-    } catch {
-      setPaidSubDialog((d) => (d ? { ...d, busy: false } : d));
-      alert("Could not update the offer");
-    }
-  }
-
-  /** Pay per Message: the fan accepted the mandatory terms popup. */
-  async function acceptPpm() {
-    if (acceptingPpm) return;
-    setAcceptingPpm(true);
-    try {
-      const res = await fetch("/api/chats/ppm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, action: "accept" }),
-      });
-      if (res.ok) {
-        void refreshWallet();
-      }
-    } finally {
-      setAcceptingPpm(false);
-    }
-  }
-
   async function send() {
     if (tipTokens) {
       await sendTip();
@@ -1490,23 +1091,10 @@ export default function ChatView({
         });
         if (typeof data.balance === "number") setBalance(data.balance);
       } else {
-        const errData = await res.json().catch(() => null);
         setMessages((prev) => prev.filter((m) => m.id !== tempId));
         setText(caption);
         setAttachments(usedAttachments);
         if (usedLink) setLinkAttachment(usedLink);
-        if (res.status === 402 && errData?.ppm === "topup") {
-          if (typeof errData.balance === "number") setBalance(errData.balance);
-          openWallet(
-            errData.needTokens
-              ? `Each message costs ${formatTokens(errData.needTokens)} — top up to keep chatting.`
-              : "Top up your wallet to keep chatting."
-          );
-        } else if (errData?.ppm === "accept") {
-          setPpm((p) => (p ? { ...p, accepted: false } : p));
-        } else if (errData?.ppm) {
-          void refreshWallet();
-        }
       }
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== tempId));
@@ -1894,8 +1482,6 @@ export default function ChatView({
             selectMode={msgSelectMode}
             selected={selectedMsgs.has(m.id)}
             onSelectToggle={toggleMsgSelected}
-            verifyLock={verifyLockActive}
-            onVerifyRequest={startVerify}
             onOpenBlurDrainer={
               role === "guest" ? (m) => setDrainPlayer(m) : undefined
             }
@@ -2179,14 +1765,6 @@ export default function ChatView({
               setCardTopup(null);
             }}
           />
-        ) : cardVerify ? (
-          <EmbeddedCardTopup
-            clientSecret={cardVerify.clientSecret}
-            mode="setup"
-            countryGuess={cardVerify.country}
-            onSuccess={completeVerify}
-            onCancel={() => setCardVerify(null)}
-          />
         ) : (
         <>
         {recording ? (
@@ -2322,11 +1900,7 @@ export default function ChatView({
           {role === "owner" && (
             <button
               onClick={() =>
-                setOfferDialog({
-                  tokens: String(DEFAULT_POPUP_OFFER.tokens),
-                  price: (DEFAULT_POPUP_OFFER.priceCents / 100).toString(),
-                  original: (DEFAULT_POPUP_OFFER.originalCents / 100).toString(),
-                })
+                setOfferDialog({ tokens: "", price: "", original: "" })
               }
               className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold transition-colors ${
                 offerDialog
@@ -2351,17 +1925,6 @@ export default function ChatView({
               title="Create a Stripe payment link (custom tokens & price, any card)"
             >
               $
-            </button>
-          )}
-          {role === "owner" && (
-            <button
-              type="button"
-              onClick={() => void openPaidSubDialog()}
-              className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-transparent border border-line text-muted hover:text-fg transition-colors"
-              aria-label="PaidSub offer"
-              title="PaidSub — one-time payment for unlimited messaging"
-            >
-              <IconTip className="w-4.5 h-4.5" />
             </button>
           )}
           <button
@@ -2549,14 +2112,8 @@ export default function ChatView({
               <div className="grid grid-cols-2 gap-2">
                 {TOKEN_PACKS.map((pack) => {
                   const busy = toppingUp === pack.id;
-                  const isOffer =
-                    firstOffer &&
-                    offer.packEnabled &&
-                    pack.id === FIRST_TOPUP_OFFER_PACK_ID;
-                  const total = isOffer ? offer.tokens : packTotalTokens(pack);
-                  const highlight =
-                    isOffer ||
-                    (pack.tag === "Most popular" && !(firstOffer && offer.packEnabled));
+                  const total = packTotalTokens(pack);
+                  const highlight = pack.tag === "Most popular";
                   return (
                     <button
                       key={pack.id}
@@ -2566,11 +2123,11 @@ export default function ChatView({
                         highlight
                           ? "border-accent bg-accent/10"
                           : "bg-card2 border-line hover:border-accent"
-                      } ${isOffer ? "offer-pulse" : ""}`}
+                      }`}
                     >
-                      {(isOffer || pack.tag) && (
+                      {pack.tag && (
                         <span className="absolute -top-2 right-2 rounded-full bg-accent text-white text-[10px] font-bold px-2 py-0.5">
-                          {isOffer ? "One-time offer" : pack.tag}
+                          {pack.tag}
                         </span>
                       )}
                       <p className="text-2xl font-extrabold leading-tight tabular-nums">
@@ -2578,17 +2135,11 @@ export default function ChatView({
                         <span className="text-xs font-semibold text-muted"> Tokens</span>
                       </p>
                       <p className="mt-1 text-sm font-bold text-accent">
-                        {busy
-                          ? "Processing…"
-                          : perTokenLabel(
-                              isOffer ? offer.priceCents : pack.priceCents,
-                              total
-                            )}
+                        {busy ? "Processing…" : perTokenLabel(pack.priceCents, total)}
                       </p>
                       {!busy && (
                         <p className="text-[10px] text-muted tabular-nums">
-                          {offerPriceLabel(isOffer ? offer.priceCents : pack.priceCents)}{" "}
-                          total
+                          {offerPriceLabel(pack.priceCents)} total
                         </p>
                       )}
                     </button>
@@ -2605,107 +2156,6 @@ export default function ChatView({
           </div>
         </Portal>
       )}
-
-      {(offerPopup ||
-        (customOfferPopup && customOffer) ||
-        (welcomeOfferPopup && welcomeOffer)) &&
-        (() => {
-          const isWelcome = welcomeOfferPopup && !!welcomeOffer;
-          const isCustom = !isWelcome && customOfferPopup && !!customOffer;
-          const po = isWelcome ? welcomeOffer! : isCustom ? customOffer! : offer;
-          const close = () => {
-            setOfferPopup(false);
-            setCustomOfferPopup(false);
-            setWelcomeOfferPopup(false);
-          };
-          return (
-            <Portal>
-              <div
-                className="fixed inset-0 z-[70] bg-black/70 flex items-center justify-center p-4"
-                onClick={close}
-              >
-                <div
-                  className="relative bg-card border border-accent/40 rounded-3xl p-6 pt-8 w-full max-w-sm text-center space-y-2.5 fade-up overflow-hidden"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-72 h-44 rounded-full bg-accent/25 blur-3xl pointer-events-none" />
-                  <button
-                    onClick={close}
-                    className="absolute top-3 right-3 text-muted text-sm px-1"
-                    aria-label="Close"
-                  >
-                    ✕
-                  </button>
-                  <p className="relative text-[11px] font-bold uppercase tracking-[0.2em] text-accent">
-                    {isWelcome
-                      ? "Welcome offer"
-                      : isCustom
-                        ? "Exclusive one-time offer"
-                        : "One-time offer"}
-                  </p>
-                  {isWelcome && (
-                    <>
-                      <p className="relative text-lg font-bold">
-                        Welcome! So happy you&apos;re here 🎉
-                      </p>
-                      <div className="relative rounded-2xl bg-accent/15 border border-accent/40 px-4 py-3">
-                        <p className="text-[15px] font-extrabold leading-snug">
-                          All photos &amp; videos here unlock with{" "}
-                          <span className="text-accent">Tokens</span> 🔓
-                        </p>
-                      </div>
-                      <p className="relative text-xs text-muted leading-relaxed">
-                        Start with a full wallet:
-                      </p>
-                    </>
-                  )}
-                  <p className="relative text-4xl font-extrabold tabular-nums leading-none">
-                    {po.tokens.toLocaleString("en-US")}
-                    <span className="text-lg font-semibold text-muted"> Tokens</span>
-                  </p>
-                  {!isCustom && !isWelcome && offer.tokens > OFFER_PACK.tokens && (
-                    <p className="relative text-xs font-semibold text-emerald-500">
-                      incl. +{(offer.tokens - OFFER_PACK.tokens).toLocaleString("en-US")} free
-                    </p>
-                  )}
-                  <p className="relative">
-                    <span className="text-3xl font-extrabold text-accent tabular-nums">
-                      {offerPriceLabel(po.priceCents)}
-                    </span>{" "}
-                    <span className="text-base font-semibold text-muted line-through tabular-nums">
-                      {offerPriceLabel(po.originalCents)}
-                    </span>
-                  </p>
-                  <p className="relative text-[11px] text-muted leading-snug">
-                    {isWelcome
-                      ? "A one-time deal for new members — it won't be shown again."
-                      : isCustom
-                        ? "Unlocked just for you — this one won't come back."
-                        : "Only on your very first top-up — once it's gone, it's gone."}
-                  </p>
-                  <button
-                    onClick={() =>
-                      topUp(
-                        OFFER_PACK.id,
-                        isWelcome ? "welcome" : isCustom ? "custom" : undefined
-                      )
-                    }
-                    disabled={!!toppingUp}
-                    className="relative w-full rounded-full ig-gradient glow-accent offer-pulse text-white text-sm font-bold py-3 disabled:opacity-60"
-                  >
-                    {toppingUp
-                      ? "Processing…"
-                      : `Claim ${po.tokens.toLocaleString("en-US")} Tokens for ${offerPriceLabel(po.priceCents)}`}
-                  </button>
-                  <p className="relative text-[10px] text-muted/80">
-                    Secured by Stripe · All Token purchases are final and
-                    non-refundable.
-                  </p>
-                </div>
-              </div>
-            </Portal>
-          );
-        })()}
 
       {offerDialog && (
         <Portal>
@@ -3166,208 +2616,6 @@ export default function ChatView({
         );
       })()}
 
-      {/* Pay per Message terms: shown once per fan, and there is deliberately
-          no close button — accepting is the only way to start or keep
-          chatting. Free amount big, price per message small and muted. */}
-      {role === "guest" &&
-        ppm?.enabled &&
-        ppm.showPopup !== false &&
-        !ppm.accepted && (
-        <Portal>
-          <div className="fixed inset-0 z-[95] bg-gradient-to-br from-sky-100/90 via-blue-100/80 to-indigo-100/90 backdrop-blur-md flex items-center justify-center p-6">
-            <div
-              className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-blue-200 px-7 py-8 text-center space-y-4 fade-up shadow-2xl shadow-blue-200/70"
-              style={{
-                background:
-                  "linear-gradient(160deg, #ffffff 0%, #eff6ff 45%, #dbeafe 100%)",
-              }}
-            >
-              <div
-                className="pointer-events-none absolute -top-16 -right-16 h-40 w-40 rounded-full opacity-40 blur-2xl"
-                style={{ background: "radial-gradient(circle, #60a5fa, transparent 70%)" }}
-              />
-              <div
-                className="pointer-events-none absolute -bottom-20 -left-12 h-44 w-44 rounded-full opacity-35 blur-2xl"
-                style={{ background: "radial-gradient(circle, #7dd3fc, transparent 70%)" }}
-              />
-              <p className="relative text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-600">
-                Welcome gift
-              </p>
-              <p className="relative text-5xl font-extrabold leading-none text-blue-950">
-                {ppm.freeTokens > 0
-                  ? formatTokens(ppm.freeTokens)
-                  : `$${(ppm.freeCreditCents / 100).toFixed(2).replace(/\.00$/, "")}`}
-                <span className="ml-2 text-2xl font-bold text-blue-500">
-                  FREE
-                </span>
-              </p>
-              <p className="relative text-sm text-slate-600 leading-relaxed">
-                {ppm.freeTokens > 0
-                  ? "Added to your wallet to start chatting"
-                  : "Added to your balance to start chatting"}
-              </p>
-              <button
-                type="button"
-                onClick={() => void acceptPpm()}
-                disabled={acceptingPpm}
-                className="relative w-full bg-blue-600 text-white font-bold rounded-2xl py-3.5 text-sm shadow-lg shadow-blue-400/40 disabled:opacity-60 active:opacity-80 transition-opacity"
-              >
-                {acceptingPpm ? "One moment…" : "Accept & start chatting"}
-              </button>
-              <p className="relative text-[11px] text-slate-500">
-                {ppm.priceTokens > 0
-                  ? `${formatTokens(ppm.priceTokens)} per message after`
-                  : `$${(ppm.priceCents / 100).toFixed(2)} per message after`}
-              </p>
-              <p className="relative text-[10px] text-slate-400">
-                By accepting you agree to the Terms of Service.
-              </p>
-            </div>
-          </div>
-        </Portal>
-      )}
-
-      {/* PaidSub (fan): the creator pushed an offer — the whole chat blurs
-          and can't be scrolled or closed. Pay Now swaps the popup for the
-          embedded Stripe card input; paying is the only way through. */}
-      {role === "guest" && paidSub?.offered && !paidSub.paid && (
-        <Portal>
-          <div className="fixed inset-0 z-[97] bg-black/50 backdrop-blur-xl overflow-hidden touch-none overscroll-none flex items-center justify-center p-5">
-            {paidSubCard ? (
-              <div className="w-full max-w-sm space-y-2.5 fade-up">
-                <p className="text-center text-sm font-semibold text-white drop-shadow">
-                  {formatTokens(paidSubCard.tokens)} for{" "}
-                  {paidSubPriceLabel(paidSubCard.amountCents)} · unlimited
-                  messaging
-                </p>
-                <EmbeddedCardTopup
-                  clientSecret={paidSubCard.clientSecret}
-                  amountCents={paidSubCard.amountCents}
-                  label="First top-up"
-                  countryGuess={paidSubCard.country}
-                  onSuccess={completePaidSub}
-                  onCancel={() => setPaidSubCard(null)}
-                />
-              </div>
-            ) : (
-              <div
-                className="relative w-full max-w-sm overflow-hidden rounded-[1.75rem] border border-blue-200 px-7 py-8 text-center space-y-4 fade-up shadow-2xl shadow-blue-900/40"
-                style={{
-                  background:
-                    "linear-gradient(160deg, #ffffff 0%, #eff6ff 45%, #dbeafe 100%)",
-                }}
-              >
-                <div
-                  className="pointer-events-none absolute -top-16 -right-16 h-40 w-40 rounded-full opacity-40 blur-2xl"
-                  style={{ background: "radial-gradient(circle, #60a5fa, transparent 70%)" }}
-                />
-                <p className="relative text-xl font-extrabold tracking-tight ig-gradient-text select-none">
-                  LolyFans
-                </p>
-                <p className="relative text-[11px] font-semibold uppercase tracking-[0.2em] text-blue-600">
-                  Your free trial has ended
-                </p>
-                <p className="relative text-5xl font-extrabold leading-none text-blue-950 tabular-nums">
-                  {paidSub.tokens.toLocaleString("en-US")}
-                  <span className="ml-2 text-2xl font-bold text-blue-500">
-                    Tokens
-                  </span>
-                </p>
-                <p className="relative flex items-baseline justify-center gap-2">
-                  <span className="text-2xl font-extrabold text-blue-600">
-                    {paidSubPriceLabel(paidSub.priceCents)}
-                  </span>
-                  {paidSub.originalCents > paidSub.priceCents && (
-                    <span className="text-base text-slate-400 line-through">
-                      {paidSubPriceLabel(paidSub.originalCents)}
-                    </span>
-                  )}
-                </p>
-                <p className="relative text-sm text-slate-600 leading-relaxed">
-                  First top-up · unlocks unlimited messaging
-                </p>
-                <button
-                  type="button"
-                  onClick={() => void startPaidSubPay()}
-                  disabled={startingPaidSub}
-                  className="relative w-full bg-blue-600 text-white font-bold rounded-2xl py-3.5 text-sm shadow-lg shadow-blue-400/40 disabled:opacity-60 active:opacity-80 transition-opacity"
-                >
-                  {startingPaidSub ? "One moment…" : "Pay Now"}
-                </button>
-              </div>
-            )}
-          </div>
-        </Portal>
-      )}
-
-      {/* PaidSub (creator): send or remove the offer for this fan. */}
-      {paidSubDialog && (
-        <Portal>
-          <div
-            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
-            onClick={() => !paidSubDialog.busy && setPaidSubDialog(null)}
-          >
-            <div
-              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <p className="font-bold">PaidSub</p>
-              {paidSubDialog.loading ? (
-                <p className="text-sm text-muted">Loading…</p>
-              ) : !paidSubDialog.enabled ? (
-                <p className="text-sm text-muted leading-relaxed">
-                  Turn on PaidSub in Settings → PaidSub first, then come back
-                  here to send the offer.
-                </p>
-              ) : paidSubDialog.paid ? (
-                <p className="text-sm text-muted leading-relaxed">
-                  This fan already claimed their first top-up and has unlimited
-                  messaging.
-                </p>
-              ) : paidSubDialog.offered ? (
-                <>
-                  <p className="text-sm text-muted leading-relaxed">
-                    The offer popup is showing —{" "}
-                    {formatTokens(paidSubDialog.tokens ?? 0)} for{" "}
-                    {paidSubPriceLabel(paidSubDialog.priceCents ?? 0)}
-                    {paidSubDialog.originalCents
-                      ? ` (was ${paidSubPriceLabel(paidSubDialog.originalCents)})`
-                      : ""}
-                    , plus unlimited messaging. Their chat stays blocked until
-                    they pay.
-                  </p>
-                  <button
-                    onClick={() => void paidSubAction("cancel")}
-                    disabled={paidSubDialog.busy}
-                    className="w-full bg-card2 border border-line text-fg font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
-                  >
-                    {paidSubDialog.busy ? "Removing…" : "Remove offer"}
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm text-muted leading-relaxed">
-                    Send a popup for their first Token top-up:{" "}
-                    {formatTokens(paidSubDialog.tokens ?? 0)} for{" "}
-                    {paidSubPriceLabel(paidSubDialog.priceCents ?? 0)}
-                    {paidSubDialog.originalCents
-                      ? ` (was ${paidSubPriceLabel(paidSubDialog.originalCents)})`
-                      : ""}
-                    . Paying also unlocks unlimited messaging.
-                  </p>
-                  <button
-                    onClick={() => void paidSubAction("offer")}
-                    disabled={paidSubDialog.busy}
-                    className="w-full bg-accent text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
-                  >
-                    {paidSubDialog.busy ? "Sending…" : "Send offer"}
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </Portal>
-      )}
     </div>
   );
 }

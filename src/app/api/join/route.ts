@@ -5,7 +5,6 @@ import { getRequestCountry, ipFromHeaders, inviteUsable, countryAllowed } from "
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { broadcast } from "@/lib/realtime";
 import { ownerRequiresPaidSub } from "@/lib/subscriptionAccess";
-import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
 import { recordInviteEvent } from "@/lib/inviteEvents";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -144,9 +143,6 @@ export async function POST(req: NextRequest) {
         { chat_id: chat.id, owner_id: invite!.owner_id },
         { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
       );
-    // Welcome goes out BEFORE the new-chat broadcast so Orion never sees an
-    // empty chat and double-texts with its own opener on top of the welcome.
-    await sendWelcomeMessageIfNeeded(chat.id, invite!.owner_id);
     await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId: chat.id });
   });
 

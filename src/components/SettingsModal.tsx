@@ -10,25 +10,16 @@ import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
-import PayPerMessageSettings from "./PayPerMessageSettings";
-import PaidSubSettings from "./PaidSubSettings";
-import PopupOfferSettings from "./PopupOfferSettings";
-import WelcomeOfferSettings from "./WelcomeOfferSettings";
-import VerifyPopupSettings from "./VerifyPopupSettings";
-import WelcomeMessageEditor from "./WelcomeMessageEditor";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
 import {
-  IconCard,
   IconEdit,
   IconGrid,
   IconHeart,
   IconKey,
   IconLink,
   IconLogout,
-  IconSend,
   IconTip,
-  IconUnlock,
   IconUser,
 } from "./Icons";
 
@@ -37,12 +28,6 @@ type Section =
   | "posts"
   | "social"
   | "subscriptions"
-  | "paypermessage"
-  | "paidsub"
-  | "offers"
-  | "welcomeoffer"
-  | "verify"
-  | "welcome"
   | "links"
   | "editor"
   | "apikey";
@@ -413,66 +398,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconTip className="w-3.5 h-3.5" /> Subscriptions
         </button>
         <button
-          onClick={() => setSection("paypermessage")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-            section === "paypermessage"
-              ? "bg-accent text-white"
-              : "bg-card2 border border-line text-muted hover:text-fg"
-          }`}
-        >
-          <IconSend className="w-3.5 h-3.5" /> Pay per Message
-        </button>
-        <button
-          onClick={() => setSection("paidsub")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-            section === "paidsub"
-              ? "bg-accent text-white"
-              : "bg-card2 border border-line text-muted hover:text-fg"
-          }`}
-        >
-          <IconTip className="w-3.5 h-3.5" /> PaidSub
-        </button>
-        <button
-          onClick={() => setSection("offers")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-            section === "offers"
-              ? "bg-accent text-white"
-              : "bg-card2 border border-line text-muted hover:text-fg"
-          }`}
-        >
-          <IconUnlock className="w-3.5 h-3.5" /> Pop up Offers
-        </button>
-        <button
-          onClick={() => setSection("welcomeoffer")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-            section === "welcomeoffer"
-              ? "bg-accent text-white"
-              : "bg-card2 border border-line text-muted hover:text-fg"
-          }`}
-        >
-          <IconTip className="w-3.5 h-3.5" /> Welcome offer
-        </button>
-        <button
-          onClick={() => setSection("verify")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-            section === "verify"
-              ? "bg-accent text-white"
-              : "bg-card2 border border-line text-muted hover:text-fg"
-          }`}
-        >
-          <IconCard className="w-3.5 h-3.5" /> Card Verify
-        </button>
-        <button
-          onClick={() => setSection("welcome")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-            section === "welcome"
-              ? "bg-accent text-white"
-              : "bg-card2 border border-line text-muted hover:text-fg"
-          }`}
-        >
-          <IconSend className="w-3.5 h-3.5" /> Welcome message
-        </button>
-        <button
           onClick={() => openGated("links")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "links"
@@ -524,14 +449,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="flex-1 overflow-y-auto p-5 lg:p-8">
         <div
           className={`mx-auto w-full ${
-            section === "profile" ||
-            section === "welcome" ||
-            section === "subscriptions" ||
-            section === "paypermessage" ||
-            section === "paidsub" ||
-            section === "offers" ||
-            section === "welcomeoffer" ||
-            section === "verify"
+            section === "profile" || section === "subscriptions"
               ? "max-w-2xl"
               : section === "editor" || section === "posts"
               ? "max-w-4xl"
@@ -546,18 +464,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <SocialProofManager />
           ) : section === "subscriptions" ? (
             <SubscriptionSettings />
-          ) : section === "paypermessage" ? (
-            <PayPerMessageSettings />
-          ) : section === "paidsub" ? (
-            <PaidSubSettings />
-          ) : section === "offers" ? (
-            <PopupOfferSettings />
-          ) : section === "welcomeoffer" ? (
-            <WelcomeOfferSettings />
-          ) : section === "verify" ? (
-            <VerifyPopupSettings />
-          ) : section === "welcome" ? (
-            <WelcomeMessageEditor />
           ) : section === "editor" ? (
             <InvitePageEditor />
           ) : section === "apikey" ? (

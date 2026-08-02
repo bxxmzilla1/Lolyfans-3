@@ -94,9 +94,6 @@ export default async function OwnerChatPage({
             chatId={chatId}
             initialBalance={chat.token_balance ?? 0}
             initialHasCard={!!chat.stripe_payment_method_id}
-            initialPaidSubPending={
-              !!chat.paidsub_offer_at && !chat.paidsub_paid_at
-            }
           >
             <span className="truncate">
               {chat.custom_name || chat.guest_name}

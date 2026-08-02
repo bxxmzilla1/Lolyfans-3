@@ -248,42 +248,6 @@ body::before {
   animation: wallet-bubble 2.8s ease forwards;
 }
 
-/* Pay per Message wallet badge: same bubble pop-in, but it stays on screen */
-@keyframes ppm-wallet-in {
-  0% {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.5);
-  }
-  60% {
-    opacity: 1;
-    transform: translateY(0) scale(1.08);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-.ppm-wallet-in {
-  transform-origin: top right;
-  animation: ppm-wallet-in 0.5s ease;
-}
-
-/* One-shot pop when the wallet balance changes */
-@keyframes ppm-wallet-pop {
-  0% {
-    transform: scale(1);
-  }
-  40% {
-    transform: scale(1.18);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-.ppm-wallet-pop {
-  animation: ppm-wallet-pop 0.45s ease;
-}
-
 /* Messenger-style typing indicator */
 @keyframes typing-bounce {
   0%,

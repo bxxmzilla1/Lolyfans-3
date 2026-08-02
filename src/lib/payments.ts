@@ -1,7 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
-import { stripe, stripeConfigured } from "@/lib/stripe";
-import { sendWelcomeMessageIfNeeded } from "@/lib/welcomeMessage";
+import { stripe } from "@/lib/stripe";
 import type Stripe from "stripe";
 
 /** Advance BlurDrainer layer(s) for this fan (idempotent per PaymentIntent).
@@ -53,224 +52,6 @@ export async function recordBlurDrainTap(opts: {
     layersCleared: next,
   });
   return next;
-}
-
-/** Minimum gap between Pay per Message settlement charges. */
-const PPM_SETTLE_INTERVAL_MS = 60 * 60 * 1000;
-
-/**
- * Pay per Message, token economy: the free "welcome money" is granted ONCE
- * as Tokens straight into the fan's wallet (1 Token = 10¢ of the creator-set
- * credit). Used when the fan accepts the popup or silently when the creator
- * has the popup turned off. Also converts any leftover cents credit from the
- * pre-token era into wallet Tokens, exactly once.
- */
-export async function grantPpmTokens(opts: {
-  chatId: string;
-  freeCreditCents: number;
-  chat: {
-    ppm_accepted_at?: string | null;
-    ppm_credit_cents?: number | null;
-    ppm_credit_granted?: boolean | null;
-  };
-  /** When true (popup off), mark accepted even if they never saw the popup. */
-  silentAccept?: boolean;
-}): Promise<{ accepted: boolean; balance: number | null }> {
-  const db = supabaseAdmin();
-  let accepted = !!opts.chat.ppm_accepted_at;
-  const granted = !!opts.chat.ppm_credit_granted;
-  let balance: number | null = null;
-
-  if (granted) {
-    // Legacy cents credit from the pre-token era → wallet Tokens, once.
-    // Compare-and-set on the exact value so concurrent calls can't double it.
-    const leftover = opts.chat.ppm_credit_cents ?? 0;
-    if (leftover > 0) {
-      const { data: claimed } = await db
-        .from("chats")
-        .update({ ppm_credit_cents: 0 })
-        .eq("id", opts.chatId)
-        .eq("ppm_credit_cents", leftover)
-        .select("id");
-      if (claimed?.length) {
-        const { data: bal } = await db.rpc("credit_tokens", {
-          p_chat_id: opts.chatId,
-          p_amount: Math.max(1, Math.ceil(leftover / 10)),
-        });
-        if (typeof bal === "number" && bal >= 0) balance = bal;
-      }
-    }
-    if (opts.silentAccept && !accepted) {
-      await db
-        .from("chats")
-        .update({ ppm_accepted_at: new Date().toISOString() })
-        .eq("id", opts.chatId);
-      accepted = true;
-    }
-    return { accepted, balance };
-  }
-
-  if (!accepted && !opts.silentAccept) {
-    return { accepted: false, balance: null };
-  }
-
-  // Claim the grant flag first (compare-and-set) so two concurrent calls
-  // can't credit the free Tokens twice.
-  const { data: claimed } = await db
-    .from("chats")
-    .update({
-      ppm_credit_granted: true,
-      ppm_credit_cents: 0,
-      ...(!accepted ? { ppm_accepted_at: new Date().toISOString() } : {}),
-    })
-    .eq("id", opts.chatId)
-    .not("ppm_credit_granted", "is", true)
-    .select("id");
-  accepted = true;
-  if (claimed?.length && opts.freeCreditCents > 0) {
-    const tokens = Math.max(1, Math.ceil(opts.freeCreditCents / 10));
-    const { data: bal } = await db.rpc("credit_tokens", {
-      p_chat_id: opts.chatId,
-      p_amount: tokens,
-    });
-    if (typeof bal === "number" && bal >= 0) balance = bal;
-  }
-  return { accepted, balance };
-}
-
-/**
- * Apply a successful Pay per Message charge: debit the billed amount from the
- * chat balance (atomically) and push the new balance to the fan so their
- * Balance popup goes back to $0.00 when nothing else is outstanding.
- * Idempotent per Stripe PaymentIntent via ppm_settlements.
- */
-export async function applyPpmSettlement(opts: {
-  chatId: string;
-  amountCents: number;
-  paymentIntentId: string;
-}): Promise<number | null> {
-  const amount = Math.max(0, Math.round(opts.amountCents));
-  if (amount <= 0) return null;
-  const db = supabaseAdmin();
-
-  const { error: ledgerErr } = await db.from("ppm_settlements").insert({
-    stripe_payment_intent_id: opts.paymentIntentId,
-    chat_id: opts.chatId,
-    amount_cents: amount,
-  });
-  // Unique violation = this PaymentIntent already cleared the balance.
-  // Any other ledger error (table not migrated yet) → still debit below.
-  if (ledgerErr?.code === "23505") {
-    const { data } = await db
-      .from("chats")
-      .select("ppm_balance_cents")
-      .eq("id", opts.chatId)
-      .maybeSingle();
-    const bal = data?.ppm_balance_cents ?? 0;
-    await broadcast(`chat:${opts.chatId}`, "ppm-balance", {
-      balanceCents: bal,
-      declined: false,
-    });
-    return bal;
-  }
-
-  // Prefer the atomic SQL function; fall back to a read/write if it isn't
-  // installed yet so settlement still clears the balance.
-  let newBal: number;
-  const { data: rpcBal, error: rpcErr } = await db.rpc("ppm_debit_balance", {
-    p_chat_id: opts.chatId,
-    p_amount: amount,
-  });
-  if (!rpcErr && typeof rpcBal === "number") {
-    newBal = rpcBal;
-  } else {
-    const { data: fresh } = await db
-      .from("chats")
-      .select("ppm_balance_cents")
-      .eq("id", opts.chatId)
-      .maybeSingle();
-    newBal = Math.max(0, (fresh?.ppm_balance_cents ?? 0) - amount);
-    await db
-      .from("chats")
-      .update({ ppm_balance_cents: newBal, ppm_card_declined: false })
-      .eq("id", opts.chatId);
-  }
-
-  await broadcast(`chat:${opts.chatId}`, "ppm-balance", {
-    balanceCents: newBal,
-    declined: false,
-  });
-  return newBal;
-}
-
-/**
- * Pay per Message settlement: charge the chat's accrued message balance to
- * the fan's saved card as ONE PaymentIntent. Called lazily (message sends,
- * wallet polls) — runs at most once an hour unless forced (e.g. right after
- * the fan adds a new card following a decline). A failed charge flips
- * ppm_card_declined, which hides the fan's chat input until a working card
- * is saved. On success the billed amount is deducted so the Balance popup
- * returns to $0.00 (plus anything sent during the charge).
- */
-export async function settlePpmBalance(chatId: string, force = false) {
-  if (!stripeConfigured()) return;
-  const db = supabaseAdmin();
-  const { data: chat } = await db
-    .from("chats")
-    .select(
-      "id, ppm_balance_cents, ppm_last_settle_at, stripe_customer_id, stripe_payment_method_id"
-    )
-    .eq("id", chatId)
-    .maybeSingle();
-  if (!chat) return;
-
-  const balance = chat.ppm_balance_cents ?? 0;
-  if (balance <= 0) return;
-  const last = chat.ppm_last_settle_at ? Date.parse(chat.ppm_last_settle_at) : 0;
-  if (!force && Date.now() - last < PPM_SETTLE_INTERVAL_MS) return;
-  if (!chat.stripe_customer_id || !chat.stripe_payment_method_id) return;
-
-  // Claim the settle slot (compare-and-set on the previous timestamp) so two
-  // lazy triggers can't double-charge the same balance.
-  const claim = db
-    .from("chats")
-    .update({ ppm_last_settle_at: new Date().toISOString() })
-    .eq("id", chatId);
-  const { data: claimed } = await (chat.ppm_last_settle_at === null
-    ? claim.is("ppm_last_settle_at", null)
-    : claim.eq("ppm_last_settle_at", chat.ppm_last_settle_at)
-  ).select("id");
-  if (!claimed?.length) return;
-
-  try {
-    const pi = await stripe().paymentIntents.create({
-      amount: balance,
-      currency: "usd",
-      customer: chat.stripe_customer_id,
-      payment_method: chat.stripe_payment_method_id,
-      off_session: true,
-      confirm: true,
-      metadata: {
-        chatId,
-        kind: "ppm-settle",
-        amountCents: String(balance),
-      },
-      description: "Chat messages",
-    });
-    if (pi.status !== "succeeded") {
-      await db.from("chats").update({ ppm_card_declined: true }).eq("id", chatId);
-      await broadcast(`chat:${chatId}`, "ppm-balance", { declined: true });
-      return;
-    }
-    await applyPpmSettlement({
-      chatId,
-      amountCents: balance,
-      paymentIntentId: pi.id,
-    });
-  } catch {
-    await db.from("chats").update({ ppm_card_declined: true }).eq("id", chatId);
-    await broadcast(`chat:${chatId}`, "ppm-balance", { declined: true });
-  }
 }
 
 /** Record that a fan unlocked a message (idempotent) and notify the chat. */
@@ -466,32 +247,6 @@ export async function saveStripePaymentMethod(
   await supabaseAdmin().from("chats").update(patch).eq("id", chatId);
 }
 
-/**
- * PaidSub: mark a chat as paid for unlimited messaging (idempotent) and tell
- * both sides instantly — the fan's blocking popup closes, the creator's chat
- * shows the paid state. Skipped Pay per Message metering follows from the
- * paidsub_paid_at column.
- */
-export async function markPaidSubPaid(chatId: string) {
-  const db = supabaseAdmin();
-  const { data: chat } = await db
-    .from("chats")
-    .select("owner_id, paidsub_paid_at")
-    .eq("id", chatId)
-    .maybeSingle();
-  if (!chat) return;
-  if (!chat.paidsub_paid_at) {
-    await db
-      .from("chats")
-      .update({ paidsub_paid_at: new Date().toISOString() })
-      .eq("id", chatId);
-  }
-  await Promise.all([
-    broadcast(`chat:${chatId}`, "paidsub", { paid: true, offered: false }),
-    broadcast(`inbox:${chat.owner_id}`, "paidsub", { chatId, paid: true }),
-  ]);
-}
-
 /** Record a paid lifetime subscription (idempotent) and keep the fan following. */
 export async function recordLifetimeSubscription(opts: {
   chatId: string;
@@ -515,7 +270,6 @@ export async function recordLifetimeSubscription(opts: {
     { chat_id: opts.chatId, owner_id: opts.ownerId },
     { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
   );
-  await sendWelcomeMessageIfNeeded(opts.chatId, opts.ownerId);
 }
 
 /**
@@ -561,7 +315,6 @@ export async function syncSubscription(sub: Stripe.Subscription) {
       { chat_id: chatId, owner_id: ownerId },
       { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
     );
-    await sendWelcomeMessageIfNeeded(chatId, ownerId);
   }
 }
 
@@ -622,10 +375,6 @@ export async function fulfillCheckout(session: Stripe.Checkout.Session) {
       paymentIntentId,
       messageId: couponMessageId,
     });
-    // A claimed creator-sent offer is single-use: clear it once paid.
-    if (session.metadata?.customOffer === "1") {
-      await supabaseAdmin().from("chats").update({ custom_offer: null }).eq("id", chatId);
-    }
     return { ok: true as const, kind: "topup" as const, messageId: null };
   }
 

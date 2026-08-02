@@ -12,8 +12,7 @@ import {
   type MediaItem,
 } from "@/lib/utils";
 import { formatTokens, tokensForCents } from "@/lib/tokens";
-import { parseCouponMessage } from "@/lib/coupon";
-import { offerPriceLabel } from "@/lib/popupOffer";
+import { parseCouponMessage, offerPriceLabel } from "@/lib/coupon";
 import {
   IconBack,
   IconCheck,
@@ -761,8 +760,8 @@ function MessageBubble({
   );
 }
 
-// Long chats: without memo, every ChatView state change (typing, polls, PPM
-// updates, the composer→card-wizard swap) re-renders every bubble, which lags
+// Long chats: without memo, every ChatView state change (typing, polls, the
+// composer→card-wizard swap) re-renders every bubble, which lags
 // or freezes phones. Callback props are recreated each render but only close
 // over setters/refs (or guard via refs), so their identity is safely ignored.
 export default memo(

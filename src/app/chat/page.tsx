@@ -6,7 +6,6 @@ import { ipFromHeaders } from "@/lib/invites";
 import { visitorLocation } from "@/lib/geo";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChatAccessDestination } from "@/lib/subscriptionAccess";
-import { verifyPopupFromMetadata } from "@/lib/popupOffer";
 import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
 import GuestNav from "@/components/GuestNav";
@@ -102,11 +101,6 @@ export default async function GuestChatPage() {
         initialMessages={initialMessages}
         ownerId={chat.owner_id}
         peerName={meta.display_name || "Lolyfans"}
-        // Server-rendered so Card Verify blurs media from the first paint.
-        initialHasCard={!!chat.stripe_payment_method_id}
-        initialVerifyEnabled={
-          verifyPopupFromMetadata(ownerUser?.user?.user_metadata ?? {}).enabled
-        }
       />
       <GuestNav />
     </div>

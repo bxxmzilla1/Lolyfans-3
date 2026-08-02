@@ -5,9 +5,6 @@ import { broadcast } from "@/lib/realtime";
 import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
-import { payPerMessageFromMetadata } from "@/lib/payPerMessage";
-import { grantPpmTokens, spendTokens, tokenBalance } from "@/lib/payments";
-import { tokensForCents } from "@/lib/tokens";
 
 type ChatAuth = { role: "owner" | "guest"; chatOwnerId: string };
 
@@ -156,68 +153,6 @@ export async function POST(req: NextRequest) {
 
   const db = supabaseAdmin();
 
-  // Pay per Message, token economy: every fan message spends its token price
-  // from the wallet (the free welcome Tokens land there on accept). Terms
-  // must be accepted; an empty wallet means topping up before chatting on.
-  let balanceAfterSend: number | null = null;
-  if (auth.role === "guest") {
-    const { data: ownerUser } = await db.auth.admin.getUserById(auth.chatOwnerId);
-    const ppm = payPerMessageFromMetadata(ownerUser?.user?.user_metadata ?? {});
-    if (ppm.enabled) {
-      const { data: chatRow } = await db
-        .from("chats")
-        .select(
-          "ppm_accepted_at, ppm_messages_used, ppm_credit_cents, ppm_credit_granted, paidsub_paid_at"
-        )
-        .eq("id", chatId)
-        .maybeSingle();
-      if (!chatRow) {
-        return NextResponse.json({ error: "Chat not found" }, { status: 404 });
-      }
-      // PaidSub: a one-time payment bought unlimited messaging — skip all
-      // metering (no token spend, no gating).
-      if (!chatRow.paidsub_paid_at) {
-        // Popup on: fan must accept first. Popup off: grant Tokens silently.
-        if (!chatRow.ppm_accepted_at && ppm.showPopup) {
-          return NextResponse.json(
-            { error: "Accept the chat terms to start messaging", ppm: "accept" },
-            { status: 402 }
-          );
-        }
-        const granted = await grantPpmTokens({
-          chatId,
-          freeCreditCents: ppm.freeCreditCents,
-          chat: chatRow,
-          silentAccept: !ppm.showPopup,
-        });
-        if (!granted.accepted) {
-          return NextResponse.json(
-            { error: "Accept the chat terms to start messaging", ppm: "accept" },
-            { status: 402 }
-          );
-        }
-        const tokens = tokensForCents(ppm.priceCents);
-        const balance = await spendTokens({ chatId, tokens, kind: "unlock" });
-        if (balance === null) {
-          return NextResponse.json(
-            {
-              error: "Top up your wallet to keep chatting",
-              ppm: "topup",
-              needTokens: tokens,
-              balance: await tokenBalance(chatId),
-            },
-            { status: 402 }
-          );
-        }
-        balanceAfterSend = balance;
-        await db
-          .from("chats")
-          .update({ ppm_messages_used: (chatRow.ppm_messages_used ?? 0) + 1 })
-          .eq("id", chatId);
-      }
-    }
-  }
-
   // Optional decision countdown for the incoming-media gate (owner-set, only
   // meaningful on photos/videos). Clamped to 1 hour; 0 = no time limit. The
   // key is only included when set, so sends keep working pre-migration.
@@ -277,11 +212,7 @@ export async function POST(req: NextRequest) {
     after(() => notifyGuestSms(chatId, origin));
   }
 
-  return NextResponse.json({
-    message,
-    // Pay per Message spent Tokens — the client updates its wallet display.
-    ...(balanceAfterSend !== null ? { balance: balanceAfterSend } : {}),
-  });
+  return NextResponse.json({ message });
 }
 
 /** Toggle the blur lock on a media message. Only the sender may do this. */
