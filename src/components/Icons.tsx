@@ -143,6 +143,16 @@ export function IconGrid({ className }: IconProps) {
   );
 }
 
+export function IconDownload({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M12 3v12" />
+      <path d="M7 11l5 5 5-5" />
+      <path d="M4 19h16" />
+    </Svg>
+  );
+}
+
 export function IconSearch({ className }: IconProps) {
   return (
     <Svg className={className}>

@@ -5,11 +5,7 @@ import { useGuestShell } from "./GuestShellContext";
 import Portal from "./Portal";
 import SubscribeCheckout from "./SubscribeCheckout";
 import { elementsEnabled } from "@/lib/stripeClient";
-import {
-  subCaption,
-  subCtaLabel,
-  type SubPlan,
-} from "@/lib/subscriptionPlan";
+import { subCaption, type SubPlan } from "@/lib/subscriptionPlan";
 
 /**
  * Subscribe button for a creator profile. Free plans toggle a follow;
@@ -206,7 +202,7 @@ export default function FollowButton({
 
   const active = paid ? subscribed : following;
   const onClick = paid ? (subscribed ? openOrCancel : subscribePaid) : toggleFollow;
-  const rightLabel = paid && plan ? subCtaLabel(plan) : "FREE";
+  // Price stays off the button; the caption underneath carries trial + price.
   const caption = paid && plan && !subscribed ? subCaption(plan) : null;
   const joinLabel = paid ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE";
   const subscribedLabel = paid && tgLink ? "OPEN TELEGRAM CHANNEL" : "Subscribed";
@@ -227,16 +223,15 @@ export default function FollowButton({
           : "bg-accent text-white"
       }`}
     >
-      {active ? (
-        subscribedLabel
-      ) : small ? (
-        paid ? "JOIN" : "SUBSCRIBE"
-      ) : (
-        <span className="flex items-center justify-between gap-4">
-          <span className="text-left">{joinLabel}</span>
-          <span className="shrink-0">{busy ? "…" : rightLabel}</span>
-        </span>
-      )}
+      {active
+        ? subscribedLabel
+        : small
+          ? paid
+            ? "JOIN"
+            : "SUBSCRIBE"
+          : busy
+            ? "…"
+            : joinLabel}
     </button>
   );
 

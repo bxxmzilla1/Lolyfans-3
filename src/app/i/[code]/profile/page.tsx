@@ -202,11 +202,12 @@ export default async function InviteProfilePreviewPage({
                 {...ctaProps}
                 initialOpen={openPay && profile.plan.priceCents > 0}
               />
-              <p className="text-xs text-muted text-center">
-                {profile.plan.priceCents > 0
-                  ? "Subscribe to join the private Telegram channel"
-                  : "You must subscribe to this profile to send a message"}
-              </p>
+              {/* Paid profiles: the CTA's own caption shows trial + price. */}
+              {profile.plan.priceCents <= 0 && (
+                <p className="text-xs text-muted text-center">
+                  You must subscribe to this profile to send a message
+                </p>
+              )}
             </div>
           </div>
         </section>

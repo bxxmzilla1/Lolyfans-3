@@ -4,11 +4,7 @@ import { useEffect, useState } from "react";
 import Portal from "./Portal";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { elementsEnabled } from "@/lib/stripeClient";
-import {
-  subCaption,
-  subCtaLabel,
-  type SubPlan,
-} from "@/lib/subscriptionPlan";
+import { subCaption, type SubPlan } from "@/lib/subscriptionPlan";
 import { IconEye, IconEyeOff } from "./Icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -44,7 +40,8 @@ export default function InviteSubscribeCta({
 }) {
   const paid = plan.priceCents > 0;
   const joinLabel = paid ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE";
-  const rightLabel = subCtaLabel(plan);
+  // The price never rides on the button — the caption below carries the
+  // trial + daily price instead.
   const caption = subCaption(plan);
 
   const [open, setOpen] = useState(initialOpen && paid);
@@ -193,10 +190,9 @@ export default function InviteSubscribeCta({
     <button
       type="button"
       onClick={openSheet}
-      className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold flex items-center justify-between gap-3 active:opacity-80 transition-opacity"
+      className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold text-center active:opacity-80 transition-opacity"
     >
-      <span className="text-left">{joinLabel}</span>
-      <span className="shrink-0">{rightLabel}</span>
+      {joinLabel}
     </button>
   );
 

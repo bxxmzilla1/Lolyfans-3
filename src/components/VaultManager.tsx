@@ -9,6 +9,7 @@ import {
   IconBack,
   IconCheck,
   IconChevronRight,
+  IconDownload,
   IconEdit,
   IconFolder,
   IconGrid,
@@ -52,6 +53,23 @@ const STATUS_BORDER: Record<SendStatus, string> = {
   locked: "border-red-500",
   unlocked: "border-green-500",
 };
+
+/**
+ * Save one vault file to the creator's device. Supabase storage honours the
+ * `?download=<name>` query param by answering with Content-Disposition:
+ * attachment, so the browser downloads instead of navigating — no need to
+ * buffer big videos into a blob first.
+ */
+function downloadMedia(item: Item) {
+  const name = item.media_path.split("/").pop() || `vault-${item.id}`;
+  const a = document.createElement("a");
+  a.href = `${mediaUrl(item.media_path)}?download=${encodeURIComponent(name)}`;
+  a.download = name;
+  a.rel = "noopener";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
 
 function formatDuration(seconds: number): string {
   const total = Math.round(seconds);
@@ -310,6 +328,23 @@ export default function VaultManager() {
       else next.add(id);
       return next;
     });
+  }
+
+  const [downloadingCount, setDownloadingCount] = useState(0);
+
+  async function downloadSelected() {
+    if (selected.size === 0 || downloadingCount > 0) return;
+    const picked = items.filter((i) => selected.has(i.id));
+    setDownloadingCount(picked.length);
+    // Browsers throttle rapid programmatic downloads, so space them out.
+    for (let i = 0; i < picked.length; i++) {
+      downloadMedia(picked[i]);
+      setDownloadingCount(picked.length - i - 1);
+      if (i < picked.length - 1) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    }
+    setDownloadingCount(0);
   }
 
   function deleteSelected() {
@@ -575,13 +610,25 @@ export default function VaultManager() {
             {selected.size} selected — everything always stays in All
           </p>
           {selected.size > 0 && (
-            <button
-              onClick={deleteSelected}
-              className="w-full flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg py-2 text-sm font-semibold hover:bg-red-500/20 transition-colors"
-            >
-              <IconTrash className="w-4 h-4" />
-              Delete selected
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={downloadSelected}
+                disabled={downloadingCount > 0}
+                className="flex-1 flex items-center justify-center gap-2 bg-card2 border border-line rounded-lg py-2 text-sm font-semibold hover:bg-line transition-colors disabled:opacity-60"
+              >
+                <IconDownload className="w-4 h-4" />
+                {downloadingCount > 0
+                  ? `Downloading… ${downloadingCount} left`
+                  : "Download"}
+              </button>
+              <button
+                onClick={deleteSelected}
+                className="flex-1 flex items-center justify-center gap-2 bg-red-500/10 border border-red-500/30 text-red-400 rounded-lg py-2 text-sm font-semibold hover:bg-red-500/20 transition-colors"
+              >
+                <IconTrash className="w-4 h-4" />
+                Delete
+              </button>
+            </div>
           )}
           {albums.length === 0 ? (
             <p className="text-xs text-muted">
@@ -816,6 +863,13 @@ export default function VaultManager() {
             className="flex flex-wrap items-center justify-center gap-2"
             onClick={(e) => e.stopPropagation()}
           >
+            <button
+              onClick={() => downloadMedia(viewer)}
+              className="bg-card2 border border-line rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2"
+            >
+              <IconDownload className="w-4 h-4" />
+              Download
+            </button>
             <button
               onClick={() => deleteItem(viewer)}
               className="bg-card2 border border-line rounded-lg px-4 py-2 text-sm font-semibold text-red-400"

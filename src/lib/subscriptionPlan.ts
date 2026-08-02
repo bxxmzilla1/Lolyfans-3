@@ -88,9 +88,16 @@ export function subCtaLabel(plan: SubPlan): string {
   return subPriceLabel(plan);
 }
 
-/** Small print under the SUBSCRIBE button. */
+/**
+ * Small print under the SUBSCRIBE button: the trial (if any) and the normal
+ * recurring price. The button itself stays price-free.
+ */
 export function subCaption(plan: SubPlan): string | null {
   if (plan.priceCents <= 0) return null;
   if (plan.interval === "lifetime") return "One-time payment · lifetime access";
-  return null;
+  const full = subPriceLabel(plan);
+  if (plan.trialDays > 0) {
+    return `${plan.trialDays} ${plan.trialDays === 1 ? "day" : "days"} free trial · then ${full}`;
+  }
+  return full;
 }

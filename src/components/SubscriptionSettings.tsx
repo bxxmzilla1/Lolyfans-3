@@ -208,12 +208,16 @@ export default function SubscriptionSettings() {
         <p className="text-xs font-semibold text-muted uppercase tracking-wide">
           Fans will see
         </p>
-        <div className="w-full px-5 py-3 rounded-full bg-accent text-white text-sm font-semibold flex items-center justify-between gap-3">
-          <span>{paid ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE"}</span>
-          <span className="shrink-0">
-            {!paid ? "FREE" : `${priceLabel} / day`}
-          </span>
+        <div className="w-full px-5 py-3 rounded-full bg-accent text-white text-sm font-semibold text-center">
+          {paid ? "JOIN PRIVATE TELEGRAM CHANNEL" : "SUBSCRIBE"}
         </div>
+        {paid && (
+          <p className="text-xs text-muted text-center">
+            {trialOn
+              ? `1 day free trial · then ${priceLabel} / day`
+              : `${priceLabel} / day`}
+          </p>
+        )}
       </div>
 
       <button
