@@ -106,24 +106,23 @@ export default function TelegramUnlockView({
           </p>
         </div>
 
-        {/* Locked / unlocked media card */}
+        {/* Locked / unlocked media card — real blurred teaser underneath */}
         <div className="relative aspect-[4/5] rounded-2xl overflow-hidden border border-line bg-card2">
-          <div
-            className="absolute inset-0"
-            style={{
-              background:
-                "linear-gradient(145deg, color-mix(in oklab, var(--accent) 30%, var(--card2)) 0%, var(--card2) 60%, color-mix(in oklab, var(--line) 80%, var(--card2)) 100%)",
-            }}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/telegram/unlock/${id}/teaser`}
+            alt=""
+            className="absolute inset-0 w-full h-full object-cover scale-105"
           />
-          <div className="absolute inset-0 backdrop-blur-2xl" />
+          <div className="absolute inset-0 bg-black/35 backdrop-blur-[2px]" />
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-center px-6">
             {unlocked ? (
               <>
                 <div className="w-14 h-14 rounded-2xl bg-green-500 flex items-center justify-center">
                   <IconCheck className="w-7 h-7 text-white" />
                 </div>
-                <p className="font-bold text-lg">Unlocked!</p>
-                <p className="text-sm text-muted">
+                <p className="font-bold text-lg drop-shadow">Unlocked!</p>
+                <p className="text-sm text-white/85 drop-shadow">
                   Your {mediaType} was sent to your Telegram chat with {ownerName}.
                   Open Telegram to view it.
                 </p>
@@ -137,8 +136,8 @@ export default function TelegramUnlockView({
                     <IconLock className="w-6 h-6 text-white" />
                   )}
                 </div>
-                <p className="font-bold text-lg">Locked {mediaType}</p>
-                <p className="text-sm text-muted">
+                <p className="font-bold text-lg drop-shadow">Locked {mediaType}</p>
+                <p className="text-sm text-white/85 drop-shadow">
                   Unlock to have it delivered to your Telegram chat with{" "}
                   {ownerName}.
                 </p>

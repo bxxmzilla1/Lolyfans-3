@@ -26,6 +26,10 @@ type AnyClient = {
     peer: unknown,
     opts?: Record<string, unknown>
   ) => Promise<unknown[]>;
+  downloadMedia: (
+    message: unknown,
+    opts?: Record<string, unknown>
+  ) => Promise<Buffer | string | null>;
   getMe: () => Promise<{ username?: string; phone?: string }>;
   session: { save: () => string };
 };
@@ -54,6 +58,7 @@ export type TgMessage = {
   out: boolean;
   date: number;
   hasMedia: boolean;
+  mediaKind: "image" | "video" | "other" | null;
 };
 
 function apiCreds(): { apiId: number; apiHash: string } {
@@ -330,6 +335,23 @@ export async function tgListDialogs(opts: {
   }
 }
 
+function mediaKindOf(media: unknown): TgMessage["mediaKind"] {
+  if (!media || typeof media !== "object") return null;
+  const cls = String((media as { className?: string }).className || "");
+  if (cls.includes("MessageMediaPhoto") || cls.includes("Photo")) return "image";
+  if (cls.includes("MessageMediaDocument") || cls.includes("Document")) {
+    const doc = (media as { document?: { mimeType?: string; attributes?: Array<{ className?: string }> } })
+      .document;
+    const mime = String(doc?.mimeType || "");
+    if (mime.startsWith("video/") || doc?.attributes?.some((a) => String(a.className || "").includes("Video"))) {
+      return "video";
+    }
+    if (mime.startsWith("image/")) return "image";
+    return "other";
+  }
+  return "other";
+}
+
 /** Recent messages in one Telegram dialog. */
 export async function tgGetMessages(opts: {
   session: string;
@@ -351,18 +373,78 @@ export async function tgGetMessages(opts: {
 
     return messages
       .filter((m) => m && typeof m.id === "number")
-      .map((m) => ({
-        id: m.id as number,
-        text: typeof m.message === "string" ? m.message : m.media ? "📎 Media" : "",
-        out: !!m.out,
-        date: typeof m.date === "number" ? m.date : 0,
-        hasMedia: !!m.media,
-      }))
+      .map((m) => {
+        const kind = mediaKindOf(m.media);
+        const text = typeof m.message === "string" ? m.message : "";
+        return {
+          id: m.id as number,
+          text,
+          out: !!m.out,
+          date: typeof m.date === "number" ? m.date : 0,
+          hasMedia: !!m.media,
+          mediaKind: kind,
+        };
+      })
       // GramJS returns newest-first; UI wants oldest-first.
       .reverse();
   } finally {
     await client.disconnect().catch(() => {});
   }
+}
+
+/** Download one message's media (for inbox thumbnails). */
+export async function tgDownloadMessageMedia(opts: {
+  session: string;
+  peer: string;
+  messageId: number;
+}): Promise<{ data: Buffer; mime: string } | null> {
+  const client = await connect(opts.session);
+  try {
+    const peer = await resolvePeer(opts.peer);
+    const messages = (await client.getMessages(peer, {
+      ids: [opts.messageId],
+    })) as Array<{ media?: unknown; className?: string }>;
+    const msg = messages[0];
+    if (!msg?.media) return null;
+    const kind = mediaKindOf(msg.media);
+    const raw = await client.downloadMedia(msg, { thumb: 1 });
+    if (!raw) return null;
+    const data = Buffer.isBuffer(raw)
+      ? raw
+      : typeof raw === "string"
+        ? await (await import("fs/promises")).readFile(raw)
+        : null;
+    if (!data?.length) return null;
+    const mime =
+      kind === "video"
+        ? "video/mp4"
+        : kind === "image"
+          ? "image/jpeg"
+          : "application/octet-stream";
+    return { data, mime };
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
+/**
+ * Blurred still preview of vault media — safe to show on the public unlock
+ * page and to send as a Telegram photo teaser.
+ */
+export async function buildBlurredStill(
+  mediaPath: string,
+  mediaType: "image" | "video"
+): Promise<Buffer> {
+  const original = await downloadMedia(mediaPath);
+  if (mediaType === "video") {
+    return blurredVideoFrame(original);
+  }
+  const sharp = (await import("sharp")).default;
+  return sharp(original)
+    .resize(600, 600, { fit: "inside", withoutEnlargement: true })
+    .blur(40)
+    .jpeg({ quality: 60 })
+    .toBuffer();
 }
 
 /** Send a plain text reply into a Telegram dialog. */
@@ -460,18 +542,14 @@ export async function tgSendTeaser(opts: {
 }): Promise<void> {
   const client = await connect(opts.session);
   try {
+    const { CustomFile } = await gramjs();
     const peer = await resolvePeer(opts.peer);
     if (opts.mediaType === "image") {
-      const sharp = (await import("sharp")).default;
-      const original = await downloadMedia(opts.mediaPath);
-      // Downscale then blur hard so nothing usable shows before payment.
-      const blurred = await sharp(original)
-        .resize(600, 600, { fit: "inside", withoutEnlargement: true })
-        .blur(40)
-        .jpeg({ quality: 60 })
-        .toBuffer();
+      // Named .jpg so Telegram renders a photo bubble (raw buffers often
+      // become unnamed documents / text-only failures in some clients).
+      const blurred = await buildBlurredStill(opts.mediaPath, "image");
       await client.sendFile(peer, {
-        file: blurred,
+        file: new CustomFile("teaser.jpg", blurred.length, "", blurred),
         caption: opts.caption,
         forceDocument: false,
       });
@@ -479,11 +557,8 @@ export async function tgSendTeaser(opts: {
     }
 
     const original = await downloadMedia(opts.mediaPath);
-    // Best: a short blurred clip that shows as a real video bubble. The
-    // CustomFile wrapper gives the buffer an .mp4 name so Telegram treats
-    // it as a playable video instead of a generic document.
+    // Best: a short blurred clip that shows as a real video bubble.
     try {
-      const { CustomFile } = await gramjs();
       const clip = await blurredVideoClip(original);
       await client.sendFile(peer, {
         file: new CustomFile("teaser.mp4", clip.length, "", clip),
@@ -499,7 +574,7 @@ export async function tgSendTeaser(opts: {
     try {
       const frame = await blurredVideoFrame(original);
       await client.sendFile(peer, {
-        file: frame,
+        file: new CustomFile("teaser.jpg", frame.length, "", frame),
         caption: opts.caption,
         forceDocument: false,
       });

@@ -1,12 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import SendToTelegram from "./SendToTelegram";
 import Portal from "./Portal";
-import { mediaUrl } from "@/lib/utils";
-import { IconBack, IconSend } from "./Icons";
+import { VaultPicker, type VaultItem } from "./MassMessage";
+import { IconBack, IconPlay, IconSend } from "./Icons";
 
 type TgMessage = {
   id: number;
@@ -14,16 +13,12 @@ type TgMessage = {
   out: boolean;
   date: number;
   hasMedia: boolean;
-};
-
-type VaultItem = {
-  path: string;
-  media_type: "image" | "video";
+  mediaKind: "image" | "video" | "other" | null;
 };
 
 /**
- * Creator view of one Telegram dialog: read recent messages, reply in plain
- * text, and send a locked PPV from the vault into this chat.
+ * Creator view of one Telegram dialog: read recent messages (with media
+ * thumbs), reply in plain text, and send a locked PPV from vault albums.
  */
 export default function TelegramChatView({
   peer,
@@ -38,8 +33,10 @@ export default function TelegramChatView({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [ppvOpen, setPpvOpen] = useState(false);
-  const [vaultPick, setVaultPick] = useState<VaultItem | null>(null);
-  const [vaultItems, setVaultItems] = useState<VaultItem[] | null>(null);
+  const [vaultPick, setVaultPick] = useState<{
+    path: string;
+    media_type: "image" | "video";
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -94,6 +91,7 @@ export default function TelegramChatView({
             out: true,
             date: Math.floor(Date.now() / 1000),
             hasMedia: false,
+            mediaKind: null,
           },
         ]);
       } else {
@@ -106,29 +104,8 @@ export default function TelegramChatView({
     }
   }
 
-  async function openPpvPicker() {
-    setPpvOpen(true);
-    if (vaultItems) return;
-    try {
-      const res = await fetch("/api/vault/items");
-      const data = await res.json().catch(() => ({}));
-      const items = (data.items ?? []) as Array<{
-        media_path?: string;
-        media_type?: string;
-      }>;
-      setVaultItems(
-        items
-          .map((i) => ({
-            path: String(i.media_path || ""),
-            media_type: (i.media_type === "video" ? "video" : "image") as
-              | "image"
-              | "video",
-          }))
-          .filter((i) => i.path)
-      );
-    } catch {
-      setVaultItems([]);
-    }
+  function mediaSrc(messageId: number) {
+    return `/api/telegram/media?peer=${encodeURIComponent(peer)}&id=${messageId}`;
   }
 
   return (
@@ -148,7 +125,7 @@ export default function TelegramChatView({
         </div>
         <button
           type="button"
-          onClick={() => void openPpvPicker()}
+          onClick={() => setPpvOpen(true)}
           className="shrink-0 px-3 py-1.5 rounded-full bg-accent text-white text-xs font-semibold"
         >
           Send PPV
@@ -169,13 +146,38 @@ export default function TelegramChatView({
               className={`flex ${m.out ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-sm whitespace-pre-wrap break-words ${
+                className={`max-w-[80%] rounded-2xl overflow-hidden text-sm ${
                   m.out
                     ? "bg-accent text-white rounded-br-md"
                     : "bg-card2 border border-line rounded-bl-md"
                 }`}
               >
-                {m.text || (m.hasMedia ? "📎 Media" : "")}
+                {m.hasMedia && (m.mediaKind === "image" || m.mediaKind === "video" || m.mediaKind === "other") && (
+                  <div className="relative bg-black/20">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={mediaSrc(m.id)}
+                      alt=""
+                      className="w-full max-h-72 object-cover"
+                      loading="lazy"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = "none";
+                      }}
+                    />
+                    {m.mediaKind === "video" && (
+                      <span className="absolute inset-0 m-auto w-10 h-10 rounded-full bg-black/50 flex items-center justify-center pointer-events-none">
+                        <IconPlay className="w-4 h-4 text-white translate-x-px" />
+                      </span>
+                    )}
+                  </div>
+                )}
+                {m.text ? (
+                  <p className="px-3.5 py-2 whitespace-pre-wrap break-words">
+                    {m.text}
+                  </p>
+                ) : m.hasMedia ? null : (
+                  <p className="px-3.5 py-2 text-muted"> </p>
+                )}
               </div>
             </div>
           ))
@@ -214,68 +216,17 @@ export default function TelegramChatView({
 
       {ppvOpen && !vaultPick && (
         <Portal>
-          <div
-            className="fixed inset-0 z-[70] bg-black/70 flex items-end sm:items-center justify-center p-4"
-            onClick={() => setPpvOpen(false)}
-          >
-            <div
-              className="w-full max-w-md bg-card border border-line rounded-2xl p-4 space-y-3 fade-up max-h-[80dvh] overflow-y-auto"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="flex items-center justify-between">
-                <p className="font-bold text-sm">Pick vault media</p>
-                <button
-                  type="button"
-                  onClick={() => setPpvOpen(false)}
-                  className="text-muted text-sm px-1"
-                >
-                  ✕
-                </button>
-              </div>
-              {vaultItems === null ? (
-                <p className="text-sm text-muted text-center py-6">Loading…</p>
-              ) : vaultItems.length === 0 ? (
-                <div className="text-center py-6 space-y-2">
-                  <p className="text-sm text-muted">Vault is empty.</p>
-                  <Link
-                    href="/vault"
-                    className="text-sm font-semibold text-accent"
-                  >
-                    Open Vault
-                  </Link>
-                </div>
-              ) : (
-                <div className="grid grid-cols-3 gap-2">
-                  {vaultItems.map((item) => (
-                    <button
-                      key={item.path}
-                      type="button"
-                      onClick={() => {
-                        setVaultPick(item);
-                        setPpvOpen(false);
-                      }}
-                      className="aspect-square rounded-xl overflow-hidden bg-card2 border border-line"
-                    >
-                      {item.media_type === "video" ? (
-                        <video
-                          src={`${mediaUrl(item.path)}#t=0.001`}
-                          muted
-                          playsInline
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={mediaUrl(item.path)}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
+          <div className="fixed inset-0 z-[70]">
+            <VaultPicker
+              onPick={(item: VaultItem) => {
+                setVaultPick({
+                  path: item.media_path,
+                  media_type: item.media_type,
+                });
+                setPpvOpen(false);
+              }}
+              onClose={() => setPpvOpen(false)}
+            />
           </div>
         </Portal>
       )}
