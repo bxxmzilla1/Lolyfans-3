@@ -49,6 +49,7 @@ async function gramjs() {
     TelegramClient: tg.TelegramClient,
     StringSession: tg.sessions.StringSession,
     computeCheck: tg.password.computeCheck,
+    CustomFile: tg.client.uploads.CustomFile,
   };
 }
 
@@ -176,10 +177,76 @@ export async function tgSessionFor(ownerId: string): Promise<string | null> {
   return data.session as string;
 }
 
+/** Run the bundled ffmpeg binary with the given args (throws on failure). */
+async function runFfmpeg(args: string[]): Promise<void> {
+  const ffmpegPath = (await import("ffmpeg-static")).default as unknown as
+    | string
+    | null;
+  if (!ffmpegPath) throw new Error("ffmpeg binary not available");
+  const { execFile } = await import("child_process");
+  const { promisify } = await import("util");
+  await promisify(execFile)(ffmpegPath, args, { timeout: 45000 });
+}
+
 /**
- * Send a locked teaser into a fan's DM: a heavily blurred preview (for images)
- * plus the caption with the unlock link. Videos send a lock caption + link
- * (no server-side frame extraction available). Returns nothing on success.
+ * Blurred video teaser: the first seconds, downscaled, heavily blurred and
+ * muted — enough to see something is there, nothing usable before payment.
+ */
+async function blurredVideoClip(original: Buffer): Promise<Buffer> {
+  const fs = await import("fs/promises");
+  const os = await import("os");
+  const path = await import("path");
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tg-teaser-"));
+  try {
+    const inFile = path.join(dir, "in.bin");
+    const outFile = path.join(dir, "out.mp4");
+    await fs.writeFile(inFile, original);
+    await runFfmpeg([
+      "-y",
+      "-i", inFile,
+      "-t", "3",
+      "-an",
+      "-vf", "scale=480:-2,boxblur=20:2",
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart",
+      outFile,
+    ]);
+    return await fs.readFile(outFile);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/** Fallback teaser: one frame from the video, blurred like an image teaser. */
+async function blurredVideoFrame(original: Buffer): Promise<Buffer> {
+  const fs = await import("fs/promises");
+  const os = await import("os");
+  const path = await import("path");
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tg-frame-"));
+  try {
+    const inFile = path.join(dir, "in.bin");
+    const outFile = path.join(dir, "out.jpg");
+    await fs.writeFile(inFile, original);
+    await runFfmpeg(["-y", "-i", inFile, "-frames:v", "1", outFile]);
+    const frame = await fs.readFile(outFile);
+    const sharp = (await import("sharp")).default;
+    return await sharp(frame)
+      .resize(600, 600, { fit: "inside", withoutEnlargement: true })
+      .blur(40)
+      .jpeg({ quality: 60 })
+      .toBuffer();
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
+/**
+ * Send a locked teaser into a fan's DM: a heavily blurred preview plus the
+ * caption with the unlock link. Images blur with sharp; videos become a
+ * short blurred muted clip (or a blurred still frame if the clip encode
+ * fails), with a plain text message as the last resort.
  */
 export async function tgSendTeaser(opts: {
   session: string;
@@ -204,11 +271,42 @@ export async function tgSendTeaser(opts: {
         caption: opts.caption,
         forceDocument: false,
       });
-    } else {
-      await client.sendMessage(opts.peer, {
-        message: `🔒 Locked video\n\n${opts.caption}`,
-      });
+      return;
     }
+
+    const original = await downloadMedia(opts.mediaPath);
+    // Best: a short blurred clip that shows as a real video bubble. The
+    // CustomFile wrapper gives the buffer an .mp4 name so Telegram treats
+    // it as a playable video instead of a generic document.
+    try {
+      const { CustomFile } = await gramjs();
+      const clip = await blurredVideoClip(original);
+      await client.sendFile(opts.peer, {
+        file: new CustomFile("teaser.mp4", clip.length, "", clip),
+        caption: opts.caption,
+        forceDocument: false,
+        supportsStreaming: true,
+      });
+      return;
+    } catch {
+      // fall through to the still frame
+    }
+    // Good: a blurred still frame from the video.
+    try {
+      const frame = await blurredVideoFrame(original);
+      await client.sendFile(opts.peer, {
+        file: frame,
+        caption: opts.caption,
+        forceDocument: false,
+      });
+      return;
+    } catch {
+      // fall through to plain text
+    }
+    // Last resort: the old text bubble with the link.
+    await client.sendMessage(opts.peer, {
+      message: `🔒 Locked video\n\n${opts.caption}`,
+    });
   } finally {
     await client.disconnect().catch(() => {});
   }
@@ -224,12 +322,22 @@ export async function tgDeliverMedia(opts: {
 }): Promise<void> {
   const client = await connect(opts.session);
   try {
+    const { CustomFile } = await gramjs();
     const file = await downloadMedia(opts.mediaPath);
+    // Keep the real file name (extension) so Telegram renders a playable
+    // video / proper photo instead of a generic unnamed document.
+    const base = opts.mediaPath.split("/").pop() || "";
+    const name = /\.[a-z0-9]{2,5}$/i.test(base)
+      ? base
+      : opts.mediaType === "video"
+        ? "media.mp4"
+        : "media.jpg";
     await client.sendFile(opts.peer, {
-      file,
+      file: new CustomFile(name, file.length, "", file),
       caption: opts.caption ?? "✅ Unlocked — enjoy!",
       videoNote: false,
       forceDocument: false,
+      supportsStreaming: opts.mediaType === "video",
     });
   } finally {
     await client.disconnect().catch(() => {});
