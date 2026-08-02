@@ -214,6 +214,7 @@ export default async function InviteProfilePreviewPage({
               url={mediaUrl(profile.pinBlurPath)}
               ownerId={ownerId}
               code={code}
+              region={profile.pinBlurRegion}
             />
           </div>
         )}

@@ -32,6 +32,12 @@ type Comment = {
   created_at: string;
 };
 
+/** Blur rectangle as fractions (0–1) of the video frame. */
+type BlurRegion = { x: number; y: number; w: number; h: number };
+
+const DEFAULT_REGION: BlurRegion = { x: 0.15, y: 0.15, w: 0.7, h: 0.7 };
+const MIN_REGION = 0.08;
+
 /**
  * Social proof tab: set a profile like count, a like count per post, seed
  * Grok-written comments, and pin an un-blurable BlurDrainer video.
@@ -54,7 +60,17 @@ export default function SocialProofManager() {
   const [pinUploading, setPinUploading] = useState(false);
   const [pinError, setPinError] = useState("");
   const [pinVaultOpen, setPinVaultOpen] = useState(false);
+  const [pinRegion, setPinRegion] = useState<BlurRegion>(DEFAULT_REGION);
+  const [pinRegionSaved, setPinRegionSaved] = useState(false);
   const pinFileRef = useRef<HTMLInputElement>(null);
+  const pinPreviewRef = useRef<HTMLDivElement>(null);
+  const pinDragRef = useRef<{
+    mode: "move" | "nw" | "ne" | "sw" | "se";
+    startX: number;
+    startY: number;
+    start: BlurRegion;
+    bounds: DOMRect;
+  } | null>(null);
 
   useEffect(() => {
     supabaseBrowser()
@@ -65,6 +81,17 @@ export default function SocialProofManager() {
         if (n > 0) setProfileLikes(String(n));
         const pin = data.user?.user_metadata?.pin_blurdrainer_path;
         if (typeof pin === "string" && pin.trim()) setPinPath(pin);
+        const region = data.user?.user_metadata?.pin_blurdrainer_region as
+          | Partial<BlurRegion>
+          | undefined;
+        if (
+          region &&
+          [region.x, region.y, region.w, region.h].every(
+            (n) => typeof n === "number" && Number.isFinite(n)
+          )
+        ) {
+          setPinRegion(region as BlurRegion);
+        }
       });
     fetch("/api/posts")
       .then((r) => r.json())
@@ -117,9 +144,13 @@ export default function SocialProofManager() {
         return;
       }
       await supabase.auth.updateUser({
-        data: { pin_blurdrainer_path: data.path },
+        data: {
+          pin_blurdrainer_path: data.path,
+          pin_blurdrainer_region: DEFAULT_REGION,
+        },
       });
       setPinPath(data.path);
+      setPinRegion(DEFAULT_REGION);
     } catch {
       setPinError("Upload failed — try again");
     } finally {
@@ -130,9 +161,10 @@ export default function SocialProofManager() {
 
   async function removePinVideo() {
     await supabaseBrowser().auth.updateUser({
-      data: { pin_blurdrainer_path: "" },
+      data: { pin_blurdrainer_path: "", pin_blurdrainer_region: null },
     });
     setPinPath(null);
+    setPinRegion(DEFAULT_REGION);
   }
 
   async function pickPinFromVault(item: {
@@ -147,9 +179,78 @@ export default function SocialProofManager() {
     setPinError("");
     setPinVaultOpen(false);
     await supabaseBrowser().auth.updateUser({
-      data: { pin_blurdrainer_path: item.media_path },
+      data: {
+        pin_blurdrainer_path: item.media_path,
+        pin_blurdrainer_region: DEFAULT_REGION,
+      },
     });
     setPinPath(item.media_path);
+    setPinRegion(DEFAULT_REGION);
+  }
+
+  async function savePinRegion() {
+    await supabaseBrowser().auth.updateUser({
+      data: { pin_blurdrainer_region: pinRegion },
+    });
+    setPinRegionSaved(true);
+    setTimeout(() => setPinRegionSaved(false), 1500);
+  }
+
+  const clamp = (n: number, lo: number, hi: number) =>
+    Math.min(Math.max(n, lo), hi);
+
+  function beginPinDrag(
+    e: React.PointerEvent,
+    mode: "move" | "nw" | "ne" | "sw" | "se"
+  ) {
+    const bounds = pinPreviewRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    e.preventDefault();
+    e.stopPropagation();
+    pinDragRef.current = {
+      mode,
+      startX: e.clientX,
+      startY: e.clientY,
+      start: pinRegion,
+      bounds,
+    };
+    const onMove = (ev: PointerEvent) => {
+      const drag = pinDragRef.current;
+      if (!drag) return;
+      const dx = (ev.clientX - drag.startX) / drag.bounds.width;
+      const dy = (ev.clientY - drag.startY) / drag.bounds.height;
+      const s = drag.start;
+      let next: BlurRegion;
+      if (drag.mode === "move") {
+        next = {
+          ...s,
+          x: clamp(s.x + dx, 0, 1 - s.w),
+          y: clamp(s.y + dy, 0, 1 - s.h),
+        };
+      } else {
+        const right = s.x + s.w;
+        const bottom = s.y + s.h;
+        const west = drag.mode === "nw" || drag.mode === "sw";
+        const north = drag.mode === "nw" || drag.mode === "ne";
+        const x = west ? clamp(s.x + dx, 0, right - MIN_REGION) : s.x;
+        const y = north ? clamp(s.y + dy, 0, bottom - MIN_REGION) : s.y;
+        const w = west
+          ? right - x
+          : clamp(s.w + dx, MIN_REGION, 1 - s.x);
+        const h = north
+          ? bottom - y
+          : clamp(s.h + dy, MIN_REGION, 1 - s.y);
+        next = { x, y, w, h };
+      }
+      setPinRegion(next);
+    };
+    const onUp = () => {
+      pinDragRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
   }
 
   async function saveLikes() {
@@ -265,26 +366,77 @@ export default function SocialProofManager() {
           <IconPin className="w-4 h-4 text-accent" /> Pin Blurdrainer
         </p>
         <p className="text-xs text-muted">
-          A video pinned to the top of your profile, always blurred. When
-          visitors tap to unblur it they&apos;re sent to sign up and then into
-          your Telegram channel — the video itself never unblurs.
+          A video pinned to the top of your profile, looping with your blur
+          shape over it. When visitors tap to unblur it they&apos;re sent to
+          sign up and then into your Telegram channel — the blur never comes
+          off, even after they sign up.
         </p>
 
         {pinPath && (
-          <div className="relative rounded-xl overflow-hidden border border-line">
-            <video
-              src={mediaUrl(pinPath)}
-              muted
-              playsInline
-              preload="metadata"
-              className="w-full max-h-56 object-cover blur-xl scale-110"
-            />
-            <span className="absolute inset-0 flex items-center justify-center bg-black/25">
-              <span className="w-10 h-10 rounded-xl bg-[#3c68ff] flex items-center justify-center">
-                <IconLock className="w-5 h-5 text-white" />
-              </span>
-            </span>
-          </div>
+          <>
+            <div
+              ref={pinPreviewRef}
+              className="relative rounded-xl overflow-hidden border border-line select-none touch-none"
+            >
+              {/* w-full h-auto keeps the intrinsic aspect ratio so the
+                  fractional region maps 1:1 onto the public profile video. */}
+              <video
+                src={mediaUrl(pinPath)}
+                autoPlay
+                muted
+                loop
+                playsInline
+                preload="metadata"
+                className="w-full h-auto pointer-events-none"
+              />
+              <div
+                onPointerDown={(e) => beginPinDrag(e, "move")}
+                className="absolute rounded-lg border-2 border-white/90 cursor-move"
+                style={{
+                  left: `${pinRegion.x * 100}%`,
+                  top: `${pinRegion.y * 100}%`,
+                  width: `${pinRegion.w * 100}%`,
+                  height: `${pinRegion.h * 100}%`,
+                  backdropFilter: "blur(32px)",
+                  WebkitBackdropFilter: "blur(32px)",
+                  backgroundColor: "rgba(0,0,0,0.12)",
+                }}
+              >
+                <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <span className="w-9 h-9 rounded-xl ig-gradient glow-accent flex items-center justify-center">
+                    <IconLock className="w-4 h-4 text-white" />
+                  </span>
+                </span>
+                {(["nw", "ne", "sw", "se"] as const).map((corner) => (
+                  <span
+                    key={corner}
+                    onPointerDown={(e) => beginPinDrag(e, corner)}
+                    className={`absolute w-4 h-4 rounded-full bg-white border-2 border-accent shadow ${
+                      corner === "nw"
+                        ? "-top-2 -left-2 cursor-nwse-resize"
+                        : corner === "ne"
+                          ? "-top-2 -right-2 cursor-nesw-resize"
+                          : corner === "sw"
+                            ? "-bottom-2 -left-2 cursor-nesw-resize"
+                            : "-bottom-2 -right-2 cursor-nwse-resize"
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-muted flex-1">
+                Drag the box over what you want blurred; pull a corner to
+                resize it.
+              </p>
+              <button
+                onClick={savePinRegion}
+                className="px-4 py-2 rounded-xl bg-accent text-white text-xs font-semibold shrink-0"
+              >
+                {pinRegionSaved ? "Saved!" : "Save blur area"}
+              </button>
+            </div>
+          </>
         )}
 
         {pinError && <p className="text-xs text-red-400">{pinError}</p>}

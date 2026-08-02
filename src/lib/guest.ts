@@ -69,7 +69,27 @@ export type OwnerProfile = {
   plan: SubPlan;
   /** Pinned BlurDrainer video path (never unblurs; taps lead to signup). */
   pinBlurPath: string | null;
+  /** Creator-drawn blur rectangle for the pin; null = blur the whole video. */
+  pinBlurRegion: BlurRegion | null;
 };
+
+export type BlurRegion = { x: number; y: number; w: number; h: number };
+
+/** Validate/clamp the stored pin blur region; null falls back to a full blur. */
+function parseBlurRegion(v: unknown): BlurRegion | null {
+  if (!v || typeof v !== "object") return null;
+  const r = v as Record<string, unknown>;
+  const x = Number(r.x);
+  const y = Number(r.y);
+  const w = Number(r.w);
+  const h = Number(r.h);
+  if (![x, y, w, h].every(Number.isFinite)) return null;
+  const cx = Math.min(Math.max(x, 0), 0.95);
+  const cy = Math.min(Math.max(y, 0), 0.95);
+  const cw = Math.min(Math.max(w, 0.05), 1 - cx);
+  const ch = Math.min(Math.max(h, 0.05), 1 - cy);
+  return { x: cx, y: cy, w: cw, h: ch };
+}
 
 /** Display profiles (name, picture, checkmark) for a set of creators. */
 export async function ownerProfiles(
@@ -90,6 +110,7 @@ export async function ownerProfiles(
         profile_bio?: string;
         profile_show_location?: boolean;
         pin_blurdrainer_path?: string;
+        pin_blurdrainer_region?: unknown;
       };
       return [
         id,
@@ -103,6 +124,7 @@ export async function ownerProfiles(
           showLocation: !!meta.profile_show_location,
           plan: subPlanFromMetadata(meta as Record<string, unknown>),
           pinBlurPath: meta.pin_blurdrainer_path?.trim() || null,
+          pinBlurRegion: parseBlurRegion(meta.pin_blurdrainer_region),
         },
       ] as const;
     })

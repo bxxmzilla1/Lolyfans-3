@@ -173,7 +173,11 @@ export default async function CreatorProfilePage({
           {/* Pinned BlurDrainer video: always blurred; taps send the fan to
               the Telegram channel. */}
           {profile.pinBlurPath && (
-            <PinBlurDrainer url={mediaUrl(profile.pinBlurPath)} ownerId={ownerId} />
+            <PinBlurDrainer
+              url={mediaUrl(profile.pinBlurPath)}
+              ownerId={ownerId}
+              region={profile.pinBlurRegion}
+            />
           )}
           <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
         </div>
