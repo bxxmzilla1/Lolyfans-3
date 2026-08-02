@@ -54,7 +54,7 @@ async function renderWordmark() {
       </filter>
     </defs>
     <text x="24" y="170" font-family='${FONT}' font-size="130" font-weight="800"
-          fill="#ffffff" filter="url(#s)">Lolyfans</text>
+          fill="#ffffff" filter="url(#s)">LolyFans</text>
   </svg>`;
   const png = await sharp(Buffer.from(svg)).png().toBuffer();
   const box = await bbox(png);

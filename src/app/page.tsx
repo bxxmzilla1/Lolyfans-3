@@ -101,7 +101,7 @@ export default async function Home({
           <div className="flex items-center gap-2.5 min-w-0">
             <Logo className="w-8 h-8" />
             <p className="text-xl font-bold ig-gradient-text tracking-tight">
-              Lolyfans
+              LolyFans
             </p>
           </div>
           <Link

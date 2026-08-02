@@ -43,7 +43,7 @@ export default function OwnerShell({ children }: { children: React.ReactNode }) 
         <Link href="/inbox" className="px-5 py-5 flex items-center gap-3">
           <Logo className="w-9 h-9 glow-accent" />
           <span className="text-xl font-bold ig-gradient-text tracking-tight">
-            Lolyfans
+            LolyFans
           </span>
         </Link>
         <p className="px-5 pt-1 pb-2 text-[11px] font-semibold uppercase tracking-widest text-muted">

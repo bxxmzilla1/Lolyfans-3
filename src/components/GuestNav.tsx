@@ -55,7 +55,7 @@ export default function GuestNav() {
         <div className="px-6 py-6 flex items-center gap-2.5">
           <Logo className="w-8 h-8" />
           <p className="text-2xl font-bold ig-gradient-text tracking-tight">
-            Lolyfans
+            LolyFans
           </p>
         </div>
         <nav className="flex-1 px-3 space-y-1">

@@ -25,7 +25,7 @@ export default async function GuestLoginPage() {
         <div className="flex flex-col items-center gap-4">
           <Logo className="w-20 h-20 glow-accent" />
           <h1 className="text-4xl font-bold ig-gradient-text tracking-tight">
-            Lolyfans
+            LolyFans
           </h1>
           <p className="text-muted text-sm text-center">
             Log in with the email and password you signed up with to get back

@@ -18,7 +18,7 @@ export default async function CreatorAuthPage() {
         <div className="flex flex-col items-center gap-4">
           <Logo className="w-20 h-20 glow-accent" />
           <h1 className="text-4xl font-bold ig-gradient-text tracking-tight">
-            Lolyfans
+            LolyFans
           </h1>
           <p className="text-muted text-sm text-center">
             Creator sign in — manage your chats, vault and invite links.

@@ -71,7 +71,7 @@ export async function POST(req: NextRequest) {
     .replace(/>/g, "&gt;");
   const teaserCaption = [
     safeCaption,
-    `<a href="${link}">Tap Here to unlock</a>`,
+    `🔓 <b><a href="${link}">Tap Here To Unlock</a></b>`,
   ]
     .filter(Boolean)
     .join("\n\n");

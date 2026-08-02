@@ -9,13 +9,13 @@ const geistSans = Geist({
 });
 
 export const metadata: Metadata = {
-  title: "Lolyfans",
+  title: "LolyFans",
   description: "Private chat with media, vault and invite links",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Lolyfans",
+    title: "LolyFans",
   },
   icons: {
     // ?v= busts stale favicon caches (browsers + old service workers)

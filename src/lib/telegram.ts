@@ -30,6 +30,7 @@ type AnyClient = {
     message: unknown,
     opts?: Record<string, unknown>
   ) => Promise<Buffer | string | null>;
+  getInputEntity: (peer: unknown) => Promise<unknown>;
   getMe: () => Promise<{ username?: string; phone?: string }>;
   session: { save: () => string };
 };
@@ -94,6 +95,7 @@ async function gramjs() {
     StringSession: tg.sessions.StringSession,
     computeCheck: tg.password.computeCheck,
     CustomFile: tg.client.uploads.CustomFile,
+    strippedPhotoToJpg: tg.utils.strippedPhotoToJpg,
   };
 }
 
@@ -319,12 +321,15 @@ export async function tgListDialogs(opts: {
 }): Promise<TgDialog[]> {
   const client = await connect(opts.session);
   try {
+    const { strippedPhotoToJpg } = await gramjs();
     const dialogs = (await client.getDialogs({
       limit: opts.limit ?? 80,
     })) as Array<{
       title?: string;
       unreadCount?: number;
       date?: number;
+      archived?: boolean;
+      folderId?: number;
       isUser?: boolean;
       isGroup?: boolean;
       isChannel?: boolean;
@@ -335,19 +340,36 @@ export async function tgListDialogs(opts: {
         username?: string;
         broadcast?: boolean;
         megagroup?: boolean;
+        photo?: { strippedThumb?: unknown };
       };
       message?: { id?: unknown; out?: boolean; message?: string; media?: unknown };
       dialog?: { readOutboxMaxId?: unknown };
     }>;
 
     return dialogs
-      .filter((d) => d.entity)
+      // Archived chats stay out of the inbox — archive on Telegram or via
+      // the in-app button to hide someone.
+      .filter((d) => d.entity && !d.archived && d.folderId !== 1)
       .map((d) => {
         const entity = d.entity!;
         const msg = d.message;
         const lastOut = !!msg?.out;
         const msgId = asMsgId(msg?.id);
         const readOut = asMsgId(d.dialog?.readOutboxMaxId);
+
+        // Tiny (~40px) profile photo baked into the entity — free to ship
+        // and small enough to never hurt list performance.
+        let photoUrl: string | null = null;
+        const stripped = entity.photo?.strippedThumb;
+        if (stripped) {
+          try {
+            const jpg = strippedPhotoToJpg(stripped as Buffer) as Buffer;
+            photoUrl = `data:image/jpeg;base64,${Buffer.from(jpg).toString("base64")}`;
+          } catch {
+            photoUrl = null;
+          }
+        }
+
         return {
           peer: entityPeerKey(entity),
           title: d.title || entity.username || "Telegram",
@@ -356,11 +378,37 @@ export async function tgListDialogs(opts: {
           unread: d.unreadCount ?? 0,
           preview: messagePreview(d.message),
           date: typeof d.date === "number" ? d.date : 0,
-          photoUrl: null,
+          photoUrl,
           lastOut,
           lastReceipt: lastOut ? receiptForOutgoing(msgId, readOut) : null,
         };
       });
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
+/** Move a dialog into (or out of) Telegram's archive folder. */
+export async function tgSetArchived(opts: {
+  session: string;
+  peer: string;
+  archived: boolean;
+}): Promise<void> {
+  const client = await connect(opts.session);
+  try {
+    const { Api } = await gramjs();
+    const resolved = await resolvePeer(opts.peer);
+    const input = await client.getInputEntity(resolved);
+    await client.invoke(
+      new Api.folders.EditPeerFolders({
+        folderPeers: [
+          new Api.InputFolderPeer({
+            peer: input as never,
+            folderId: opts.archived ? 1 : 0,
+          }),
+        ],
+      })
+    );
   } finally {
     await client.disconnect().catch(() => {});
   }

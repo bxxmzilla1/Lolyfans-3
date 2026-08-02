@@ -15,6 +15,7 @@ type Dialog = {
   unread: number;
   preview: string;
   date: number;
+  photoUrl: string | null;
   lastOut: boolean;
   lastReceipt: "sent" | "read" | null;
 };
@@ -167,8 +168,18 @@ export default function TelegramChatList() {
                   active ? "bg-accent/10" : "hover:bg-card2"
                 }`}
               >
-                <div className="w-12 h-12 rounded-full bg-card2 flex items-center justify-center shrink-0">
-                  <IconUser className="w-5 h-5 text-muted" />
+                <div className="w-12 h-12 rounded-full bg-card2 flex items-center justify-center shrink-0 overflow-hidden">
+                  {d.photoUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={d.photoUrl}
+                      alt=""
+                      className="w-full h-full object-cover"
+                      draggable={false}
+                    />
+                  ) : (
+                    <IconUser className="w-5 h-5 text-muted" />
+                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">

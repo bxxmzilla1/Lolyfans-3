@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import SendToTelegram from "./SendToTelegram";
 import TelegramReceipt from "./TelegramReceipt";
 import { uploadWithProgress } from "@/lib/uploadWithProgress";
-import { IconBack, IconPlay, IconSend } from "./Icons";
+import { IconArchive, IconBack, IconPlay, IconSend } from "./Icons";
 
 type TgMessage = {
   id: number;
@@ -35,6 +35,7 @@ export default function TelegramChatView({
   const [sending, setSending] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [uploadingDrop, setUploadingDrop] = useState(false);
+  const [archiving, setArchiving] = useState(false);
   const [vaultPick, setVaultPick] = useState<{
     path: string;
     media_type: "image" | "video";
@@ -111,6 +112,29 @@ export default function TelegramChatView({
 
   function openPpv(path: string, mediaType: "image" | "video") {
     setVaultPick({ path, media_type: mediaType });
+  }
+
+  async function archive() {
+    if (archiving) return;
+    setArchiving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/telegram/archive", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ peer, archived: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        router.push("/inbox");
+      } else {
+        setError(data.error || "Could not archive");
+      }
+    } catch {
+      setError("Could not archive");
+    } finally {
+      setArchiving(false);
+    }
   }
 
   function onDragOver(e: React.DragEvent) {
@@ -215,6 +239,16 @@ export default function TelegramChatView({
             Telegram · drag media from vault to send PPV
           </p>
         </div>
+        <button
+          type="button"
+          onClick={() => void archive()}
+          disabled={archiving}
+          className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-line text-muted hover:text-fg text-xs font-semibold disabled:opacity-50"
+          title="Archive this chat (hides it from the inbox)"
+        >
+          <IconArchive className="w-4 h-4" />
+          {archiving ? "Archiving…" : "Archive"}
+        </button>
       </header>
 
       <div className="flex-1 overflow-y-auto px-3 py-4 space-y-2">
