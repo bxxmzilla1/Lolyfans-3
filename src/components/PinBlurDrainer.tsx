@@ -60,7 +60,7 @@ export default function PinBlurDrainer({
         type="button"
         onClick={() => void onTap()}
         className="relative block w-full overflow-hidden text-left"
-        aria-label="Unblur this video"
+        aria-label="Tap to join"
       >
         {region ? (
           <>
@@ -92,7 +92,7 @@ export default function PinBlurDrainer({
                 <IconLock className="w-6 h-6 text-white" />
               </span>
               <span className="px-4 py-1.5 rounded-full bg-white/15 border border-white/30 backdrop-blur-md text-white text-xs font-semibold whitespace-nowrap">
-                {busy ? "Opening…" : "Tap to unblur"}
+                {busy ? "Opening…" : "Tap to join"}
               </span>
             </span>
           </>
@@ -112,7 +112,7 @@ export default function PinBlurDrainer({
                 <IconLock className="w-7 h-7 text-white" />
               </span>
               <span className="px-5 py-2.5 rounded-full bg-white/15 border border-white/30 backdrop-blur-md text-white text-sm font-semibold">
-                {busy ? "Opening…" : "Tap to unblur"}
+                {busy ? "Opening…" : "Tap to join"}
               </span>
             </span>
           </>
