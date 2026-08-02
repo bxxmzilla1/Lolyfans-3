@@ -60,13 +60,15 @@ export type OwnerProfile = {
   avatarPath: string | null;
   bannerPath: string | null;
   verified: boolean;
-  /** Owner-set base follower count (Social proof tab). */
-  followerBase: number;
+  /** Owner-set base like count (Social proof tab; stored as social_followers). */
+  likesBase: number;
   bio: string | null;
   /** Show a location line (the visitor's own city) under the bio. */
   showLocation: boolean;
   /** Profile-subscription plan (price 0 = free). */
   plan: SubPlan;
+  /** Pinned BlurDrainer video path (never unblurs; taps lead to signup). */
+  pinBlurPath: string | null;
 };
 
 /** Display profiles (name, picture, checkmark) for a set of creators. */
@@ -87,6 +89,7 @@ export async function ownerProfiles(
         social_followers?: number;
         profile_bio?: string;
         profile_show_location?: boolean;
+        pin_blurdrainer_path?: string;
       };
       return [
         id,
@@ -95,10 +98,11 @@ export async function ownerProfiles(
           avatarPath: meta.avatar_path || null,
           bannerPath: meta.banner_path || null,
           verified: !!meta.invite_verified,
-          followerBase: Number(meta.social_followers) || 0,
+          likesBase: Number(meta.social_followers) || 0,
           bio: meta.profile_bio?.trim() || null,
           showLocation: !!meta.profile_show_location,
           plan: subPlanFromMetadata(meta as Record<string, unknown>),
+          pinBlurPath: meta.pin_blurdrainer_path?.trim() || null,
         },
       ] as const;
     })

@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { requestOrigin } from "@/lib/smsNotify";
-import { tgSessionFor, tgSendTeaser } from "@/lib/telegram";
+import { tgSessionFor, tgSendTeaser, tgDeliverMedia } from "@/lib/telegram";
 
 /**
- * Creator sends a locked vault item into a fan's Telegram DM: we create an
- * unlock row (its id is the pay-link token), send a blurred teaser + link
- * from the creator's connected account, and wait for the fan to pay.
+ * Creator sends a vault item into a fan's Telegram DM. With a price it's a
+ * locked PPV: we create an unlock row (its id is the pay-link token), send a
+ * blurred teaser + link, and wait for the fan to pay. Without a price the
+ * clear media is sent directly, for free.
  */
 export async function POST(req: NextRequest) {
   const ownerId = await getOwnerId();
@@ -24,13 +25,13 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const mediaPath = String(body.mediaPath || "").trim();
   const mediaType = body.mediaType === "video" ? "video" : "image";
-  const priceCents = Math.round(Number(body.priceCents));
+  const priceCents = Math.round(Number(body.priceCents)) || 0;
   let peer = String(body.peer || "").trim();
   const caption = String(body.caption || "").trim().slice(0, 300);
 
   if (!mediaPath) return NextResponse.json({ error: "Pick a media file" }, { status: 400 });
-  if (!(priceCents >= 100)) {
-    return NextResponse.json({ error: "Minimum price is $1" }, { status: 400 });
+  if (priceCents > 0 && priceCents < 100) {
+    return NextResponse.json({ error: "Minimum price is $1 (or leave it empty to send free)" }, { status: 400 });
   }
   if (!peer) {
     return NextResponse.json({ error: "Enter the fan's @username or phone" }, { status: 400 });
@@ -43,6 +44,28 @@ export async function POST(req: NextRequest) {
     peer.startsWith("chat:");
   if (!isPeerKey && !peer.startsWith("@") && !/^\+?\d{6,15}$/.test(peer)) {
     peer = `@${peer}`;
+  }
+
+  // No price → send the clear media directly, free of charge.
+  if (priceCents <= 0) {
+    try {
+      await tgDeliverMedia({
+        session,
+        peer,
+        mediaPath,
+        mediaType,
+        caption,
+      });
+      return NextResponse.json({ ok: true, free: true });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Could not send the message";
+      const friendly = /USERNAME_NOT_OCCUPIED|PEER_ID_INVALID|USERNAME_INVALID/.test(msg)
+        ? "Couldn't find that Telegram user — check the @username or phone"
+        : /that user|privacy|PEER_FLOOD/i.test(msg)
+          ? "Telegram wouldn't let you message that user (privacy settings or rate limit)"
+          : msg;
+      return NextResponse.json({ error: friendly }, { status: 400 });
+    }
   }
 
   const db = supabaseAdmin();

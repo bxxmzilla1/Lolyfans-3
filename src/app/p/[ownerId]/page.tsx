@@ -11,7 +11,8 @@ import FollowButton from "@/components/FollowButton";
 import MessageCreatorButton from "@/components/MessageCreatorButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
-import { IconMapPin, IconVerified } from "@/components/Icons";
+import PinBlurDrainer from "@/components/PinBlurDrainer";
+import { IconHeart, IconMapPin, IconVerified } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
 
@@ -29,23 +30,18 @@ export default async function CreatorProfilePage({
   const requestHeaders = await headers();
   const db = supabaseAdmin();
 
-  const [profiles, chats, { data: posts }, { count: realFollowers }, location, geo] =
-    await Promise.all([
-      ownerProfiles([ownerId]),
-      guestChats(requestHeaders),
-      db
-        .from("posts")
-        .select("*")
-        .eq("owner_id", ownerId)
-        .order("created_at", { ascending: false })
-        .limit(90),
-      db
-        .from("follows")
-        .select("chat_id", { count: "exact", head: true })
-        .eq("owner_id", ownerId),
-      visitorLocation(requestHeaders),
-      visitorGeoParts(requestHeaders),
-    ]);
+  const [profiles, chats, { data: posts }, location, geo] = await Promise.all([
+    ownerProfiles([ownerId]),
+    guestChats(requestHeaders),
+    db
+      .from("posts")
+      .select("*")
+      .eq("owner_id", ownerId)
+      .order("created_at", { ascending: false })
+      .limit(90),
+    visitorLocation(requestHeaders),
+    visitorGeoParts(requestHeaders),
+  ]);
 
   const profile = profiles.get(ownerId);
   if (!profile) notFound();
@@ -87,7 +83,10 @@ export default async function CreatorProfilePage({
     if (!access.allowed) redirect(access.href);
   }
   const hasChatWithOwner = !!chatWithOwner;
-  const followers = profile.followerBase + (realFollowers ?? 0);
+  // Profile-level like count: owner-set base + real guest likes on posts.
+  let realLikes = 0;
+  for (const n of stats.likes.values()) realLikes += n;
+  const likes = profile.likesBase + realLikes;
 
   const feedPosts: FeedPost[] = (posts ?? []).map((post) => ({
     id: post.id,
@@ -136,8 +135,9 @@ export default async function CreatorProfilePage({
                   </span>
                 )}
               </p>
-              <p className="text-sm text-muted">
-                {formatCount(followers)} {followers === 1 ? "subscriber" : "subscribers"}
+              <p className="text-sm text-muted flex items-center gap-1">
+                <IconHeart className="w-4 h-4 shrink-0" />
+                {formatCount(likes)} {likes === 1 ? "Like" : "Likes"}
                 {" · "}
                 {feedPosts.length} {feedPosts.length === 1 ? "post" : "posts"}
               </p>
@@ -170,6 +170,11 @@ export default async function CreatorProfilePage({
         </section>
 
         <div className="border-t border-line">
+          {/* Pinned BlurDrainer video: always blurred; taps send the fan to
+              the Telegram channel. */}
+          {profile.pinBlurPath && (
+            <PinBlurDrainer url={mediaUrl(profile.pinBlurPath)} ownerId={ownerId} />
+          )}
           <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
         </div>
     </GuestPage>

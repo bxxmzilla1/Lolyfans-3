@@ -228,6 +228,16 @@ export function IconVolumeMute({ className }: IconProps) {
   );
 }
 
+export function IconPin({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M15 4.5l-4 4l-4 1.5l-1.5 1.5l7 7l1.5 -1.5l1.5 -4l4 -4" />
+      <path d="M9 15l-4.5 4.5" />
+      <path d="M14.5 4l5.5 5.5" />
+    </Svg>
+  );
+}
+
 export function IconMapPin({ className }: IconProps) {
   return (
     <Svg className={className}>
@@ -371,7 +381,7 @@ export function IconKey({ className }: IconProps) {
 export function IconHeart({ className }: IconProps) {
   return (
     <Svg className={className}>
-      <path d="M19.5 12.6 12 20l-7.5-7.4A5 5 0 1 1 12 6.3a5 5 0 1 1 7.5 6.3z" />
+      <path d="M19.5 12.572l-7.5 7.428l-7.5 -7.428a5 5 0 1 1 7.5 -6.566a5 5 0 1 1 7.5 6.572" />
     </Svg>
   );
 }

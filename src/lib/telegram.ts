@@ -1,9 +1,9 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { mediaUrl } from "@/lib/utils";
-// Static import so the pre-rendered badge/wordmark pixels are always part of
-// the serverless bundle (a failed dynamic import would silently drop them).
-import { GLYPHS, GLYPH_CANVAS_H, WORDMARK } from "@/lib/badgeAssets";
+// Static import so the pre-rendered badge pixels are always part of the
+// serverless bundle (a failed dynamic import would silently drop them).
+import { GLYPHS, GLYPH_CANVAS_H } from "@/lib/badgeAssets";
 
 /**
  * Creator's own Telegram account (MTProto / GramJS "userbot"). The creator
@@ -685,19 +685,7 @@ async function ppvBadgePng(priceCents: number, size = 220): Promise<Buffer> {
     .toBuffer();
 }
 
-/** "Lolyfans" wordmark PNG scaled to the given width. */
-async function wordmarkPng(width: number): Promise<{ data: Buffer; w: number; h: number }> {
-  const sharp = (await import("sharp")).default;
-  const w = Math.max(60, Math.round(width));
-  const h = Math.max(1, Math.round((WORDMARK.h / WORDMARK.w) * w));
-  const data = await sharp(Buffer.from(WORDMARK.b64, "base64"))
-    .resize(w, h)
-    .png()
-    .toBuffer();
-  return { data, w, h };
-}
-
-/** Badge centered + Lolyfans wordmark top-left, burned onto the image. */
+/** Lock + price badge centered, burned onto the image. */
 async function compositeLockBadge(
   image: Buffer,
   priceCents: number
@@ -708,8 +696,6 @@ async function compositeLockBadge(
   const h = meta.height || 600;
   const badgeSize = Math.min(280, Math.max(150, Math.round(Math.min(w, h) * 0.42)));
   const badge = await ppvBadgePng(priceCents, badgeSize);
-  const mark = await wordmarkPng(Math.min(380, Math.max(130, Math.round(w * 0.32))));
-  const pad = Math.round(w * 0.045);
   return sharp(image)
     .composite([
       {
@@ -717,7 +703,6 @@ async function compositeLockBadge(
         left: Math.round((w - badgeSize) / 2),
         top: Math.round((h - badgeSize) / 2),
       },
-      { input: mark.data, left: pad, top: pad },
     ])
     .jpeg({ quality: 70 })
     .toBuffer();
@@ -777,60 +762,6 @@ async function runFfmpeg(args: string[], timeout = 45000): Promise<void> {
   await promisify(execFile)(ffmpegPath, args, { timeout });
 }
 
-/** Stamp the LolyFans wordmark in the top-left corner of a clear image. */
-async function watermarkImage(image: Buffer): Promise<Buffer> {
-  const sharp = (await import("sharp")).default;
-  const meta = await sharp(image).metadata();
-  const w = meta.width || 600;
-  const mark = await wordmarkPng(Math.min(380, Math.max(110, Math.round(w * 0.26))));
-  const pad = Math.max(10, Math.round(w * 0.035));
-  return sharp(image)
-    .composite([{ input: mark.data, left: pad, top: pad }])
-    .jpeg({ quality: 88 })
-    .toBuffer();
-}
-
-/**
- * Stamp the LolyFans wordmark in the top-left corner of a clear video
- * (re-encode; the mark scales with the video width via scale2ref).
- */
-async function watermarkVideo(original: Buffer): Promise<Buffer> {
-  const fs = await import("fs/promises");
-  const os = await import("os");
-  const path = await import("path");
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tg-wm-"));
-  try {
-    const inFile = path.join(dir, "in.bin");
-    const outFile = path.join(dir, "out.mp4");
-    const markFile = path.join(dir, "mark.png");
-    await fs.writeFile(inFile, original);
-    await fs.writeFile(markFile, (await wordmarkPng(380)).data);
-    const markRatio = WORDMARK.h / WORDMARK.w;
-    await runFfmpeg(
-      [
-        "-y",
-        "-i", inFile,
-        "-i", markFile,
-        "-filter_complex",
-        "[0:v]scale=trunc(iw/2)*2:trunc(ih/2)*2[v0];" +
-          `[1:v][v0]scale2ref=w=main_w*0.26:h=main_w*0.26*${markRatio}[wm][base];` +
-          "[base][wm]overlay=W*0.035:W*0.035",
-        "-c:v", "libx264",
-        "-preset", "veryfast",
-        "-crf", "23",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-b:a", "160k",
-        "-movflags", "+faststart",
-        outFile,
-      ],
-      120000
-    );
-    return await fs.readFile(outFile);
-  } finally {
-    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
-  }
-}
 
 /**
  * Blurred video teaser: the first seconds, downscaled, heavily blurred and
@@ -852,18 +783,15 @@ async function blurredVideoClip(
 
     if (priceCents && priceCents > 0) {
       const badgeFile = path.join(dir, "badge.png");
-      const markFile = path.join(dir, "mark.png");
       await fs.writeFile(badgeFile, await ppvBadgePng(priceCents, 170));
-      await fs.writeFile(markFile, (await wordmarkPng(150)).data);
       await runFfmpeg([
         "-y",
         "-i", inFile,
         "-i", badgeFile,
-        "-i", markFile,
         "-t", "3",
         "-an",
         "-filter_complex",
-        "[0:v]scale=480:-2,boxblur=20:2[bg];[bg][1:v]overlay=(W-w)/2:(H-h)/2[b1];[b1][2:v]overlay=20:20",
+        "[0:v]scale=480:-2,boxblur=20:2[bg];[bg][1:v]overlay=(W-w)/2:(H-h)/2",
         "-c:v", "libx264",
         "-preset", "veryfast",
         "-pix_fmt", "yuv420p",
@@ -1000,29 +928,15 @@ export async function tgDeliverMedia(opts: {
   try {
     const { CustomFile } = await gramjs();
     const peer = await resolvePeer(opts.peer);
-    let file = await downloadMedia(opts.mediaPath);
+    const file = await downloadMedia(opts.mediaPath);
     // Keep the real file name (extension) so Telegram renders a playable
     // video / proper photo instead of a generic unnamed document.
     const base = opts.mediaPath.split("/").pop() || "";
-    let name = /\.[a-z0-9]{2,5}$/i.test(base)
+    const name = /\.[a-z0-9]{2,5}$/i.test(base)
       ? base
       : opts.mediaType === "video"
         ? "media.mp4"
         : "media.jpg";
-    // Brand the clear media with the LolyFans wordmark (top-left). If the
-    // stamp fails for any reason, still deliver the unbranded original —
-    // the fan already paid.
-    try {
-      if (opts.mediaType === "image") {
-        file = await watermarkImage(file);
-        name = "media.jpg";
-      } else {
-        file = await watermarkVideo(file);
-        name = "media.mp4";
-      }
-    } catch {
-      // deliver the original as-is
-    }
     await client.sendFile(peer, {
       file: new CustomFile(name, file.length, "", file),
       caption: opts.caption ?? "✅ Unlocked — enjoy!",

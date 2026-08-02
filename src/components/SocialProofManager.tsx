@@ -1,10 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, formatTime } from "@/lib/utils";
 import ConfirmDialog from "./ConfirmDialog";
-import { IconHeartFilled, IconPlay, IconTrash } from "./Icons";
+import {
+  IconHeart,
+  IconHeartFilled,
+  IconLock,
+  IconPin,
+  IconPlay,
+  IconTrash,
+} from "./Icons";
 
 type Post = {
   id: string;
@@ -24,12 +31,12 @@ type Comment = {
 };
 
 /**
- * Social proof tab: set a follower count, a like count per post, and seed
- * Grok-written comments on any post.
+ * Social proof tab: set a profile like count, a like count per post, seed
+ * Grok-written comments, and pin an un-blurable BlurDrainer video.
  */
 export default function SocialProofManager() {
-  const [followers, setFollowers] = useState("");
-  const [followersSaved, setFollowersSaved] = useState(false);
+  const [profileLikes, setProfileLikes] = useState("");
+  const [profileLikesSaved, setProfileLikesSaved] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [selected, setSelected] = useState<Post | null>(null);
   const [likeInput, setLikeInput] = useState("");
@@ -41,13 +48,20 @@ export default function SocialProofManager() {
   const [genProgress, setGenProgress] = useState(0);
   const [error, setError] = useState("");
   const [clearAll, setClearAll] = useState(false);
+  const [pinPath, setPinPath] = useState<string | null>(null);
+  const [pinUploading, setPinUploading] = useState(false);
+  const [pinError, setPinError] = useState("");
+  const pinFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     supabaseBrowser()
       .auth.getUser()
       .then(({ data }) => {
+        // Kept under the old social_followers key so existing values carry over.
         const n = Number(data.user?.user_metadata?.social_followers);
-        if (n > 0) setFollowers(String(n));
+        if (n > 0) setProfileLikes(String(n));
+        const pin = data.user?.user_metadata?.pin_blurdrainer_path;
+        if (typeof pin === "string" && pin.trim()) setPinPath(pin);
       });
     fetch("/api/posts")
       .then((r) => r.json())
@@ -64,11 +78,58 @@ export default function SocialProofManager() {
       .then((json) => setComments(json.comments ?? []));
   }
 
-  async function saveFollowers() {
-    const n = Math.max(0, Math.floor(Number(followers) || 0));
+  async function saveProfileLikes() {
+    const n = Math.max(0, Math.floor(Number(profileLikes) || 0));
     await supabaseBrowser().auth.updateUser({ data: { social_followers: n } });
-    setFollowersSaved(true);
-    setTimeout(() => setFollowersSaved(false), 1500);
+    setProfileLikesSaved(true);
+    setTimeout(() => setProfileLikesSaved(false), 1500);
+  }
+
+  async function uploadPinVideo(file: File) {
+    if (!file.type.startsWith("video/")) {
+      setPinError("Pick a video file");
+      return;
+    }
+    setPinUploading(true);
+    setPinError("");
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileName: file.name, scope: "post" }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.path || !data.token) {
+        setPinError(data.error || "Could not start the upload");
+        return;
+      }
+      const supabase = supabaseBrowser();
+      const { error: upErr } = await supabase.storage
+        .from("media")
+        .uploadToSignedUrl(data.path, data.token, file, {
+          cacheControl: "31536000",
+        });
+      if (upErr) {
+        setPinError("Upload failed — try again");
+        return;
+      }
+      await supabase.auth.updateUser({
+        data: { pin_blurdrainer_path: data.path },
+      });
+      setPinPath(data.path);
+    } catch {
+      setPinError("Upload failed — try again");
+    } finally {
+      setPinUploading(false);
+      if (pinFileRef.current) pinFileRef.current.value = "";
+    }
+  }
+
+  async function removePinVideo() {
+    await supabaseBrowser().auth.updateUser({
+      data: { pin_blurdrainer_path: "" },
+    });
+    setPinPath(null);
   }
 
   async function saveLikes() {
@@ -152,28 +213,93 @@ export default function SocialProofManager() {
 
   return (
     <div className="space-y-6">
-      {/* Followers */}
+      {/* Profile likes */}
       <div className="rounded-2xl border border-line bg-card p-4 space-y-3 max-w-lg">
-        <p className="text-sm font-semibold">Followers</p>
+        <p className="text-sm font-semibold flex items-center gap-1.5">
+          <IconHeart className="w-4 h-4 text-red-500" /> Likes
+        </p>
         <p className="text-xs text-muted">
-          Shown on your public profile, on top of real follows.
+          Shown on your public profile, on top of real guest likes.
         </p>
         <div className="flex gap-2">
           <input
             type="number"
             min={0}
-            value={followers}
-            onChange={(e) => setFollowers(e.target.value)}
+            value={profileLikes}
+            onChange={(e) => setProfileLikes(e.target.value)}
             placeholder="e.g. 12400"
             className={`${inputClass} flex-1`}
           />
           <button
-            onClick={saveFollowers}
+            onClick={saveProfileLikes}
             className="px-5 rounded-xl bg-accent text-white text-sm font-semibold"
           >
-            {followersSaved ? "Saved!" : "Save"}
+            {profileLikesSaved ? "Saved!" : "Save"}
           </button>
         </div>
+      </div>
+
+      {/* Pin Blurdrainer */}
+      <div className="rounded-2xl border border-line bg-card p-4 space-y-3 max-w-lg">
+        <p className="text-sm font-semibold flex items-center gap-1.5">
+          <IconPin className="w-4 h-4 text-accent" /> Pin Blurdrainer
+        </p>
+        <p className="text-xs text-muted">
+          A video pinned to the top of your profile, always blurred. When
+          visitors tap to unblur it they&apos;re sent to sign up and then into
+          your Telegram channel — the video itself never unblurs.
+        </p>
+
+        {pinPath && (
+          <div className="relative rounded-xl overflow-hidden border border-line">
+            <video
+              src={mediaUrl(pinPath)}
+              muted
+              playsInline
+              preload="metadata"
+              className="w-full max-h-56 object-cover blur-xl scale-110"
+            />
+            <span className="absolute inset-0 flex items-center justify-center bg-black/25">
+              <span className="w-10 h-10 rounded-xl ig-gradient flex items-center justify-center">
+                <IconLock className="w-5 h-5 text-white" />
+              </span>
+            </span>
+          </div>
+        )}
+
+        {pinError && <p className="text-xs text-red-400">{pinError}</p>}
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => pinFileRef.current?.click()}
+            disabled={pinUploading}
+            className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
+          >
+            {pinUploading
+              ? "Uploading…"
+              : pinPath
+              ? "Replace video"
+              : "Upload video"}
+          </button>
+          {pinPath && (
+            <button
+              onClick={removePinVideo}
+              disabled={pinUploading}
+              className="px-4 rounded-xl bg-card2 border border-line text-sm font-semibold text-red-400 disabled:opacity-50"
+            >
+              Remove
+            </button>
+          )}
+        </div>
+        <input
+          ref={pinFileRef}
+          type="file"
+          accept="video/*"
+          hidden
+          onChange={(e) =>
+            e.target.files?.[0] && uploadPinVideo(e.target.files[0])
+          }
+        />
       </div>
 
       {/* Post picker */}

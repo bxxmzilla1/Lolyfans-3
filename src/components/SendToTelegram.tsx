@@ -31,7 +31,9 @@ export default function SendToTelegram({
   const [sent, setSent] = useState(false);
 
   const priceCents = Math.round(parseFloat(price) * 100) || 0;
-  const invalid = !peer.trim() || priceCents < 100;
+  const isFree = priceCents <= 0;
+  // Empty price = free send; a typed price must be at least $1.
+  const invalid = !peer.trim() || (!isFree && priceCents < 100);
   const peerLocked = Boolean(initialPeer);
 
   async function send() {
@@ -91,11 +93,13 @@ export default function SendToTelegram({
               <div className="w-14 h-14 rounded-2xl bg-green-500 flex items-center justify-center">
                 <IconCheck className="w-7 h-7 text-white" />
               </div>
-              <p className="font-semibold">Locked {mediaType} sent</p>
+              <p className="font-semibold">
+                {isFree ? `${mediaType === "video" ? "Video" : "Photo"} sent` : `Locked ${mediaType} sent`}
+              </p>
               <p className="text-sm text-muted">
-                The fan got a blurred preview with a pay link. Once they pay,
-                the clear {mediaType} is delivered into their Telegram chat with
-                you automatically.
+                {isFree
+                  ? `The ${mediaType} was sent straight into their Telegram chat, free of charge.`
+                  : `The fan got a blurred preview with a pay link. Once they pay, the clear ${mediaType} is delivered into their Telegram chat with you automatically.`}
               </p>
               <button
                 onClick={onClose}
@@ -134,7 +138,12 @@ export default function SendToTelegram({
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-semibold">Unlock price</label>
+                <label className="text-sm font-semibold">
+                  Unlock price{" "}
+                  <span className="text-muted font-normal">
+                    (leave empty to send free)
+                  </span>
+                </label>
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-muted">$</span>
                   <input
@@ -148,7 +157,9 @@ export default function SendToTelegram({
                   />
                 </div>
                 {price !== "" && priceCents < 100 && (
-                  <p className="text-xs text-red-400">Minimum price is $1</p>
+                  <p className="text-xs text-red-400">
+                    Minimum price is $1 — or clear it to send free
+                  </p>
                 )}
               </div>
 
@@ -173,7 +184,11 @@ export default function SendToTelegram({
                 disabled={busy || invalid}
                 className="w-full bg-accent text-white font-semibold rounded-xl py-3 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
               >
-                {busy ? "Sending…" : "Send locked media"}
+                {busy
+                  ? "Sending…"
+                  : isFree
+                  ? "Send for free"
+                  : "Send locked media"}
               </button>
             </>
           )}

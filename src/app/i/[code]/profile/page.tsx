@@ -11,6 +11,7 @@ import { applyUserGeoTokens, visitorGeoParts, visitorLocation } from "@/lib/geo"
 import { formatCount, mediaUrl } from "@/lib/utils";
 import CreatorBanner from "@/components/CreatorBanner";
 import InviteSubscribeCta from "@/components/InviteSubscribeCta";
+import PinBlurDrainer from "@/components/PinBlurDrainer";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import {
   IconChat,
@@ -122,7 +123,7 @@ export default async function InviteProfilePreviewPage({
   const ownerId = invite!.owner_id;
   // Only image posts in the locked preview — they blur nicely and load much
   // faster than videos.
-  const [profiles, { data: imagePosts }, { count: postCount }, { count: realFollowers }, location, geo] =
+  const [profiles, { data: imagePosts }, { count: postCount }, location, geo] =
     await Promise.all([
       ownerProfiles([ownerId]),
       db
@@ -136,10 +137,6 @@ export default async function InviteProfilePreviewPage({
         .from("posts")
         .select("id", { count: "exact", head: true })
         .eq("owner_id", ownerId),
-      db
-        .from("follows")
-        .select("chat_id", { count: "exact", head: true })
-        .eq("owner_id", ownerId),
       visitorLocation(requestHeaders),
       visitorGeoParts(requestHeaders),
     ]);
@@ -152,7 +149,10 @@ export default async function InviteProfilePreviewPage({
   const teasers = imagePosts ?? [];
   const stats = await postStats(teasers.map((p) => p.id), []);
 
-  const followers = profile.followerBase + (realFollowers ?? 0);
+  // Profile-level like count: owner-set base + real guest likes on posts.
+  let realLikes = 0;
+  for (const n of stats.likes.values()) realLikes += n;
+  const likes = profile.likesBase + realLikes;
   const posts = postCount ?? 0;
   const ctaProps = {
     code,
@@ -179,8 +179,9 @@ export default async function InviteProfilePreviewPage({
                 {profile.name}
                 {profile.verified && <IconVerified className="w-5 h-5 text-sky-500" />}
               </p>
-              <p className="text-sm text-muted">
-                {formatCount(followers)} {followers === 1 ? "subscriber" : "subscribers"}
+              <p className="text-sm text-muted flex items-center gap-1">
+                <IconHeart className="w-4 h-4 shrink-0" />
+                {formatCount(likes)} {likes === 1 ? "Like" : "Likes"}
                 {" · "}
                 {formatCount(posts)} {posts === 1 ? "post" : "posts"}
               </p>
@@ -204,6 +205,18 @@ export default async function InviteProfilePreviewPage({
             </div>
           </div>
         </section>
+
+        {/* Pinned BlurDrainer video: always blurred; tapping "unblur" opens
+            the signup sheet and then the Telegram channel. */}
+        {profile.pinBlurPath && (
+          <div className="border-t border-line">
+            <PinBlurDrainer
+              url={mediaUrl(profile.pinBlurPath)}
+              ownerId={ownerId}
+              code={code}
+            />
+          </div>
+        )}
 
         {/* All image posts as locked teasers: blurred media, visible caption
             and counts, nothing clickable */}

@@ -219,7 +219,7 @@ export default function TelegramChatView({
       {dragOver && (
         <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center bg-accent/15 border-2 border-dashed border-accent m-2 rounded-2xl">
           <p className="bg-card border border-line rounded-xl px-4 py-2 text-sm font-semibold shadow-lg">
-            Drop to set PPV price
+            Drop to send — set a price or send free
           </p>
         </div>
       )}
