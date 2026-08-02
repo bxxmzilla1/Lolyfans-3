@@ -42,8 +42,9 @@ export async function getUnlockByCode(
 
 /**
  * Mark an unlock paid (idempotent) and deliver the clear media into the fan's
- * Telegram DM. Safe to call from the one-tap charge, the card-wizard complete
- * step, or the Stripe webhook — the `delivered_at` guard prevents double sends.
+ * Telegram DM. Safe to call concurrently from the one-tap charge, the
+ * card-wizard complete step, the reaction charger and the Stripe webhook —
+ * `deliverUnlock` takes an atomic claim, so the media is only ever sent once.
  */
 export async function markPaidAndDeliver(opts: {
   unlock: TelegramUnlock;
@@ -56,6 +57,8 @@ export async function markPaidAndDeliver(opts: {
   // Already delivered? Nothing to do.
   if (unlock.delivered_at) return;
 
+  // Record the payment — but never clobber "delivering", or a concurrent
+  // caller (e.g. the webhook) could reset the claim and send a second copy.
   await db
     .from("telegram_unlocks")
     .update({
@@ -65,10 +68,62 @@ export async function markPaidAndDeliver(opts: {
       stripe_payment_intent_id:
         opts.paymentIntentId ?? unlock.stripe_payment_intent_id ?? null,
     })
-    .eq("id", unlock.id);
+    .eq("id", unlock.id)
+    .in("status", ["pending", "charging", "react_failed"]);
+
+  await deliverUnlock(unlock);
+}
+
+/**
+ * Deliver the clear media for a paid unlock, exactly once. Claims the row
+ * atomically (paid → delivering), so concurrent callers can't double-send.
+ * On failure the row returns to "paid" with no delivered_at, and the cron
+ * scan retries it; a claim orphaned by a killed function (timeout mid-upload)
+ * becomes reclaimable after 5 minutes via `reclaimStale`.
+ */
+export async function deliverUnlock(
+  unlock: TelegramUnlock,
+  opts?: { reclaimStale?: boolean }
+): Promise<boolean> {
+  const db = supabaseAdmin();
+  if (unlock.delivered_at) return false;
+
+  // Atomic claim: exactly one caller moves paid → delivering.
+  const { data: claimed } = await db
+    .from("telegram_unlocks")
+    .update({ status: "delivering" })
+    .eq("id", unlock.id)
+    .eq("status", "paid")
+    .is("delivered_at", null)
+    .select("id");
+
+  let owned = !!claimed?.length;
+  if (!owned && opts?.reclaimStale) {
+    // A previous deliverer died mid-send (function timeout). Re-claim by
+    // bumping paid_at — atomic, so two retry runners can't both win.
+    const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString();
+    const { data: reclaimed } = await db
+      .from("telegram_unlocks")
+      .update({ paid_at: new Date().toISOString() })
+      .eq("id", unlock.id)
+      .eq("status", "delivering")
+      .is("delivered_at", null)
+      .lt("paid_at", staleBefore)
+      .select("id");
+    owned = !!reclaimed?.length;
+  }
+  if (!owned) return false;
 
   const session = await tgSessionFor(unlock.owner_id);
-  if (!session) return; // Telegram got disconnected — payment still recorded.
+  if (!session) {
+    // Telegram got disconnected — payment stays recorded, retried later.
+    await db
+      .from("telegram_unlocks")
+      .update({ status: "paid" })
+      .eq("id", unlock.id)
+      .eq("status", "delivering");
+    return false;
+  }
 
   try {
     await tgDeliverMedia({
@@ -79,11 +134,39 @@ export async function markPaidAndDeliver(opts: {
     });
     await db
       .from("telegram_unlocks")
-      .update({ delivered_at: new Date().toISOString() })
+      .update({ status: "paid", delivered_at: new Date().toISOString() })
       .eq("id", unlock.id);
+    return true;
   } catch {
-    // Delivery failed (session dropped, peer unreachable). Payment stays
-    // recorded; the creator can resend from the app.
+    // Delivery failed (peer unreachable, upload error). Release the claim so
+    // the cron scan retries.
+    await db
+      .from("telegram_unlocks")
+      .update({ status: "paid" })
+      .eq("id", unlock.id)
+      .eq("status", "delivering");
+    return false;
+  }
+}
+
+/**
+ * Retry deliveries for unlocks that were paid but never (fully) delivered —
+ * e.g. a big video upload that outlived the function that started it.
+ */
+export async function retryUndeliveredUnlocks(ownerId: string): Promise<void> {
+  const db = supabaseAdmin();
+  const since = new Date(Date.now() - 7 * 86400_000).toISOString();
+  const { data } = await db
+    .from("telegram_unlocks")
+    .select("*")
+    .eq("owner_id", ownerId)
+    .in("status", ["paid", "delivering"])
+    .is("delivered_at", null)
+    .gte("created_at", since)
+    .order("paid_at", { ascending: true })
+    .limit(10);
+  for (const unlock of (data as TelegramUnlock[] | null) ?? []) {
+    await deliverUnlock(unlock, { reclaimStale: true });
   }
 }
 

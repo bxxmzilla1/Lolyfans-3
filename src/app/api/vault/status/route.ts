@@ -42,7 +42,7 @@ async function telegramStatus(
     const rowStatus: Status =
       row.status === "free" || (row.price_cents ?? 0) <= 0
         ? "free"
-        : row.status === "paid" || row.delivered_at
+        : row.status === "paid" || row.status === "delivering" || row.delivered_at
           ? "unlocked"
           : "locked";
     if (!status[path] || RANK[rowStatus] > RANK[status[path]]) {

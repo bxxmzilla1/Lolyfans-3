@@ -32,7 +32,11 @@ export default async function TelegramUnlockPage({
       verified={owner?.verified ?? false}
       mediaType={unlock.media_type}
       priceCents={unlock.price_cents}
-      alreadyUnlocked={unlock.status === "paid" || !!unlock.delivered_at}
+      alreadyUnlocked={
+        unlock.status === "paid" ||
+        unlock.status === "delivering" ||
+        !!unlock.delivered_at
+      }
     />
   );
 }

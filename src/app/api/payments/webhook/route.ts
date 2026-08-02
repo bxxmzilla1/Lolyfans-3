@@ -15,6 +15,8 @@ import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 
 export const runtime = "nodejs";
+// Telegram unlock deliveries (videos) can take minutes.
+export const maxDuration = 300;
 
 /**
  * Stripe webhook. Must be pointed at the *canonical* host that does not 308

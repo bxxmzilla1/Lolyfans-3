@@ -7,6 +7,9 @@ import { visitorCountryCode } from "@/lib/geo";
 import { getUnlock, markPaidAndDeliver } from "@/lib/telegramUnlock";
 import Stripe from "stripe";
 
+// Delivering a paid video into Telegram can take minutes.
+export const maxDuration = 300;
+
 /**
  * Fan pays to unlock a Telegram-DM teaser. If we recognise them (they signed
  * up with this creator and saved a card) it's a one-tap off-session charge;
@@ -26,9 +29,9 @@ export async function POST(
   if (unlock.status === "paid" || unlock.delivered_at) {
     return NextResponse.json({ ok: true, alreadyUnlocked: true });
   }
-  // A reaction charge is being processed right now — never start a second
-  // payment for the same PPV.
-  if (unlock.status === "charging") {
+  // A reaction charge or delivery is in flight right now — never start a
+  // second payment for the same PPV.
+  if (unlock.status === "charging" || unlock.status === "delivering") {
     return NextResponse.json({ ok: true, alreadyUnlocked: true });
   }
 

@@ -37,7 +37,9 @@ async function ppvByMessageId(
     if (!Number.isFinite(id)) continue;
     map.set(
       id,
-      row.status === "paid" || row.delivered_at ? "paid" : "pending"
+      row.status === "paid" || row.status === "delivering" || row.delivered_at
+        ? "paid"
+        : "pending"
     );
   }
   return map;

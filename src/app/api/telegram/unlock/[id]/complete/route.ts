@@ -3,6 +3,9 @@ import { saveStripePaymentMethod } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { getUnlock, markPaidAndDeliver } from "@/lib/telegramUnlock";
 
+// Delivering a paid video into Telegram can take minutes.
+export const maxDuration = 300;
+
 /**
  * Called after the card wizard confirms the unlock PaymentIntent: verifies it
  * with Stripe, saves the card (when tied to a chat), marks the unlock paid and

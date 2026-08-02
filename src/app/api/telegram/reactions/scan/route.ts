@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { tgSessionFor, telegramConfigured } from "@/lib/telegram";
-import { chargeReactionUnlocks } from "@/lib/telegramUnlock";
+import {
+  chargeReactionUnlocks,
+  retryUndeliveredUnlocks,
+} from "@/lib/telegramUnlock";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+// Video deliveries can take minutes — give the worker the full window.
+export const maxDuration = 300;
 
 /**
  * Background worker for reaction-to-pay: scans every creator's pending PPVs
@@ -34,22 +38,39 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Telegram is not configured" }, { status: 503 });
   }
 
-  // Creators with recent pending PPV teasers worth scanning.
+  // Creators worth visiting: pending teasers (reactions to charge) plus
+  // paid-but-undelivered unlocks (deliveries to retry).
   const since = new Date(Date.now() - 14 * 86400_000).toISOString();
-  const { data } = await supabaseAdmin()
-    .from("telegram_unlocks")
-    .select("owner_id")
-    .eq("status", "pending")
-    .not("tg_message_id", "is", null)
-    .gte("created_at", since)
-    .limit(200);
-  const owners = [...new Set((data ?? []).map((r) => String(r.owner_id)))].slice(0, 20);
+  const db = supabaseAdmin();
+  const [{ data: pending }, { data: undelivered }] = await Promise.all([
+    db
+      .from("telegram_unlocks")
+      .select("owner_id")
+      .eq("status", "pending")
+      .not("tg_message_id", "is", null)
+      .gte("created_at", since)
+      .limit(200),
+    db
+      .from("telegram_unlocks")
+      .select("owner_id")
+      .in("status", ["paid", "delivering"])
+      .is("delivered_at", null)
+      .gte("created_at", since)
+      .limit(200),
+  ]);
+  const owners = [
+    ...new Set(
+      [...(pending ?? []), ...(undelivered ?? [])].map((r) => String(r.owner_id))
+    ),
+  ].slice(0, 20);
 
   let scanned = 0;
   for (const ownerId of owners) {
-    const session = await tgSessionFor(ownerId).catch(() => null);
-    if (!session) continue;
     try {
+      // Deliveries first — fans who already paid shouldn't wait behind scans.
+      await retryUndeliveredUnlocks(ownerId);
+      const session = await tgSessionFor(ownerId).catch(() => null);
+      if (!session) continue;
       await chargeReactionUnlocks(ownerId, session);
       scanned++;
     } catch {
