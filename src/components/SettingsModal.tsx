@@ -10,6 +10,7 @@ import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
+import TelegramSettings from "./TelegramSettings";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
 import {
@@ -19,6 +20,7 @@ import {
   IconKey,
   IconLink,
   IconLogout,
+  IconSend,
   IconTip,
   IconUser,
 } from "./Icons";
@@ -28,6 +30,7 @@ type Section =
   | "posts"
   | "social"
   | "subscriptions"
+  | "telegram"
   | "links"
   | "editor"
   | "apikey";
@@ -398,6 +401,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconTip className="w-3.5 h-3.5" /> Subscriptions
         </button>
         <button
+          onClick={() => setSection("telegram")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "telegram"
+              ? "bg-accent text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconSend className="w-3.5 h-3.5" /> Telegram
+        </button>
+        <button
           onClick={() => openGated("links")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "links"
@@ -449,7 +462,9 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       <div className="flex-1 overflow-y-auto p-5 lg:p-8">
         <div
           className={`mx-auto w-full ${
-            section === "profile" || section === "subscriptions"
+            section === "profile" ||
+            section === "subscriptions" ||
+            section === "telegram"
               ? "max-w-2xl"
               : section === "editor" || section === "posts"
               ? "max-w-4xl"
@@ -464,6 +479,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <SocialProofManager />
           ) : section === "subscriptions" ? (
             <SubscriptionSettings />
+          ) : section === "telegram" ? (
+            <TelegramSettings />
           ) : section === "editor" ? (
             <InvitePageEditor />
           ) : section === "apikey" ? (

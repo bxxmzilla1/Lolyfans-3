@@ -15,10 +15,12 @@ import {
   IconGrid,
   IconLock,
   IconPlay,
+  IconSend,
   IconTrash,
 } from "./Icons";
 import VideoPlayer from "./VideoPlayer";
 import ConfirmDialog from "./ConfirmDialog";
+import SendToTelegram from "./SendToTelegram";
 import Portal from "./Portal";
 
 type UploadProgress = {
@@ -91,6 +93,7 @@ export default function VaultManager() {
   const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(null);
   const [uploadError, setUploadError] = useState("");
   const [viewer, setViewer] = useState<Item | null>(null);
+  const [tgSend, setTgSend] = useState<Item | null>(null);
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
@@ -871,6 +874,13 @@ export default function VaultManager() {
               Download
             </button>
             <button
+              onClick={() => setTgSend(viewer)}
+              className="bg-card2 border border-line rounded-lg px-4 py-2 text-sm font-semibold flex items-center gap-2 text-accent"
+            >
+              <IconSend className="w-4 h-4" />
+              Send to Telegram
+            </button>
+            <button
               onClick={() => deleteItem(viewer)}
               className="bg-card2 border border-line rounded-lg px-4 py-2 text-sm font-semibold text-red-400"
             >
@@ -940,6 +950,14 @@ export default function VaultManager() {
             setConfirmAction(null);
           }}
           onCancel={() => setConfirmAction(null)}
+        />
+      )}
+
+      {tgSend && (
+        <SendToTelegram
+          mediaPath={tgSend.media_path}
+          mediaType={tgSend.media_type}
+          onClose={() => setTgSend(null)}
         />
       )}
     </div>

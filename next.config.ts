@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Native/heavy server-only packages: loaded at runtime, never bundled.
+  serverExternalPackages: ["telegram", "sharp"],
 };
 
 export default nextConfig;

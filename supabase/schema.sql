@@ -685,6 +685,37 @@ create table if not exists message_blur_taps (
 );
 alter table message_blur_taps enable row level security;
 
+-- Telegram DM selling: creator's connected MTProto session + per-DM unlock
+-- links (see migration-telegram.sql for the full commentary).
+create table if not exists telegram_accounts (
+  owner_id uuid primary key references auth.users(id) on delete cascade,
+  status text not null default 'disconnected', -- disconnected | code_sent | password_needed | connected
+  phone text,
+  username text,
+  session text,
+  phone_code_hash text,
+  updated_at timestamptz not null default now()
+);
+alter table telegram_accounts enable row level security;
+
+create table if not exists telegram_unlocks (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  media_path text not null,
+  media_type text not null, -- image | video
+  price_cents int not null,
+  tg_peer text not null,    -- @username or phone the teaser was sent to
+  status text not null default 'pending', -- pending | paid
+  paid_chat_id uuid references chats(id) on delete set null,
+  stripe_payment_intent_id text,
+  paid_at timestamptz,
+  delivered_at timestamptz,
+  created_at timestamptz not null default now()
+);
+alter table telegram_unlocks enable row level security;
+create index if not exists telegram_unlocks_owner_idx
+  on telegram_unlocks (owner_id, created_at desc);
+
 -- Public storage bucket for chat media and vault files.
 -- file_size_limit null = no per-bucket cap (project global Storage limit applies).
 insert into storage.buckets (id, name, public, file_size_limit)

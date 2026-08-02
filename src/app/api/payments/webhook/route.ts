@@ -10,6 +10,7 @@ import {
   syncSubscription,
 } from "@/lib/payments";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
+import { getUnlock, markPaidAndDeliver } from "@/lib/telegramUnlock";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 
@@ -52,6 +53,22 @@ export async function POST(req: NextRequest) {
   // posted by /api/payments/tip directly; tip Checkout via session.completed.
   if (event.type === "payment_intent.succeeded") {
     const pi = event.data.object as Stripe.PaymentIntent;
+
+    // Telegram-DM unlock: deliver the clear media (safety net for the
+    // client-side complete call). Has no chatId when the fan paid with a new
+    // card, so handle it before the chat-scoped branches below.
+    if (pi.metadata?.kind === "tg-unlock" && pi.metadata.unlockId) {
+      const unlock = await getUnlock(pi.metadata.unlockId);
+      if (unlock) {
+        await markPaidAndDeliver({
+          unlock,
+          chatId: pi.metadata.chatId ?? null,
+          paymentIntentId: pi.id,
+        });
+      }
+      return NextResponse.json({ received: true });
+    }
+
     const chatId = pi.metadata?.chatId;
     if (!chatId) return NextResponse.json({ received: true });
 
