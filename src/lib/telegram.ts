@@ -955,6 +955,52 @@ async function blurredVideoClip(
   }
 }
 
+/**
+ * Badge-less blurred teaser clip for a stored video — pre-rendered once (by
+ * the media cache worker) and reused for every send. The price badge is
+ * overlaid at send time, so one cached clip serves any price.
+ */
+export async function tgBuildTeaserClip(mediaPath: string): Promise<Buffer> {
+  const original = await downloadMedia(mediaPath);
+  return blurredVideoClip(original);
+}
+
+/**
+ * Overlay the lock + $ badge on a pre-rendered teaser clip. The clip is a
+ * 3-second 480p file, so this runs in about a second — the fast path that
+ * makes locked video sends feel like image sends.
+ */
+async function overlayBadgeOnClip(
+  clip: Buffer,
+  priceCents: number
+): Promise<Buffer> {
+  const fs = await import("fs/promises");
+  const os = await import("os");
+  const path = await import("path");
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tg-badge-"));
+  try {
+    const inFile = path.join(dir, "in.mp4");
+    const badgeFile = path.join(dir, "badge.png");
+    const outFile = path.join(dir, "out.mp4");
+    await fs.writeFile(inFile, clip);
+    await fs.writeFile(badgeFile, await ppvBadgePng(priceCents, 170));
+    await runFfmpeg([
+      "-y",
+      "-i", inFile,
+      "-i", badgeFile,
+      "-filter_complex", "[0:v][1:v]overlay=(W-w)/2:(H-h)/2",
+      "-c:v", "libx264",
+      "-preset", "veryfast",
+      "-pix_fmt", "yuv420p",
+      "-movflags", "+faststart",
+      outFile,
+    ]);
+    return await fs.readFile(outFile);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /** Fallback teaser: one frame from the video, blurred like an image teaser. */
 async function blurredVideoFrame(original: Buffer): Promise<Buffer> {
   const fs = await import("fs/promises");
@@ -991,6 +1037,9 @@ export async function tgSendTeaser(opts: {
   mediaType: "image" | "video";
   caption: string;
   priceCents: number;
+  /** Pre-rendered badge-less blurred clip (videos) — skips the slow
+   *  download + full-video ffmpeg pass; only the badge overlay runs now. */
+  preClip?: Buffer | null;
 }): Promise<number | null> {
   const client = await connect(opts.session);
   const sentId = (res: unknown): number | null => {
@@ -1018,6 +1067,24 @@ export async function tgSendTeaser(opts: {
         ...sendOpts,
       });
       return sentId(sent);
+    }
+
+    // Fastest: a cached pre-rendered clip — just stamp the price badge on.
+    if (opts.preClip) {
+      try {
+        const clip =
+          opts.priceCents > 0
+            ? await overlayBadgeOnClip(opts.preClip, opts.priceCents)
+            : opts.preClip;
+        const sent = await client.sendFile(peer, {
+          file: new CustomFile("teaser.mp4", clip.length, "", clip),
+          ...sendOpts,
+          supportsStreaming: true,
+        });
+        return sentId(sent);
+      } catch {
+        // fall through to full generation from the original
+      }
     }
 
     const original = await downloadMedia(opts.mediaPath);
@@ -1133,7 +1200,7 @@ export async function tgCacheMedia(opts: {
         "",
         file
       ),
-      caption: "🔒 PPV copy — keep this so unlocks deliver instantly",
+      caption: "🔒 LolyFans vault copy — keep this so sends deliver instantly",
       forceDocument: false,
       supportsStreaming: opts.mediaType === "video",
       ...(extras.attributes.length

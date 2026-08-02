@@ -7,9 +7,13 @@ import {
   tgSessionFor,
   tgSendTeaser,
   tgDeliverMedia,
-  tgCacheMedia,
 } from "@/lib/telegram";
 import { savedCardChatForPeer } from "@/lib/telegramUnlock";
+import {
+  getMediaCache,
+  ensureMediaCached,
+  downloadTeaserClip,
+} from "@/lib/telegramMediaCache";
 
 // Sending a PPV uploads the full clear video to Telegram (Saved Messages
 // cache for instant unlock delivery) — give it the full window.
@@ -67,6 +71,19 @@ export async function POST(req: NextRequest) {
     peer = `@${peer}`;
   }
 
+  // Pre-uploaded Telegram copies for this vault file (Saved Messages clear
+  // copy + pre-rendered teaser clip) — the fast paths for everything below.
+  const cache = await getMediaCache(ownerId, mediaPath).catch(() => null);
+  // Whatever wasn't cached yet gets cached after the response, so the next
+  // send of this file is instant.
+  after(async () => {
+    try {
+      await ensureMediaCached({ ownerId, session, mediaPath, mediaType });
+    } catch {
+      // best-effort — slow paths still work
+    }
+  });
+
   // No price → send the clear media directly, free of charge.
   if (priceCents <= 0) {
     try {
@@ -76,6 +93,7 @@ export async function POST(req: NextRequest) {
         mediaPath,
         mediaType,
         caption,
+        cachedMessageId: cache?.tgMessageId ?? null,
       });
       // Record the free send so the vault can flag this media as
       // "sent free" (status highlights). Best-effort — the media is
@@ -156,6 +174,12 @@ export async function POST(req: NextRequest) {
     .join("\n\n");
 
   try {
+    // Pre-rendered blurred clip (cached by the backfill worker) makes a
+    // locked video send as fast as an image — only the badge overlay runs.
+    const preClip =
+      mediaType === "video" && cache?.teaserPath
+        ? await downloadTeaserClip(cache.teaserPath)
+        : null;
     const messageId = await tgSendTeaser({
       session,
       peer,
@@ -163,35 +187,18 @@ export async function POST(req: NextRequest) {
       mediaType,
       caption: teaserCaption,
       priceCents,
+      preClip,
     });
     // Remember the teaser message so a double-tap reaction on it can
-    // auto-charge a fan with a saved card. Best-effort (column may not
-    // exist until the migration runs).
-    if (messageId) {
-      await db
-        .from("telegram_unlocks")
-        .update({ tg_message_id: messageId })
-        .eq("id", unlock.id);
+    // auto-charge a fan with a saved card, and point the unlock at the
+    // Saved Messages copy for instant delivery. Best-effort (columns may
+    // not exist until the migration runs).
+    const updates: Record<string, unknown> = {};
+    if (messageId) updates.tg_message_id = messageId;
+    if (cache?.tgMessageId) updates.tg_cached_message_id = cache.tgMessageId;
+    if (Object.keys(updates).length) {
+      await db.from("telegram_unlocks").update(updates).eq("id", unlock.id);
     }
-    // Pre-upload the clear media to Saved Messages so the unlock delivery
-    // is an instant server-side copy instead of a minutes-long re-upload.
-    // Runs after the response so the creator isn't stuck on "Sending…"
-    // while a large video uploads. Best-effort — without it, delivery
-    // falls back to the slow path.
-    const unlockId = unlock.id;
-    after(async () => {
-      try {
-        const cachedId = await tgCacheMedia({ session, mediaPath, mediaType });
-        if (cachedId) {
-          await supabaseAdmin()
-            .from("telegram_unlocks")
-            .update({ tg_cached_message_id: cachedId })
-            .eq("id", unlockId);
-        }
-      } catch {
-        // ignore — slow delivery still works
-      }
-    });
   } catch (err) {
     // Roll back the row so a failed send doesn't leave a dangling link.
     await db.from("telegram_unlocks").delete().eq("id", unlock.id);

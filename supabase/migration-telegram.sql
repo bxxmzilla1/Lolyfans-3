@@ -48,6 +48,23 @@ alter table telegram_unlocks add column if not exists tg_message_id bigint;
 -- Unlock delivery re-sends it by reference (instant server-side copy).
 alter table telegram_unlocks add column if not exists tg_cached_message_id bigint;
 
+-- Vault media pre-uploaded to Telegram: one Saved Messages copy per file
+-- (instant sends and unlock deliveries by reference) plus a pre-rendered
+-- blurred teaser clip for videos (locked video sends become as fast as
+-- images — only the price badge is overlaid at send time). Safe to re-run.
+create table if not exists telegram_media_cache (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  media_path text not null,
+  media_type text not null, -- image | video
+  tg_message_id bigint,     -- clear copy in Saved Messages
+  teaser_path text,         -- storage path of the badge-less blurred clip
+  caching_at timestamptz,   -- in-flight claim (prevents duplicate uploads)
+  created_at timestamptz not null default now(),
+  unique (owner_id, media_path)
+);
+
 -- Server-only tables (accessed with the service key); RLS keeps the anon key out.
 alter table telegram_accounts enable row level security;
 alter table telegram_unlocks enable row level security;
+alter table telegram_media_cache enable row level security;

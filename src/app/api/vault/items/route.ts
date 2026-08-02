@@ -1,6 +1,12 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
+import { tgSessionFor } from "@/lib/telegram";
+import { ensureMediaCached } from "@/lib/telegramMediaCache";
+
+// New vault items pre-upload to Telegram in the background (big videos can
+// take minutes) — give the after() work the full window.
+export const maxDuration = 300;
 
 export async function GET(req: NextRequest) {
   const ownerId = await getOwnerId();
@@ -62,6 +68,25 @@ export async function POST(req: NextRequest) {
   if (albumId) {
     await db.from("vault_item_albums").insert({ item_id: data.id, album_id: albumId });
   }
+
+  // Pre-upload the new item to Telegram (Saved Messages copy + teaser clip)
+  // right away, so its first send is already instant. Best-effort — the
+  // cron backfill catches anything this misses.
+  after(async () => {
+    try {
+      const session = await tgSessionFor(ownerId);
+      if (!session) return;
+      await ensureMediaCached({
+        ownerId,
+        session,
+        mediaPath: String(mediaPath),
+        mediaType: mediaType === "video" ? "video" : "image",
+      });
+    } catch {
+      // ignore
+    }
+  });
+
   return NextResponse.json({
     item: { ...data, albums: albumId ? [albumId] : [] },
   });
@@ -132,6 +157,26 @@ export async function DELETE(req: NextRequest) {
   const paths = (items ?? []).map((i) => i.media_path).filter(Boolean);
   if (paths.length > 0) {
     await db.storage.from("media").remove(paths);
+    // Drop the Telegram cache rows and their pre-rendered teaser clips too.
+    // Best-effort — orphaned rows are harmless, just stale.
+    try {
+      const { data: cached } = await db
+        .from("telegram_media_cache")
+        .select("teaser_path")
+        .eq("owner_id", ownerId)
+        .in("media_path", paths);
+      const teasers = (cached ?? [])
+        .map((c) => c.teaser_path as string | null)
+        .filter((p): p is string => !!p);
+      if (teasers.length > 0) await db.storage.from("media").remove(teasers);
+      await db
+        .from("telegram_media_cache")
+        .delete()
+        .eq("owner_id", ownerId)
+        .in("media_path", paths);
+    } catch {
+      // ignore
+    }
   }
   return NextResponse.json({ ok: true });
 }

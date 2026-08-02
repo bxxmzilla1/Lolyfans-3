@@ -2,6 +2,7 @@ import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { tgSessionFor, tgDeliverMedia, tgReactedMessageIds } from "@/lib/telegram";
+import { getMediaCache } from "@/lib/telegramMediaCache";
 
 export type TelegramUnlock = {
   id: string;
@@ -128,12 +129,22 @@ export async function deliverUnlock(
   }
 
   try {
+    // Saved Messages copy for instant delivery: the one pinned to this
+    // unlock, or the shared vault-wide cache (filled by the backfill
+    // worker) when the unlock predates it.
+    let cachedMessageId = unlock.tg_cached_message_id ?? null;
+    if (!cachedMessageId) {
+      cachedMessageId =
+        (await getMediaCache(unlock.owner_id, unlock.media_path).catch(
+          () => null
+        ))?.tgMessageId ?? null;
+    }
     await tgDeliverMedia({
       session,
       peer: unlock.tg_peer,
       mediaPath: unlock.media_path,
       mediaType: unlock.media_type,
-      cachedMessageId: unlock.tg_cached_message_id ?? null,
+      cachedMessageId,
     });
     await db
       .from("telegram_unlocks")
