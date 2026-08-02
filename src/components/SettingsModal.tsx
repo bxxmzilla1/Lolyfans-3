@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
 import InviteManager from "./InviteManager";
-import InvitePageEditor from "./InvitePageEditor";
 import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
@@ -14,7 +13,6 @@ import TelegramSettings from "./TelegramSettings";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
 import {
-  IconEdit,
   IconGrid,
   IconHeart,
   IconKey,
@@ -32,7 +30,6 @@ type Section =
   | "subscriptions"
   | "telegram"
   | "links"
-  | "editor"
   | "apikey";
 
 function ProfileSection() {
@@ -173,25 +170,8 @@ function ProfileSection() {
           <span className="absolute inset-0 bg-black/40 opacity-0 group-hover/banner:opacity-100 transition-opacity flex items-center justify-center text-white text-xs font-semibold">
             {uploading === "banner" ? "Uploading…" : bannerPath ? "Change banner" : "Add banner"}
           </span>
-          {/* Mini avatar preview so creators see how it sits on the banner */}
-          <span className="absolute left-1/2 -translate-x-1/2 -bottom-3 pointer-events-none">
-            <span className="block rounded-full p-[2px] bg-bg shadow-sm">
-              {avatarPath ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={mediaUrl(avatarPath)}
-                  alt=""
-                  className="w-12 h-12 rounded-full object-cover"
-                />
-              ) : (
-                <span className="w-12 h-12 rounded-full bg-card2 flex items-center justify-center">
-                  <IconUser className="w-5 h-5 text-muted" />
-                </span>
-              )}
-            </span>
-          </span>
         </button>
-        <div className="flex items-center justify-between mt-5">
+        <div className="flex items-center justify-between mt-2">
           <p className="text-xs text-muted">Shown across the top of your public profile.</p>
           {bannerPath && (
             <button
@@ -422,16 +402,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconLink className="w-3.5 h-3.5" /> Invite links
         </button>
         <button
-          onClick={() => openGated("editor")}
-          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-            section === "editor"
-              ? "bg-accent text-white"
-              : "bg-card2 border border-line text-muted hover:text-fg"
-          }`}
-        >
-          <IconEdit className="w-3.5 h-3.5" /> Invite Page Editor
-        </button>
-        <button
           onClick={() => openGated("apikey")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "apikey"
@@ -446,9 +416,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
       {askAdminFor && (
         <AdminCodeDialog
           message={
-            askAdminFor === "editor"
-              ? "Enter the admin code to open the invite page editor."
-              : askAdminFor === "apikey"
+            askAdminFor === "apikey"
               ? "Enter the admin code to manage your API key."
               : "Enter the admin code to open invite links."
           }
@@ -467,7 +435,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             section === "subscriptions" ||
             section === "telegram"
               ? "max-w-2xl"
-              : section === "editor" || section === "posts"
+              : section === "posts"
               ? "max-w-4xl"
               : "max-w-6xl"
           }`}
@@ -482,8 +450,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <SubscriptionSettings />
           ) : section === "telegram" ? (
             <TelegramSettings />
-          ) : section === "editor" ? (
-            <InvitePageEditor />
           ) : section === "apikey" ? (
             <ApiKeyManager />
           ) : (
