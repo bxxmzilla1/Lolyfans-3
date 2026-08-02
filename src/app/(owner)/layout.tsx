@@ -9,6 +9,6 @@ export default async function OwnerLayout({
 }: {
   children: React.ReactNode;
 }) {
-  if (!(await getOwnerId())) redirect("/");
+  if (!(await getOwnerId())) redirect("/creator");
   return <OwnerShell>{children}</OwnerShell>;
 }

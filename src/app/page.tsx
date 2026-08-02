@@ -4,10 +4,16 @@ import { redirect } from "next/navigation";
 import { getOwnerId, getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import AuthForm from "@/components/AuthForm";
+import { ownerProfiles } from "@/lib/guest";
+import { postStats } from "@/lib/posts";
+import { mediaUrl } from "@/lib/utils";
 import Logo from "@/components/Logo";
+import PostFeed, { type FeedPost } from "@/components/PostFeed";
 
 export const dynamic = "force-dynamic";
+
+/** How many of the newest posts across all creators the public feed shows. */
+const FEED_LIMIT = 60;
 
 export default async function Home({
   searchParams,
@@ -46,27 +52,76 @@ export default async function Home({
     }
   }
 
+  // Everyone else — first-time visitors — get the public home feed: every
+  // creator's posts, newest first.
+  const { data: posts } = await supabaseAdmin()
+    .from("posts")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(FEED_LIMIT);
+
+  const rows = posts ?? [];
+  const [profiles, stats] = await Promise.all([
+    ownerProfiles(rows.map((p) => p.owner_id as string)),
+    postStats(
+      rows.map((p) => p.id as string),
+      []
+    ),
+  ]);
+
+  const feedPosts: FeedPost[] = rows.map((post) => {
+    const profile = profiles.get(post.owner_id);
+    return {
+      id: post.id,
+      ownerId: post.owner_id,
+      ownerName: profile?.name || "Lolyfans",
+      ownerAvatar: profile?.avatarPath || null,
+      verified: !!profile?.verified,
+      url: mediaUrl(post.media_path),
+      type: post.media_type as "image" | "video",
+      caption: post.caption,
+      createdAt: post.created_at,
+      likes: (post.like_count ?? 0) + (stats.likes.get(post.id) ?? 0),
+      comments: stats.comments.get(post.id) ?? 0,
+      liked: false,
+    };
+  });
+
   return (
-    <main className="flex-1 flex flex-col items-center justify-center p-6">
-      <div className="w-full max-w-sm flex flex-col items-center gap-8">
-        <div className="flex flex-col items-center gap-4">
-          <Logo className="w-20 h-20 glow-accent" />
-          <h1 className="text-4xl font-bold ig-gradient-text tracking-tight">
-            Lolyfans
-          </h1>
-          <p className="text-muted text-sm text-center">
-            Sign in or create an account to manage your chats, vault and invite
-            links.
-          </p>
+    <div className="min-h-dvh">
+      <header className="sticky top-0 z-30 border-b border-line2 bg-card/80 backdrop-blur-lg">
+        <div className="mx-auto max-w-lg lg:max-w-2xl px-4 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Logo className="w-8 h-8" />
+            <p className="text-xl font-bold ig-gradient-text tracking-tight">
+              Lolyfans
+            </p>
+          </div>
+          <Link
+            href="/login"
+            className="shrink-0 px-4 py-1.5 rounded-full bg-accent text-white text-xs font-semibold active:opacity-80 transition-opacity"
+          >
+            Log in
+          </Link>
         </div>
-        <AuthForm />
-        <p className="text-sm text-muted -mt-2">
-          Joined through an invite link?{" "}
-          <Link href="/login" className="text-accent font-semibold">
-            Log in here
+      </header>
+
+      <main className="mx-auto max-w-lg lg:max-w-2xl lg:px-8 lg:pt-6">
+        <div className="lg:bg-card lg:border lg:border-line lg:rounded-2xl lg:overflow-hidden">
+          {/* Visitors browse only: liking, commenting and messaging need an
+              account, so the feed renders read-only. */}
+          <PostFeed posts={feedPosts} canInteract={false} />
+        </div>
+      </main>
+
+      <footer className="mx-auto max-w-lg lg:max-w-2xl px-4 py-8 text-center">
+        <p className="text-xs text-muted">
+          Are you a creator?{" "}
+          <Link href="/creator" className="text-accent font-semibold">
+            Sign in here
           </Link>
         </p>
-      </div>
-    </main>
+      </footer>
+    </div>
   );
 }

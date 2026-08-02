@@ -12,7 +12,7 @@ export default function LogoutButton() {
     } catch {}
     await supabaseBrowser().auth.signOut();
     await fetch("/api/auth/logout", { method: "POST" });
-    router.push("/");
+    router.push("/creator");
     router.refresh();
   }
   return (

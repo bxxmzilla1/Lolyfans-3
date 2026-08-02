@@ -17,7 +17,7 @@ export default async function OwnerChatPage({
   params: Promise<{ chatId: string }>;
 }) {
   const ownerId = await getOwnerId();
-  if (!ownerId) redirect("/");
+  if (!ownerId) redirect("/creator");
   const { chatId } = await params;
 
   const db = supabaseAdmin();
