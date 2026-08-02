@@ -12,6 +12,7 @@ import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
 import MassMessage from "./MassMessage";
+import MassDeleteChats from "./MassDeleteChats";
 import Portal from "./Portal";
 
 type ChatRow = {
@@ -170,6 +171,9 @@ export default function ChatList() {
   // How many recent chats to render (0 = all) — creator-tunable, persisted.
   const [listLimit, setListLimit] = useState<number>(readStoredListLimit);
   const [massOpen, setMassOpen] = useState(false);
+  // Delete-all sheet (with per-fan exclusions) + its result banner.
+  const [massDeleteOpen, setMassDeleteOpen] = useState(false);
+  const [deleteResult, setDeleteResult] = useState("");
   // Chats whose fan is typing right now (each entry auto-clears after 3s).
   const [typingIds, setTypingIds] = useState<Set<string>>(new Set());
   const typingTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -615,7 +619,19 @@ export default function ChatList() {
           >
             {selectMode ? "Cancel" : "Select"}
           </button>
+          <button
+            onClick={() => setMassDeleteOpen(true)}
+            title="Delete every chat except the people you pick"
+            className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-red-500/10 border border-red-500/30 text-red-400 hover:bg-red-500/20 transition-colors"
+          >
+            <IconTrash className="w-3.5 h-3.5" />
+            Delete all
+          </button>
         </div>
+
+        {deleteResult && (
+          <p className="text-xs text-muted text-center fade-up">{deleteResult}</p>
+        )}
         <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
           <button
             onClick={() => setActiveCat("all")}
@@ -958,6 +974,24 @@ export default function ChatList() {
           </div>
         </div>
         </Portal>
+      )}
+
+      {massDeleteOpen && (
+        <MassDeleteChats
+          chats={chats}
+          onlineIds={onlineIds}
+          onClose={() => setMassDeleteOpen(false)}
+          onDeleted={(deleted) => {
+            setMassDeleteOpen(false);
+            setDeleteResult(
+              `Deleted ${deleted} chat${deleted === 1 ? "" : "s"}.`
+            );
+            setTimeout(() => setDeleteResult(""), 4000);
+            // The open conversation may be gone now.
+            if (pathname?.startsWith("/inbox/")) router.push("/inbox");
+            load();
+          }}
+        />
       )}
 
       {massOpen && (
