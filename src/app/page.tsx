@@ -6,14 +6,17 @@ import { ipFromHeaders } from "@/lib/invites";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
+import { shuffleFeedByCreator } from "@/lib/feedOrder";
 import { mediaUrl } from "@/lib/utils";
 import Logo from "@/components/Logo";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 
 export const dynamic = "force-dynamic";
 
-/** How many of the newest posts across all creators the public feed shows. */
+/** How many posts the public feed shows. */
 const FEED_LIMIT = 60;
+/** Recent posts to draw from, so the mix isn't limited to today's uploads. */
+const FEED_POOL = 400;
 
 export default async function Home({
   searchParams,
@@ -52,17 +55,21 @@ export default async function Home({
     }
   }
 
-  // Everyone else — first-time visitors — get the public home feed: every
-  // creator's posts, newest first.
+  // Everyone else — first-time visitors — get the public home feed: posts
+  // from every creator, shuffled so the mix rotates through creators instead
+  // of being dominated by whoever uploaded last.
   const { data: posts } = await supabaseAdmin()
     .from("posts")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(FEED_LIMIT);
+    .limit(FEED_POOL);
 
-  const rows = posts ?? [];
+  const rows = shuffleFeedByCreator(
+    (posts ?? []).map((p) => ({ ...p, ownerId: p.owner_id as string }))
+  ).slice(0, FEED_LIMIT);
+
   const [profiles, stats] = await Promise.all([
-    ownerProfiles(rows.map((p) => p.owner_id as string)),
+    ownerProfiles(rows.map((p) => p.ownerId)),
     postStats(
       rows.map((p) => p.id as string),
       []

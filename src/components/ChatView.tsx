@@ -215,8 +215,14 @@ export default function ChatView({
     if (res.ok) {
       const { messages } = await res.json();
       setMessages(messages);
+      return;
     }
-  }, [chatId]);
+    // The creator deleted this chat while the fan had it open — the session is
+    // dead, so hand them over to the public home page.
+    if (role === "guest" && res.status === 401) {
+      window.location.href = "/api/guest/gone";
+    }
+  }, [chatId, role]);
 
   // Jump straight to the latest message when opening a chat (no smooth scroll delay)
   useEffect(() => {

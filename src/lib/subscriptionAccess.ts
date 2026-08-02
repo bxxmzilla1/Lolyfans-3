@@ -95,7 +95,8 @@ export async function guestChatAccessDestination(
     .select("owner_id")
     .eq("id", chatId)
     .maybeSingle();
-  if (!chat) return { allowed: false, href: "/?resume=0", ownerId: null };
+  // Chat is gone (deleted by the creator) → clear the session, land on home.
+  if (!chat) return { allowed: false, href: "/api/guest/gone", ownerId: null };
   const dest = await guestAccessDestination(chatId, chat.owner_id);
   return { ...dest, ownerId: chat.owner_id as string };
 }

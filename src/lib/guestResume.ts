@@ -12,6 +12,7 @@ export async function resumeHrefForChatId(chatId: string): Promise<string> {
     .select("owner_id")
     .eq("id", chatId)
     .maybeSingle();
-  if (!chat) return "/?resume=0";
+  // Deleted by the creator: clear the dead session, land on the home page.
+  if (!chat) return "/api/guest/gone";
   return (await guestAccessDestination(chatId, chat.owner_id)).href;
 }

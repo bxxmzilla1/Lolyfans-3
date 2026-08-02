@@ -43,8 +43,9 @@ export default async function GuestChatPage() {
       db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
       visitorLocation(requestHeaders),
     ]);
-  // Chat was deleted: skip the IP resume so we land on the sign-in page, not a loop
-  if (!chat) redirect("/?resume=0");
+  // Chat was deleted by the creator: clear the dead session and send them to
+  // the public home page.
+  if (!chat) redirect("/api/guest/gone");
 
   const unlockedIds = new Set((unlocks ?? []).map((u) => u.message_id));
   const initialMessages = (messages ?? [])

@@ -240,7 +240,8 @@ export default function GuestShell() {
     loadBootstrap({ force: true }).then((next) => {
       if (!alive) return;
       if (!next) {
-        router.replace("/login");
+        // No session left (e.g. the creator deleted the chat) → home page.
+        router.replace("/");
         return;
       }
       setData(next);

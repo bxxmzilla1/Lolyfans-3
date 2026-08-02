@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { guestChats, ownerProfiles, guestUnreadCounts } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
+import { shuffleFeedByCreator } from "@/lib/feedOrder";
 import { mediaUrl, messagePreviewText } from "@/lib/utils";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 
@@ -93,7 +94,7 @@ export async function GET(req: NextRequest) {
       };
     });
 
-  const feedPosts = (posts ?? []).map((post) => {
+  const rawFeed = (posts ?? []).map((post) => {
     const p = profiles.get(post.owner_id);
     return {
       id: post.id,
@@ -110,6 +111,14 @@ export async function GET(req: NextRequest) {
       liked: stats.likedByMe.has(post.id),
     };
   });
+
+  // Rotate through creators instead of ordering by post date. Seeded per fan
+  // per day so the shell's background refresh doesn't reshuffle the feed
+  // under their thumb while they scroll.
+  const feedPosts = shuffleFeedByCreator(
+    rawFeed,
+    `${profileChat.id}:${new Date().toISOString().slice(0, 10)}`
+  );
 
   const chatRows = chats.map((chat) => {
     const p = profiles.get(chat.owner_id);
