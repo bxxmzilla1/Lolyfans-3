@@ -715,16 +715,16 @@ export default function TelegramChatView({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              // In voice mode Enter re-voices the edited text instead of
-              // sending it as a plain message.
-              if (voiceNote) void generateVoice();
+              // In voice mode Enter sends the previewed voice note (the mic
+              // button regenerates).
+              if (voiceNote) void sendVoice();
               else void send();
             }
           }}
           rows={1}
           placeholder={
             voiceNote
-              ? "Edit the text, add [giggles]… then regenerate"
+              ? "Enter sends the voice note · mic regenerates"
               : replyTo
               ? "Reply to the selected message…"
               : "Reply on Telegram…"
