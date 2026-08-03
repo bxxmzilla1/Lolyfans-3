@@ -29,14 +29,19 @@ export type TelegramUnlock = {
 export async function onPayLinkDomain(): Promise<boolean> {
   const raw = (process.env.PPV_PAYLINK_ORIGIN || "").trim();
   if (!raw) return false;
+  // Ignore "www." on either side — Vercel 308s the apex domain to www, so
+  // the serving host may differ from the configured origin by that prefix.
+  const normalize = (host: string) => host.toLowerCase().replace(/^www\./, "");
   let payHost = "";
   try {
-    payHost = new URL(raw).host.toLowerCase();
+    payHost = normalize(
+      new URL(raw.includes("://") ? raw : `https://${raw}`).host
+    );
   } catch {
     return false;
   }
   const h = await headers();
-  const host = (h.get("x-forwarded-host") || h.get("host") || "").toLowerCase();
+  const host = normalize(h.get("x-forwarded-host") || h.get("host") || "");
   return host === payHost;
 }
 

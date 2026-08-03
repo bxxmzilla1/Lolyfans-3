@@ -1,12 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+/** Lowercase host without a leading "www." (Vercel 308s apex → www). */
+function normalizeHost(host: string): string {
+  return host.toLowerCase().replace(/^www\./, "");
+}
+
 /** Host of the dedicated PPV pay-link domain ("" when not configured). */
 function payLinkHost(): string {
   const raw = (process.env.PPV_PAYLINK_ORIGIN || "").trim();
   if (!raw) return "";
   try {
-    return new URL(raw).host.toLowerCase();
+    return normalizeHost(new URL(raw.includes("://") ? raw : `https://${raw}`).host);
   } catch {
     return "";
   }
@@ -22,11 +27,11 @@ export async function proxy(request: NextRequest) {
   // calls keep working on the pay domain.
   const payHost = payLinkHost();
   if (payHost) {
-    const host = (
+    const host = normalizeHost(
       request.headers.get("x-forwarded-host") ||
-      request.headers.get("host") ||
-      ""
-    ).toLowerCase();
+        request.headers.get("host") ||
+        ""
+    );
     if (
       host === payHost &&
       !pathname.startsWith("/payment/") &&
