@@ -23,6 +23,7 @@ export default function TelegramUnlockView({
   mediaType,
   priceCents,
   alreadyUnlocked,
+  brand = false,
 }: {
   id: string;
   ownerName: string;
@@ -31,6 +32,8 @@ export default function TelegramUnlockView({
   mediaType: "image" | "video";
   priceCents: number;
   alreadyUnlocked: boolean;
+  /** Show the TelegramPay logo + wordmark (pay-link domain only). */
+  brand?: boolean;
 }) {
   const [unlocked, setUnlocked] = useState(alreadyUnlocked);
   const [busy, setBusy] = useState(false);
@@ -86,6 +89,19 @@ export default function TelegramUnlockView({
   return (
     <div className="min-h-dvh bg-bg text-fg flex flex-col items-center justify-center p-5">
       <div className="w-full max-w-xs space-y-4">
+        {brand && (
+          <div className="flex items-center justify-center gap-2 pb-1">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/telegrampay-logo.webp"
+              alt="TelegramPay"
+              className="w-8 h-8"
+            />
+            <p className="text-xl font-extrabold tracking-tight">
+              Telegram<span className="text-[#2AABEE]">Pay</span>
+            </p>
+          </div>
+        )}
         {/* Creator */}
         <div className="flex items-center gap-2.5 justify-center">
           {avatarUrl ? (

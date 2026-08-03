@@ -1,4 +1,5 @@
 import "server-only";
+import { headers } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { tgSessionFor, tgDeliverMedia, tgReactedMessageIds } from "@/lib/telegram";
@@ -20,6 +21,24 @@ export type TelegramUnlock = {
   /** Saved Messages copy of the clear media — enables instant delivery. */
   tg_cached_message_id?: number | null;
 };
+
+/**
+ * True when the current request came in on the dedicated pay-link domain
+ * (PPV_PAYLINK_ORIGIN) — unlock pages show TelegramPay branding there.
+ */
+export async function onPayLinkDomain(): Promise<boolean> {
+  const raw = (process.env.PPV_PAYLINK_ORIGIN || "").trim();
+  if (!raw) return false;
+  let payHost = "";
+  try {
+    payHost = new URL(raw).host.toLowerCase();
+  } catch {
+    return false;
+  }
+  const h = await headers();
+  const host = (h.get("x-forwarded-host") || h.get("host") || "").toLowerCase();
+  return host === payHost;
+}
 
 export async function getUnlock(id: string): Promise<TelegramUnlock | null> {
   const { data } = await supabaseAdmin()

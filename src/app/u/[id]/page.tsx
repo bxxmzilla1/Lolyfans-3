@@ -1,10 +1,17 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ownerProfiles } from "@/lib/guest";
 import { mediaUrl } from "@/lib/utils";
-import { getUnlock } from "@/lib/telegramUnlock";
+import { getUnlock, onPayLinkDomain } from "@/lib/telegramUnlock";
 import TelegramUnlockView from "@/components/TelegramUnlockView";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  return (await onPayLinkDomain())
+    ? { title: "TelegramPay", icons: { icon: "/telegrampay-logo.webp" } }
+    : {};
+}
 
 /**
  * Public unlock page opened from a Telegram DM link. Shows the creator, a
@@ -37,6 +44,7 @@ export default async function TelegramUnlockPage({
         unlock.status === "delivering" ||
         !!unlock.delivered_at
       }
+      brand={await onPayLinkDomain()}
     />
   );
 }

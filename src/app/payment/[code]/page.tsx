@@ -1,10 +1,17 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ownerProfiles } from "@/lib/guest";
 import { mediaUrl } from "@/lib/utils";
-import { getUnlockByCode } from "@/lib/telegramUnlock";
+import { getUnlockByCode, onPayLinkDomain } from "@/lib/telegramUnlock";
 import TelegramUnlockView from "@/components/TelegramUnlockView";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata(): Promise<Metadata> {
+  return (await onPayLinkDomain())
+    ? { title: "TelegramPay", icons: { icon: "/telegrampay-logo.webp" } }
+    : {};
+}
 
 /**
  * Short PPV pay link sent in Telegram DMs (lolyfans.com/payment/<code>).
@@ -35,6 +42,7 @@ export default async function ShortPaymentPage({
         unlock.status === "delivering" ||
         !!unlock.delivered_at
       }
+      brand={await onPayLinkDomain()}
     />
   );
 }
