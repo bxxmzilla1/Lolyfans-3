@@ -68,6 +68,13 @@ create table if not exists telegram_media_cache (
 -- Messages, so the vault can show a live progress bar. Safe to re-run.
 alter table telegram_media_cache add column if not exists progress int;
 
+-- Resumable chunked uploads for long videos: Telegram stores 512 KB parts
+-- under upload_file_id server-side, so an upload can continue across
+-- serverless invocations from upload_parts_done. Safe to re-run.
+alter table telegram_media_cache add column if not exists upload_file_id text;
+alter table telegram_media_cache add column if not exists upload_parts_done int;
+alter table telegram_media_cache add column if not exists upload_size bigint;
+
 -- Server-only tables (accessed with the service key); RLS keeps the anon key out.
 alter table telegram_accounts enable row level security;
 alter table telegram_unlocks enable row level security;

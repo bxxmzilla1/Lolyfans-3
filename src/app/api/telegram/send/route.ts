@@ -17,7 +17,7 @@ import {
 
 // Sending a PPV uploads the full clear video to Telegram (Saved Messages
 // cache for instant unlock delivery) — give it the full window.
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 /** Short unguessable token for the /payment/<code> link (8 base62 chars). */
 function shortPayCode(): string {
@@ -78,7 +78,13 @@ export async function POST(req: NextRequest) {
   // send of this file is instant.
   after(async () => {
     try {
-      await ensureMediaCached({ ownerId, session, mediaPath, mediaType });
+      await ensureMediaCached({
+        ownerId,
+        session,
+        mediaPath,
+        mediaType,
+        budgetMs: 700_000,
+      });
     } catch {
       // best-effort — slow paths still work
     }

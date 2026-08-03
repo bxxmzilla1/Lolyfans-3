@@ -783,11 +783,16 @@ export async function buildBlurredStill(
   mediaType: "image" | "video",
   priceCents?: number
 ): Promise<Buffer> {
-  const original = await downloadMedia(mediaPath);
   let still: Buffer;
   if (mediaType === "video") {
-    still = await blurredVideoFrame(original);
+    try {
+      // Frame straight from the storage URL — no full download needed.
+      still = await blurredFrameFromInput(mediaUrl(mediaPath));
+    } catch {
+      still = await blurredVideoFrame(await downloadMedia(mediaPath));
+    }
   } else {
+    const original = await downloadMedia(mediaPath);
     const sharp = (await import("sharp")).default;
     still = await sharp(original)
       .resize(600, 600, { fit: "inside", withoutEnlargement: true })
@@ -841,12 +846,31 @@ async function ffmpegStderr(args: string[]): Promise<string> {
   });
 }
 
+/** Write a buffer to a temp file, run `fn` on its path, then clean up. */
+async function withTempFile<T>(
+  data: Buffer,
+  fn: (filePath: string) => Promise<T>
+): Promise<T> {
+  const fs = await import("fs/promises");
+  const os = await import("os");
+  const path = await import("path");
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tg-in-"));
+  try {
+    const inFile = path.join(dir, "in.bin");
+    await fs.writeFile(inFile, data);
+    return await fn(inFile);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /**
  * Real video attributes (dimensions, duration, thumbnail) for a Telegram
  * upload. Without these Telegram shows the video squashed and forces a
- * download instead of streaming it.
+ * download instead of streaming it. `input` is a local file path or an
+ * https URL — ffmpeg range-reads URLs, so huge videos probe in seconds.
  */
-async function videoUploadExtras(original: Buffer): Promise<{
+async function videoExtrasFromInput(input: string): Promise<{
   attributes: unknown[];
   thumb: Buffer | null;
 }> {
@@ -855,12 +879,10 @@ async function videoUploadExtras(original: Buffer): Promise<{
   const path = await import("path");
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tg-meta-"));
   try {
-    const inFile = path.join(dir, "in.bin");
     const frameFile = path.join(dir, "frame.jpg");
-    await fs.writeFile(inFile, original);
 
     // One decoded frame carries the display dimensions (rotation applied).
-    await runFfmpeg(["-y", "-i", inFile, "-frames:v", "1", frameFile]);
+    await runFfmpeg(["-y", "-i", input, "-frames:v", "1", frameFile]);
     const frame = await fs.readFile(frameFile);
     const sharp = (await import("sharp")).default;
     const meta = await sharp(frame).metadata();
@@ -868,7 +890,7 @@ async function videoUploadExtras(original: Buffer): Promise<{
     const h = meta.height ?? 0;
 
     // `ffmpeg -i` (no output) fails but prints "Duration: HH:MM:SS.cc".
-    const info = await ffmpegStderr(["-i", inFile]);
+    const info = await ffmpegStderr(["-i", input]);
     const dur = info.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
     const duration = dur
       ? Math.round(Number(dur[1]) * 3600 + Number(dur[2]) * 60 + Number(dur[3]))
@@ -899,14 +921,23 @@ async function videoUploadExtras(original: Buffer): Promise<{
   }
 }
 
+async function videoUploadExtras(original: Buffer): Promise<{
+  attributes: unknown[];
+  thumb: Buffer | null;
+}> {
+  return withTempFile(original, (f) => videoExtrasFromInput(f));
+}
+
 
 /**
  * Blurred video teaser: the first seconds, downscaled, heavily blurred and
  * muted — enough to see something is there, nothing usable before payment.
  * When priceCents is set, a lock + $ badge is overlaid in the center.
+ * `input` is a local file path or an https URL — with a URL, ffmpeg only
+ * reads the first few seconds instead of the whole file.
  */
-async function blurredVideoClip(
-  original: Buffer,
+async function blurredClipFromInput(
+  input: string,
   priceCents?: number
 ): Promise<Buffer> {
   const fs = await import("fs/promises");
@@ -914,16 +945,14 @@ async function blurredVideoClip(
   const path = await import("path");
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tg-teaser-"));
   try {
-    const inFile = path.join(dir, "in.bin");
     const outFile = path.join(dir, "out.mp4");
-    await fs.writeFile(inFile, original);
 
     if (priceCents && priceCents > 0) {
       const badgeFile = path.join(dir, "badge.png");
       await fs.writeFile(badgeFile, await ppvBadgePng(priceCents, 170));
       await runFfmpeg([
         "-y",
-        "-i", inFile,
+        "-i", input,
         "-i", badgeFile,
         "-t", "3",
         "-an",
@@ -938,7 +967,7 @@ async function blurredVideoClip(
     } else {
       await runFfmpeg([
         "-y",
-        "-i", inFile,
+        "-i", input,
         "-t", "3",
         "-an",
         "-vf", "scale=480:-2,boxblur=20:2",
@@ -955,14 +984,28 @@ async function blurredVideoClip(
   }
 }
 
+async function blurredVideoClip(
+  original: Buffer,
+  priceCents?: number
+): Promise<Buffer> {
+  return withTempFile(original, (f) => blurredClipFromInput(f, priceCents));
+}
+
 /**
  * Badge-less blurred teaser clip for a stored video — pre-rendered once (by
  * the media cache worker) and reused for every send. The price badge is
  * overlaid at send time, so one cached clip serves any price.
  */
 export async function tgBuildTeaserClip(mediaPath: string): Promise<Buffer> {
-  const original = await downloadMedia(mediaPath);
-  return blurredVideoClip(original);
+  try {
+    // Straight from the storage URL: ffmpeg range-reads just the opening
+    // seconds, so even multi-GB videos produce a teaser quickly.
+    return await blurredClipFromInput(mediaUrl(mediaPath));
+  } catch {
+    // ffmpeg build without https support — fall back to a full download.
+    const original = await downloadMedia(mediaPath);
+    return blurredVideoClip(original);
+  }
 }
 
 /**
@@ -1001,17 +1044,16 @@ async function overlayBadgeOnClip(
   }
 }
 
-/** Fallback teaser: one frame from the video, blurred like an image teaser. */
-async function blurredVideoFrame(original: Buffer): Promise<Buffer> {
+/** Fallback teaser: one frame from the video, blurred like an image teaser.
+ *  `input` is a local file path or an https URL. */
+async function blurredFrameFromInput(input: string): Promise<Buffer> {
   const fs = await import("fs/promises");
   const os = await import("os");
   const path = await import("path");
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "tg-frame-"));
   try {
-    const inFile = path.join(dir, "in.bin");
     const outFile = path.join(dir, "out.jpg");
-    await fs.writeFile(inFile, original);
-    await runFfmpeg(["-y", "-i", inFile, "-frames:v", "1", outFile]);
+    await runFfmpeg(["-y", "-i", input, "-frames:v", "1", outFile]);
     const frame = await fs.readFile(outFile);
     const sharp = (await import("sharp")).default;
     return await sharp(frame)
@@ -1022,6 +1064,10 @@ async function blurredVideoFrame(original: Buffer): Promise<Buffer> {
   } finally {
     await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
   }
+}
+
+async function blurredVideoFrame(original: Buffer): Promise<Buffer> {
+  return withTempFile(original, (f) => blurredFrameFromInput(f));
 }
 
 /**
@@ -1087,10 +1133,14 @@ export async function tgSendTeaser(opts: {
       }
     }
 
-    const original = await downloadMedia(opts.mediaPath);
-    // Best: a short blurred clip that shows as a real video bubble.
+    // Best: a short blurred clip that shows as a real video bubble. Built
+    // straight from the storage URL — ffmpeg only reads the first seconds,
+    // so even huge un-cached videos tease without a full download.
     try {
-      const clip = await blurredVideoClip(original, opts.priceCents);
+      const clip = await blurredClipFromInput(
+        mediaUrl(opts.mediaPath),
+        opts.priceCents
+      );
       const sent = await client.sendFile(peer, {
         file: new CustomFile("teaser.mp4", clip.length, "", clip),
         ...sendOpts,
@@ -1103,7 +1153,7 @@ export async function tgSendTeaser(opts: {
     // Good: a blurred still frame from the video + lock badge.
     try {
       const frame = await compositeLockBadge(
-        await blurredVideoFrame(original),
+        await blurredFrameFromInput(mediaUrl(opts.mediaPath)),
         opts.priceCents
       );
       const sent = await client.sendFile(peer, {
@@ -1219,6 +1269,129 @@ export async function tgCacheMedia(opts: {
         : {}),
       ...(extras.thumb ? { thumb: extras.thumb } : {}),
       ...(progressCallback ? { progressCallback } : {}),
+    });
+    const id = (sent as { id?: unknown } | null)?.id;
+    return typeof id === "number" && id > 0 ? id : null;
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Resumable chunked upload (long videos)
+// ---------------------------------------------------------------------------
+
+/** Telegram big-file part size: 512 KB (must divide 524288 evenly). */
+export const TG_PART_SIZE = 524288;
+/** saveBigFilePart caps parts at 4000 → ~2 GB per file. */
+export const TG_MAX_PARTS = 4000;
+
+/**
+ * Upload as many 512 KB parts as fit before `deadline`, reading the source
+ * in ranged fetches so nothing large sits in memory. Telegram keeps
+ * uploaded parts server-side under `fileId`, so a later invocation can
+ * resume from the returned part count — this is what lets multi-GB videos
+ * survive serverless time limits.
+ */
+export async function tgChunkedUploadSlice(opts: {
+  session: string;
+  url: string;
+  size: number;
+  /** Random 64-bit id (decimal string) that groups the parts. */
+  fileId: string;
+  /** Parts already uploaded in earlier slices. */
+  partsDone: number;
+  /** Epoch ms — stop uploading (mid-file is fine) before this. */
+  deadline: number;
+  /** Called after each batch — persist the resume point + progress here. */
+  onParts?: (partsDone: number, totalParts: number) => void;
+}): Promise<number> {
+  const totalParts = Math.ceil(opts.size / TG_PART_SIZE);
+  if (totalParts > TG_MAX_PARTS) {
+    throw new Error("Video is too large for Telegram (max ~2 GB)");
+  }
+  const client = await connect(opts.session);
+  try {
+    const { Api } = await gramjs();
+    const BATCH_PARTS = 16; // 8 MB per storage fetch
+    let part = Math.max(0, opts.partsDone);
+    while (part < totalParts && Date.now() < opts.deadline) {
+      const from = part * TG_PART_SIZE;
+      const to =
+        Math.min(opts.size, from + BATCH_PARTS * TG_PART_SIZE) - 1;
+      const res = await fetch(opts.url, {
+        headers: { Range: `bytes=${from}-${to}` },
+      });
+      if (!res.ok) throw new Error("Could not read the media file");
+      const expected = to - from + 1;
+      const claimed = Number(res.headers.get("content-length"));
+      if (Number.isFinite(claimed) && claimed > expected + TG_PART_SIZE) {
+        // Server ignored the Range header — bail before buffering the file.
+        throw new Error("Storage does not support ranged reads");
+      }
+      const batch = Buffer.from(await res.arrayBuffer());
+      for (
+        let off = 0;
+        off < batch.length && part < totalParts;
+        off += TG_PART_SIZE
+      ) {
+        const bytes = batch.subarray(
+          off,
+          Math.min(batch.length, off + TG_PART_SIZE)
+        );
+        const ok = (await client.invoke(
+          new Api.upload.SaveBigFilePart({
+            fileId: bigInt(opts.fileId),
+            filePart: part,
+            fileTotalParts: totalParts,
+            bytes: Buffer.from(bytes),
+          })
+        )) as boolean;
+        if (!ok) throw new Error("Telegram rejected an upload part");
+        part += 1;
+        if (Date.now() >= opts.deadline) break;
+      }
+      opts.onParts?.(part, totalParts);
+    }
+    return part;
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
+/**
+ * All parts are up — tell Telegram to assemble them into a Saved Messages
+ * video (with real dimensions/duration/thumbnail probed straight from the
+ * storage URL). Returns the Saved Messages message id.
+ */
+export async function tgFinalizeChunkedUpload(opts: {
+  session: string;
+  mediaPath: string;
+  mediaType: "image" | "video";
+  fileId: string;
+  size: number;
+}): Promise<number | null> {
+  const totalParts = Math.ceil(opts.size / TG_PART_SIZE);
+  const client = await connect(opts.session);
+  try {
+    const { Api } = await gramjs();
+    const extras =
+      opts.mediaType === "video"
+        ? await videoExtrasFromInput(mediaUrl(opts.mediaPath))
+        : { attributes: [] as unknown[], thumb: null };
+    const sent = await client.sendFile("me", {
+      file: new Api.InputFileBig({
+        id: bigInt(opts.fileId),
+        parts: totalParts,
+        name: mediaFileName(opts.mediaPath, opts.mediaType),
+      }),
+      caption: "🔒 LolyFans vault copy — keep this so sends deliver instantly",
+      forceDocument: false,
+      supportsStreaming: opts.mediaType === "video",
+      ...(extras.attributes.length
+        ? { attributes: extras.attributes as never }
+        : {}),
+      ...(extras.thumb ? { thumb: extras.thumb } : {}),
     });
     const id = (sent as { id?: unknown } | null)?.id;
     return typeof id === "number" && id > 0 ? id : null;

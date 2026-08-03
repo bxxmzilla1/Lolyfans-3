@@ -6,7 +6,7 @@ import { ensureMediaCached } from "@/lib/telegramMediaCache";
 
 // New vault items pre-upload to Telegram in the background (big videos can
 // take minutes) — give the after() work the full window.
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 export async function GET(req: NextRequest) {
   const ownerId = await getOwnerId();
@@ -81,6 +81,7 @@ export async function POST(req: NextRequest) {
         session,
         mediaPath: String(mediaPath),
         mediaType: mediaType === "video" ? "video" : "image",
+        budgetMs: 700_000,
       });
     } catch {
       // ignore

@@ -9,7 +9,7 @@ import { cacheVaultBacklog } from "@/lib/telegramMediaCache";
 
 export const dynamic = "force-dynamic";
 // The background loop runs ~50s per cron tick; deliveries can add more.
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 // How long one cron invocation keeps scanning, and how often it re-checks.
 // The next cron tick (1/min) takes over right as this window closes, so
@@ -109,7 +109,7 @@ async function backfillMediaCache(): Promise<void> {
       try {
         const session = await tgSessionFor(ownerId);
         if (!session) continue;
-        await cacheVaultBacklog(ownerId, session, 2);
+        await cacheVaultBacklog(ownerId, session, 2, 600_000);
       } catch {
         // one creator failing shouldn't stop the rest
       }

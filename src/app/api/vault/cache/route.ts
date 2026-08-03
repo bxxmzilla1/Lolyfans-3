@@ -5,7 +5,9 @@ import { tgSessionFor } from "@/lib/telegram";
 import { ensureMediaCached } from "@/lib/telegramMediaCache";
 
 // A manually triggered upload of a big video runs after the response.
-export const maxDuration = 300;
+// Pro-plan limit: long slices let most videos finish in one invocation;
+// anything bigger resumes on the next cron tick.
+export const maxDuration = 800;
 
 type CacheState = {
   /** Clear copy in Saved Messages (and teaser clip for videos) — ready for
@@ -51,7 +53,7 @@ export async function GET() {
   }
 
   const status: Record<string, CacheState> = {};
-  const staleBefore = Date.now() - 10 * 60_000;
+  const staleBefore = Date.now() - 4 * 60_000;
   for (const row of data ?? []) {
     const ready =
       !!row.tg_message_id &&
@@ -59,14 +61,19 @@ export async function GET() {
     const claimedAt = row.caching_at
       ? new Date(String(row.caching_at)).getTime()
       : 0;
-    const uploading = !ready && claimedAt > staleBefore;
     const progress = row.progress;
+    // A chunked upload pauses between slices (claim released, progress
+    // kept) — still show it as uploading so the bar doesn't flicker away.
+    const uploading =
+      !ready &&
+      (claimedAt > staleBefore ||
+        (typeof progress === "number" && progress > 0));
     status[String(row.media_path)] = {
       ready,
       uploading,
       progress: ready
         ? 100
-        : uploading && typeof progress === "number"
+        : typeof progress === "number"
           ? Math.max(0, Math.min(99, progress))
           : 0,
     };
@@ -100,7 +107,13 @@ export async function POST(req: NextRequest) {
 
   after(async () => {
     try {
-      await ensureMediaCached({ ownerId, session, mediaPath, mediaType });
+      await ensureMediaCached({
+        ownerId,
+        session,
+        mediaPath,
+        mediaType,
+        budgetMs: 700_000,
+      });
     } catch {
       // the row's progress resets to null; the creator can retry
     }
