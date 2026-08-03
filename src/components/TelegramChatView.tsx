@@ -22,7 +22,7 @@ type TgMessage = {
   out: boolean;
   date: number;
   hasMedia: boolean;
-  mediaKind: "image" | "video" | "gif" | "sticker" | "other" | null;
+  mediaKind: "image" | "video" | "gif" | "sticker" | "voice" | "other" | null;
   receipt: "sent" | "read" | null;
   /** PPV teaser state: "paid" turns the bubble green. */
   ppv?: "paid" | "pending" | null;
@@ -38,6 +38,7 @@ function messageSnippet(m: TgMessage | undefined | null): string {
   if (m.mediaKind === "video") return "🎬 Video";
   if (m.mediaKind === "gif") return "GIF";
   if (m.mediaKind === "sticker") return "Sticker";
+  if (m.mediaKind === "voice") return "🎤 Voice message";
   if (m.hasMedia) return "Media";
   return "Message";
 }
@@ -412,6 +413,16 @@ export default function TelegramChatView({
                       onError={(e) => {
                         (e.target as HTMLImageElement).style.display = "none";
                       }}
+                    />
+                  </div>
+                )}
+                {m.hasMedia && m.mediaKind === "voice" && (
+                  <div className="px-2.5 pt-2.5 pb-1">
+                    <audio
+                      controls
+                      preload="metadata"
+                      src={mediaSrc(m.id)}
+                      className="w-64 max-w-full h-10"
                     />
                   </div>
                 )}

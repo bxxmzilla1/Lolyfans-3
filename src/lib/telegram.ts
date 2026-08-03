@@ -74,8 +74,9 @@ export type TgMessage = {
   out: boolean;
   date: number;
   hasMedia: boolean;
-  /** "gif" = animated (GIFs + video stickers, autoplay loop); "sticker" = static sticker. */
-  mediaKind: "image" | "video" | "gif" | "sticker" | "other" | null;
+  /** "gif" = animated (GIFs + video stickers, autoplay loop); "sticker" = static sticker;
+   *  "voice" = voice note / audio file (inline player). */
+  mediaKind: "image" | "video" | "gif" | "sticker" | "voice" | "other" | null;
   /** Outgoing only: single check = sent, double = read. */
   receipt: TgReceipt | null;
   /** Message id this one replies to (renders the quoted bubble). */
@@ -498,6 +499,10 @@ function mediaKindOf(media: unknown): TgMessage["mediaKind"] {
     }
     // Telegram "GIFs" are mp4 documents flagged animated.
     if (attrs.some((a) => a.includes("Animated"))) return "gif";
+    // Voice notes (ogg/opus) and music files both carry an Audio attribute.
+    if (mime.startsWith("audio/") || attrs.some((a) => a.includes("Audio"))) {
+      return "voice";
+    }
     // A real .gif file animates fine in an <img>, so treat it as an image.
     if (mime === "image/gif") return "image";
     if (mime.startsWith("video/") || attrs.some((a) => a.includes("Video"))) {
@@ -616,10 +621,12 @@ export async function tgDownloadMessageMedia(opts: {
     if (!msg?.media) return null;
     const kind = mediaKindOf(msg.media);
     const docMime = docMimeOf(msg.media);
-    // GIFs and stickers need the real file so they animate / stay crisp.
-    // Animated .tgs stickers can't render in a browser, so fall back to thumb.
+    // GIFs, stickers and voice notes need the real file (a thumb is useless
+    // for audio). Animated .tgs stickers can't render in a browser, so fall
+    // back to thumb.
     const wantFull =
       kind === "gif" ||
+      kind === "voice" ||
       (kind === "sticker" && docMime !== "application/x-tgsticker");
     const raw = await client.downloadMedia(msg, wantFull ? {} : { thumb: 1 });
     if (!raw) return null;
@@ -638,7 +645,9 @@ export async function tgDownloadMessageMedia(opts: {
           ? wantFull
             ? docMime || "image/webp"
             : sniffImageMime(data)
-          : kind === "video"
+          : kind === "voice"
+            ? docMime || "audio/ogg"
+            : kind === "video"
             ? "video/mp4"
             : kind === "image"
               ? "image/jpeg"

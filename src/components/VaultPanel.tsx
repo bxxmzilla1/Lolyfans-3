@@ -13,7 +13,8 @@ export default function VaultPanel() {
         </div>
         <h2 className="font-bold text-lg">Vault</h2>
       </div>
-      <div className="flex-1 overflow-y-auto p-4">
+      {/* VaultManager scrolls internally so its album header stays fixed. */}
+      <div className="flex-1 min-h-0">
         <VaultManager />
       </div>
     </div>

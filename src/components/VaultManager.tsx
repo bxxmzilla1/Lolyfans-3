@@ -570,7 +570,7 @@ export default function VaultManager() {
   // ---------- Album list view ----------
   if (!openAlbum) {
     return (
-      <div className="space-y-4">
+      <div className="h-full overflow-y-auto p-4 pb-24 lg:pb-6 space-y-4">
         <div className="flex gap-2">
           <button
             onClick={() => fileRef.current?.click()}
@@ -707,10 +707,10 @@ export default function VaultManager() {
     typeFilter === "all" ? items : items.filter((i) => i.media_type === typeFilter);
 
   return (
-    <div className="space-y-4">
-      {/* Pinned controls: back/title/select, upload and filters stay put
-          while the media grid scrolls underneath — faster navigation. */}
-      <div className="sticky top-0 z-20 -mx-4 -mt-4 px-4 pt-4 pb-3 bg-card/80 backdrop-blur-xl border-b border-line space-y-3">
+    <div className="flex flex-col h-full min-h-0">
+      {/* Fixed controls: back/title/select, upload and filters never scroll —
+          only the media grid below does. */}
+      <div className="shrink-0 px-4 pt-4 pb-3 border-b border-line space-y-3">
       <div className="flex items-center gap-2.5">
         <button
           onClick={() => setOpenAlbum(null)}
@@ -876,6 +876,7 @@ export default function VaultManager() {
       )}
       </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto p-4 pb-24 lg:pb-6 space-y-4">
       {items.length === 0 ? (
         <div className="py-10 text-center flex flex-col items-center gap-3">
           <div className="w-14 h-14 rounded-2xl ig-gradient glow-accent flex items-center justify-center">
@@ -1255,6 +1256,7 @@ export default function VaultManager() {
           onClose={() => setTgSend(null)}
         />
       )}
+      </div>
     </div>
   );
 }
