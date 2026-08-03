@@ -178,13 +178,39 @@ export default function SocialProofManager() {
     }
     setPinError("");
     setPinVaultOpen(false);
+
+    // Saved Messages vault items live on Telegram — copy the file into
+    // storage first, since profile visitors load the video directly.
+    let path = item.media_path;
+    if (path.startsWith("tg:")) {
+      setPinUploading(true);
+      try {
+        const res = await fetch("/api/vault/materialize", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mediaPath: path }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.path) {
+          setPinError(data.error || "Could not copy the video from Telegram");
+          return;
+        }
+        path = String(data.path);
+      } catch {
+        setPinError("Could not copy the video from Telegram");
+        return;
+      } finally {
+        setPinUploading(false);
+      }
+    }
+
     await supabaseBrowser().auth.updateUser({
       data: {
-        pin_blurdrainer_path: item.media_path,
+        pin_blurdrainer_path: path,
         pin_blurdrainer_region: DEFAULT_REGION,
       },
     });
-    setPinPath(item.media_path);
+    setPinPath(path);
     setPinRegion(DEFAULT_REGION);
   }
 
