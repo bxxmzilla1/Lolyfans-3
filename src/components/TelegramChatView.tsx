@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import SendToTelegram from "./SendToTelegram";
 import TelegramReceipt from "./TelegramReceipt";
+import VoiceNotePlayer from "./VoiceNotePlayer";
 import { uploadWithProgress } from "@/lib/uploadWithProgress";
 import {
   IconArchive,
@@ -43,18 +44,6 @@ function messageSnippet(m: TgMessage | undefined | null): string {
   if (m.hasMedia) return "Media";
   return "Message";
 }
-
-/** Eleven v3 audio tags — quick-insert chips for expressive voice notes. */
-const VOICE_TAGS = [
-  "[giggles]",
-  "[laughs]",
-  "[whispers]",
-  "[sighs]",
-  "[excited]",
-  "[curious]",
-  "[casual]",
-  "[sarcastic]",
-];
 
 /** Base64 for the generated audio (chunked — big notes overflow the stack). */
 function b64FromBuffer(buf: ArrayBuffer): string {
@@ -517,13 +506,8 @@ export default function TelegramChatView({
                   </div>
                 )}
                 {m.hasMedia && m.mediaKind === "voice" && (
-                  <div className="px-2.5 pt-2.5 pb-1">
-                    <audio
-                      controls
-                      preload="metadata"
-                      src={mediaSrc(m.id)}
-                      className="w-64 max-w-full h-10"
-                    />
+                  <div className="px-3 pt-2.5 pb-1 w-64 max-w-full">
+                    <VoiceNotePlayer src={mediaSrc(m.id)} onAccent={m.out} />
                   </div>
                 )}
                 {m.hasMedia && m.mediaKind === "gif" && (
@@ -638,60 +622,20 @@ export default function TelegramChatView({
         </div>
       )}
 
-      {/* Voice note preview: listen, then regenerate / send / cancel. */}
+      {/* Voice note preview — takes the emoji bar's slot while active. The
+          composer buttons drive it: mic regenerates, send sends, × cancels. */}
       {voiceNote && (
-        <div className="border-t border-line px-3 py-2.5 bg-card/60 shrink-0 space-y-2">
-          <div className="flex items-center gap-2">
-            <IconMic className="w-4 h-4 text-accent shrink-0" />
-            <p className="text-[11px] font-semibold text-accent flex-1">
-              Voice note preview — edit the text and regenerate, or send it
-            </p>
-          </div>
-          <audio controls src={voiceNote.url} className="w-full h-10" />
-          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
-            {VOICE_TAGS.map((tag) => (
-              <button
-                key={tag}
-                type="button"
-                onClick={() => insertEmoji(` ${tag} `)}
-                title={`Insert ${tag} into the text`}
-                className="shrink-0 px-2 py-1 rounded-full bg-card2 border border-line text-[10px] font-semibold text-muted hover:text-accent hover:border-accent transition-colors"
-              >
-                {tag}
-              </button>
-            ))}
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => void generateVoice()}
-              disabled={voiceBusy !== null || !text.trim()}
-              className="flex-1 bg-card2 border border-line rounded-xl py-2 text-xs font-semibold hover:bg-line transition-colors disabled:opacity-50"
-            >
-              {voiceBusy === "generating" ? "Generating…" : "↻ Regenerate"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void sendVoice()}
-              disabled={voiceBusy !== null}
-              className="flex-1 bg-accent text-white rounded-xl py-2 text-xs font-semibold disabled:opacity-50 active:opacity-80 transition-opacity"
-            >
-              {voiceBusy === "sending" ? "Sending…" : "Send voice note"}
-            </button>
-            <button
-              type="button"
-              onClick={cancelVoice}
-              disabled={voiceBusy === "sending"}
-              className="px-3 bg-card2 border border-line rounded-xl py-2 text-xs font-semibold text-muted hover:text-fg transition-colors disabled:opacity-50"
-            >
-              Cancel
-            </button>
-          </div>
+        <div
+          className={`${replyTo ? "" : "border-t border-line "}px-3 py-2 flex items-center gap-2.5 shrink-0 bg-accent/10`}
+        >
+          <IconMic className="w-4 h-4 text-accent shrink-0" />
+          <VoiceNotePlayer src={voiceNote.url} />
         </div>
       )}
 
       {/* Emoji quick-bar: tap to insert; pencil toggles edit mode where taps
           remove and the small input adds new ones. */}
+      {!voiceNote && (
       <div
         className={`${replyTo ? "" : "border-t border-line "}px-2 py-1.5 flex items-center gap-1 overflow-x-auto shrink-0 bg-card/40`}
       >
@@ -761,6 +705,7 @@ export default function TelegramChatView({
           )}
         </button>
       </div>
+      )}
 
       <div className="border-t border-line p-3 flex items-end gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
         <textarea
@@ -786,12 +731,28 @@ export default function TelegramChatView({
           }
           className="flex-1 bg-card2 border border-line rounded-2xl px-4 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none resize-none max-h-28"
         />
+        {voiceNote && (
+          <button
+            type="button"
+            onClick={cancelVoice}
+            disabled={voiceBusy === "sending"}
+            aria-label="Cancel voice note"
+            title="Cancel and go back to text"
+            className="w-11 h-11 rounded-full bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center disabled:opacity-40 text-xl leading-none"
+          >
+            ×
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void generateVoice()}
           disabled={voiceBusy !== null || !text.trim()}
-          aria-label="Turn text into a voice note"
-          title="Turn your text into an ElevenLabs voice note — add expressions like [giggles], [whispers]"
+          aria-label={voiceNote ? "Regenerate voice note" : "Turn text into a voice note"}
+          title={
+            voiceNote
+              ? "Regenerate the voice note from your text"
+              : "Turn your text into an ElevenLabs voice note — add expressions like [giggles], [whispers]"
+          }
           className={`w-11 h-11 rounded-full flex items-center justify-center border transition-colors disabled:opacity-40 ${
             voiceNote || voiceBusy === "generating"
               ? "bg-accent border-accent text-white"
@@ -802,10 +763,15 @@ export default function TelegramChatView({
         </button>
         <button
           type="button"
-          onClick={() => void send()}
-          disabled={sending || !text.trim() || voiceNote !== null}
-          aria-label="Send"
-          className="w-11 h-11 rounded-full bg-accent text-white flex items-center justify-center disabled:opacity-40"
+          onClick={() => (voiceNote ? void sendVoice() : void send())}
+          disabled={
+            voiceNote ? voiceBusy !== null : sending || !text.trim()
+          }
+          aria-label={voiceNote ? "Send voice note" : "Send"}
+          title={voiceNote ? "Send voice note" : undefined}
+          className={`w-11 h-11 rounded-full bg-accent text-white flex items-center justify-center disabled:opacity-40 ${
+            voiceBusy === "sending" ? "animate-pulse" : ""
+          }`}
         >
           <IconSend className="w-4.5 h-4.5" />
         </button>
