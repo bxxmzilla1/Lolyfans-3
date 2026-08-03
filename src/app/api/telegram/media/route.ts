@@ -6,13 +6,8 @@ import {
   tgSessionFor,
 } from "@/lib/telegram";
 
-// Full-file downloads (vault viewer for Saved Messages videos) can be big.
-export const maxDuration = 300;
-
 /**
- * Proxy a Telegram message's media (thumbnail/file) for the creator inbox
- * and the Saved Messages vault (peer=me). `full=1` fetches the real file
- * instead of a thumbnail — used by the vault viewer and downloads.
+ * Proxy a Telegram message's media (thumbnail/file) for the creator inbox.
  * Auth required — never expose arbitrary Telegram downloads publicly.
  */
 export async function GET(req: NextRequest) {
@@ -21,7 +16,6 @@ export async function GET(req: NextRequest) {
 
   const peer = req.nextUrl.searchParams.get("peer")?.trim();
   const id = Number(req.nextUrl.searchParams.get("id"));
-  const full = req.nextUrl.searchParams.get("full") === "1";
   if (!peer || !Number.isFinite(id) || id <= 0) {
     return NextResponse.json({ error: "peer and id required" }, { status: 400 });
   }
@@ -40,7 +34,6 @@ export async function GET(req: NextRequest) {
       session,
       peer,
       messageId: id,
-      full,
     });
     if (!file) {
       return NextResponse.json({ error: "No media" }, { status: 404 });

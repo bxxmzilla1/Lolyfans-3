@@ -1,30 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
-import { tgSessionFor } from "@/lib/telegram";
 
 export async function GET() {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = supabaseAdmin();
-  // Telegram-connected creators see the Saved Messages vault only.
-  const tgVault = !!(await tgSessionFor(ownerId).catch(() => null));
-  let countQuery = db
-    .from("vault_items")
-    .select("id", { count: "exact", head: true })
-    .eq("owner_id", ownerId);
-  if (tgVault) countQuery = countQuery.like("media_path", "tg:%");
   const [{ data, error }, { count }] = await Promise.all([
     db
       .from("vault_albums")
       .select("*, vault_item_albums(count)")
       .eq("owner_id", ownerId)
       .order("created_at", { ascending: false }),
-    countQuery,
+    db
+      .from("vault_items")
+      .select("id", { count: "exact", head: true })
+      .eq("owner_id", ownerId),
   ]);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
-  return NextResponse.json({ albums: data, total: count ?? 0, tgVault });
+  return NextResponse.json({ albums: data, total: count ?? 0 });
 }
 
 export async function POST(req: NextRequest) {

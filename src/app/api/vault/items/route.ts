@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
-import { tgSessionFor, tgDeleteSavedMessages } from "@/lib/telegram";
+import { tgSessionFor } from "@/lib/telegram";
 import { ensureMediaCached } from "@/lib/telegramMediaCache";
 
 // New vault items pre-upload to Telegram in the background (big videos can
@@ -15,10 +15,6 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   const albumId = req.nextUrl.searchParams.get("albumId");
 
-  // Telegram-connected creators see the Saved Messages vault only — the
-  // vault is a mirror of that chat (media_path "tg:<messageId>").
-  const tgVault = !!(await tgSessionFor(ownerId).catch(() => null));
-
   // Filtering by album: resolve member item ids first so each returned item
   // still carries its complete album membership list.
   let itemIds: string[] | null = null;
@@ -28,7 +24,7 @@ export async function GET(req: NextRequest) {
       .select("item_id")
       .eq("album_id", albumId);
     itemIds = (links ?? []).map((l) => l.item_id);
-    if (itemIds.length === 0) return NextResponse.json({ items: [], tgVault });
+    if (itemIds.length === 0) return NextResponse.json({ items: [] });
   }
 
   let query = db
@@ -37,7 +33,6 @@ export async function GET(req: NextRequest) {
     .eq("owner_id", ownerId)
     .order("created_at", { ascending: false });
   if (itemIds) query = query.in("id", itemIds);
-  if (tgVault) query = query.like("media_path", "tg:%");
 
   const { data, error } = await query;
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -46,7 +41,7 @@ export async function GET(req: NextRequest) {
     ...item,
     albums: ((vault_item_albums ?? []) as { album_id: string }[]).map((a) => a.album_id),
   }));
-  return NextResponse.json({ items, tgVault });
+  return NextResponse.json({ items });
 }
 
 export async function POST(req: NextRequest) {
@@ -159,15 +154,7 @@ export async function DELETE(req: NextRequest) {
     .eq("owner_id", ownerId);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
-  const allPaths = (items ?? [])
-    .map((i) => String(i.media_path || ""))
-    .filter(Boolean);
-  const paths = allPaths.filter((p) => !p.startsWith("tg:"));
-  const tgMessageIds = allPaths
-    .filter((p) => p.startsWith("tg:"))
-    .map((p) => Math.floor(Number(p.slice(3))))
-    .filter((n) => Number.isFinite(n) && n > 0);
-
+  const paths = (items ?? []).map((i) => i.media_path).filter(Boolean);
   if (paths.length > 0) {
     await db.storage.from("media").remove(paths);
     // Drop the Telegram cache rows and their pre-rendered teaser clips too.
@@ -189,27 +176,6 @@ export async function DELETE(req: NextRequest) {
         .in("media_path", paths);
     } catch {
       // ignore
-    }
-  }
-
-  // Telegram vault items: the Saved Messages chat is the source of truth,
-  // so deleting from the vault deletes the message there too (otherwise
-  // the next sync would just bring it back). Thumbnails go with it.
-  if (tgMessageIds.length > 0) {
-    try {
-      const session = await tgSessionFor(ownerId);
-      if (session) {
-        await tgDeleteSavedMessages({ session, messageIds: tgMessageIds });
-      }
-    } catch {
-      // Telegram unreachable — the item may reappear on the next sync.
-    }
-    try {
-      await db.storage
-        .from("media")
-        .remove(tgMessageIds.map((id) => `tg-thumbs/${ownerId}/${id}.jpg`));
-    } catch {
-      // cosmetic
     }
   }
   return NextResponse.json({ ok: true });

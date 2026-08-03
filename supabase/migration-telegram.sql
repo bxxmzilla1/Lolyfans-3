@@ -64,11 +64,6 @@ create table if not exists telegram_media_cache (
   unique (owner_id, media_path)
 );
 
--- Telegram-native vault: vault items can mirror the creator's Saved
--- Messages (media_path "tg:<messageId>"). Video length comes from Telegram
--- so the grid can show durations without loading the file. Safe to re-run.
-alter table vault_items add column if not exists duration_seconds int;
-
 -- Server-only tables (accessed with the service key); RLS keeps the anon key out.
 alter table telegram_accounts enable row level security;
 alter table telegram_unlocks enable row level security;

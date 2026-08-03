@@ -33,11 +33,6 @@ type AnyClient = {
     message: unknown,
     opts?: Record<string, unknown>
   ) => Promise<Buffer | string | null>;
-  deleteMessages: (
-    peer: unknown,
-    messageIds: number[],
-    opts?: Record<string, unknown>
-  ) => Promise<unknown>;
   getInputEntity: (peer: unknown) => Promise<unknown>;
   downloadProfilePhoto: (
     entity: unknown,
@@ -245,9 +240,6 @@ export async function tgSessionFor(ownerId: string): Promise<string | null> {
 async function resolvePeer(peer: string): Promise<unknown> {
   const p = peer.trim();
   if (!p) throw new Error("Missing Telegram peer");
-
-  // The creator's own Saved Messages chat — GramJS accepts it natively.
-  if (p === "me") return "me";
 
   if (p.startsWith("user:")) {
     const [, id, accessHash] = p.split(":");
@@ -605,8 +597,6 @@ export async function tgDownloadMessageMedia(opts: {
   session: string;
   peer: string;
   messageId: number;
-  /** Download the real file instead of a thumbnail (vault viewer). */
-  full?: boolean;
 }): Promise<{ data: Buffer; mime: string } | null> {
   const client = await connect(opts.session);
   try {
@@ -621,7 +611,6 @@ export async function tgDownloadMessageMedia(opts: {
     // GIFs and stickers need the real file so they animate / stay crisp.
     // Animated .tgs stickers can't render in a browser, so fall back to thumb.
     const wantFull =
-      opts.full ||
       kind === "gif" ||
       (kind === "sticker" && docMime !== "application/x-tgsticker");
     const raw = await client.downloadMedia(msg, wantFull ? {} : { thumb: 1 });
@@ -647,131 +636,6 @@ export async function tgDownloadMessageMedia(opts: {
               ? "image/jpeg"
               : "application/octet-stream";
     return { data, mime };
-  } finally {
-    await client.disconnect().catch(() => {});
-  }
-}
-
-/** Normalize GramJS downloadMedia output (Buffer | file path | undefined). */
-async function asBuffer(raw: unknown): Promise<Buffer | null> {
-  if (Buffer.isBuffer(raw)) return raw.length ? raw : null;
-  if (typeof raw === "string") {
-    try {
-      const data = await (await import("fs/promises")).readFile(raw);
-      return data.length ? data : null;
-    } catch {
-      return null;
-    }
-  }
-  return null;
-}
-
-export type TgSavedMedia = {
-  messageId: number;
-  kind: "image" | "video";
-  date: number;
-  /** Video length in seconds, when Telegram knows it. */
-  duration: number | null;
-};
-
-/** Is this one of our own service uploads (old vault-copy caches)? */
-function isServiceCopy(caption: string): boolean {
-  return caption.startsWith("🔒") || caption.includes("keep this so");
-}
-
-function videoDurationOf(media: unknown): number | null {
-  const doc = (
-    media as {
-      document?: { attributes?: Array<{ className?: string; duration?: unknown }> };
-    }
-  ).document;
-  for (const attr of doc?.attributes ?? []) {
-    if (String(attr.className || "").includes("Video")) {
-      const d = Number((attr as { duration?: unknown }).duration);
-      if (Number.isFinite(d) && d > 0) return Math.round(d);
-    }
-  }
-  return null;
-}
-
-/**
- * Photos and videos in the creator's Saved Messages — the Telegram-native
- * vault. Upload there from any Telegram app (fast, resumable, no size
- * limits we'd hit server-side) and the vault mirrors it. Our own service
- * copies (old cache uploads) are skipped.
- */
-export async function tgListSavedMedia(opts: {
-  session: string;
-  limit?: number;
-}): Promise<TgSavedMedia[]> {
-  const client = await connect(opts.session);
-  try {
-    const messages = (await client.getMessages("me", {
-      limit: opts.limit ?? 500,
-    })) as Array<{
-      id?: number;
-      message?: string;
-      date?: number;
-      media?: unknown;
-    } | null>;
-    const out: TgSavedMedia[] = [];
-    for (const m of messages) {
-      if (!m || typeof m.id !== "number" || !m.media) continue;
-      const kind = mediaKindOf(m.media);
-      if (kind !== "image" && kind !== "video") continue;
-      if (isServiceCopy(typeof m.message === "string" ? m.message : "")) continue;
-      out.push({
-        messageId: m.id,
-        kind,
-        date: typeof m.date === "number" ? m.date : 0,
-        duration: kind === "video" ? videoDurationOf(m.media) : null,
-      });
-    }
-    return out;
-  } finally {
-    await client.disconnect().catch(() => {});
-  }
-}
-
-/** Grid thumbnails for Saved Messages media — one connection for all ids. */
-export async function tgSavedMediaThumbs(opts: {
-  session: string;
-  messageIds: number[];
-}): Promise<Map<number, Buffer>> {
-  const thumbs = new Map<number, Buffer>();
-  if (!opts.messageIds.length) return thumbs;
-  const client = await connect(opts.session);
-  try {
-    const messages = (await client.getMessages("me", {
-      ids: opts.messageIds,
-    })) as Array<{ id?: number; media?: unknown } | null>;
-    for (const msg of messages) {
-      if (!msg?.media || typeof msg.id !== "number") continue;
-      try {
-        const raw = await client
-          .downloadMedia(msg as never, { thumb: 1 })
-          .catch(() => client.downloadMedia(msg as never, { thumb: 0 }));
-        const data = await asBuffer(raw);
-        if (data) thumbs.set(msg.id, data);
-      } catch {
-        // no thumbnail for this one — the thumb route self-heals later
-      }
-    }
-    return thumbs;
-  } finally {
-    await client.disconnect().catch(() => {});
-  }
-}
-
-/** Delete messages from Saved Messages (vault delete for Telegram items). */
-export async function tgDeleteSavedMessages(opts: {
-  session: string;
-  messageIds: number[];
-}): Promise<void> {
-  if (!opts.messageIds.length) return;
-  const client = await connect(opts.session);
-  try {
-    await client.deleteMessages("me", opts.messageIds, { revoke: true });
   } finally {
     await client.disconnect().catch(() => {});
   }
@@ -1176,9 +1040,6 @@ export async function tgSendTeaser(opts: {
   /** Pre-rendered badge-less blurred clip (videos) — skips the slow
    *  download + full-video ffmpeg pass; only the badge overlay runs now. */
   preClip?: Buffer | null;
-  /** Saved Messages source (tg: vault items) — the teaser blurs the photo
-   *  or the video's own thumbnail; no storage file involved. */
-  tgMessageId?: number | null;
 }): Promise<number | null> {
   const client = await connect(opts.session);
   const sentId = (res: unknown): number | null => {
@@ -1193,52 +1054,6 @@ export async function tgSendTeaser(opts: {
       parseMode: "html" as const,
       forceDocument: false,
     };
-
-    // Saved Messages source: blur the photo itself, or the video's own
-    // thumbnail — never the full video, so a 2-hour file teases as fast
-    // as a snapshot. No storage fallback exists for these, so failure
-    // drops straight to the text bubble.
-    if (opts.tgMessageId) {
-      try {
-        const saved = (await client.getMessages("me", {
-          ids: [opts.tgMessageId],
-        })) as Array<{ media?: unknown } | null>;
-        const source = saved?.[0];
-        if (source?.media) {
-          const raw =
-            opts.mediaType === "image"
-              ? await client.downloadMedia(source as never, {})
-              : await client
-                  .downloadMedia(source as never, { thumb: 1 })
-                  .catch(() => client.downloadMedia(source as never, { thumb: 0 }));
-          const buf = await asBuffer(raw);
-          if (buf) {
-            const sharp = (await import("sharp")).default;
-            let still: Buffer = await sharp(buf)
-              .resize(600, 600, { fit: "inside", withoutEnlargement: true })
-              .blur(40)
-              .jpeg({ quality: 60 })
-              .toBuffer();
-            if (opts.priceCents > 0) {
-              still = await compositeLockBadge(still, opts.priceCents);
-            }
-            const sent = await client.sendFile(peer, {
-              file: new CustomFile("teaser.jpg", still.length, "", still),
-              ...sendOpts,
-            });
-            return sentId(sent);
-          }
-        }
-      } catch {
-        // fall through to the text bubble
-      }
-      const sent = await client.sendMessage(peer, {
-        message: opts.caption,
-        parseMode: "html",
-      });
-      return sentId(sent);
-    }
-
     if (opts.mediaType === "image") {
       // Named .jpg so Telegram renders a photo bubble (raw buffers often
       // become unnamed documents / text-only failures in some clients).

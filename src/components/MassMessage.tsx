@@ -38,7 +38,6 @@ export default function MassMessage({
   const [file, setFile] = useState<File | null>(null);
   const [vaultPick, setVaultPick] = useState<VaultPick | null>(null);
   const [vaultOpen, setVaultOpen] = useState(false);
-  const [materializing, setMaterializing] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   // BlurDrainer config attached to a video send (paid per-tap or free + card verify).
@@ -86,39 +85,6 @@ export default function MassMessage({
     if (!fileKind(f)) return;
     setFile(f);
     setVaultPick(null); // a device upload and a vault pick are mutually exclusive
-  }
-
-  /**
-   * Attach a vault item. Saved Messages items ("tg:<id>") are first copied
-   * into storage — mass-message recipients load media straight from the
-   * bucket and can't reach the creator's Telegram.
-   */
-  async function pickVaultItem(item: VaultItem) {
-    setVaultOpen(false);
-    setFile(null);
-    if (!item.media_path.startsWith("tg:")) {
-      setVaultPick({ path: item.media_path, type: item.media_type });
-      return;
-    }
-    setMaterializing(true);
-    setError("");
-    try {
-      const res = await fetch("/api/vault/materialize", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mediaPath: item.media_path }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok || !data.path) {
-        setError(data.error || "Could not copy this file from Telegram");
-        return;
-      }
-      setVaultPick({ path: String(data.path), type: item.media_type });
-    } catch {
-      setError("Could not copy this file from Telegram");
-    } finally {
-      setMaterializing(false);
-    }
   }
 
   async function send() {
@@ -398,14 +364,9 @@ export default function MassMessage({
                 </button>
                 <button
                   onClick={() => setVaultOpen(true)}
-                  disabled={materializing}
-                  className="text-sm font-semibold text-accent hover:opacity-80 disabled:opacity-50"
+                  className="text-sm font-semibold text-accent hover:opacity-80"
                 >
-                  {materializing
-                    ? "Copying from Telegram…"
-                    : vaultPick
-                      ? "Change vault pick"
-                      : "+ Choose from vault"}
+                  {vaultPick ? "Change vault pick" : "+ Choose from vault"}
                 </button>
               </div>
               {mediaPreview?.type === "video" && (
@@ -468,7 +429,11 @@ export default function MassMessage({
 
         {vaultOpen && (
           <VaultPicker
-            onPick={(item) => void pickVaultItem(item)}
+            onPick={(item) => {
+              setVaultPick({ path: item.media_path, type: item.media_type });
+              setFile(null);
+              setVaultOpen(false);
+            }}
             onClose={() => setVaultOpen(false)}
           />
         )}
@@ -597,20 +562,6 @@ export function VaultPicker({
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                     loading="lazy"
                   />
-                ) : item.media_path.startsWith("tg:") ? (
-                  // Saved Messages video — Telegram's thumbnail, no file load.
-                  <>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={thumbUrl(item.media_path, 320)}
-                      alt=""
-                      className="w-full h-full object-cover"
-                      loading="lazy"
-                    />
-                    <span className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center">
-                      <IconPlay className="w-3.5 h-3.5 text-white translate-x-px" />
-                    </span>
-                  </>
                 ) : (
                   <>
                     <video
