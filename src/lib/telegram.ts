@@ -1441,7 +1441,8 @@ export async function tgDeliverMedia(opts: {
   try {
     const { CustomFile } = await gramjs();
     const peer = await resolvePeer(opts.peer);
-    const caption = opts.caption ?? "✅ Unlocked — enjoy!";
+    // No default caption — unlocked PPVs arrive as bare media.
+    const caption = opts.caption ?? "";
 
     // Instant path: re-send the pre-uploaded Saved Messages copy. Fetching
     // it right before sending refreshes the file reference, so this stays
