@@ -71,18 +71,28 @@ export async function POST(req: NextRequest) {
     peer = `@${peer}`;
   }
 
-  // Pre-uploaded Telegram copies for this vault file (Saved Messages clear
-  // copy + pre-rendered teaser clip) — the fast paths for everything below.
-  const cache = await getMediaCache(ownerId, mediaPath).catch(() => null);
-  // Whatever wasn't cached yet gets cached after the response, so the next
-  // send of this file is instant.
-  after(async () => {
-    try {
-      await ensureMediaCached({ ownerId, session, mediaPath, mediaType });
-    } catch {
-      // best-effort — slow paths still work
-    }
-  });
+  // Saved Messages vault item ("tg:<messageId>") — the media already lives
+  // on Telegram, so it IS its own instant-delivery copy. Nothing to cache.
+  const tgSourceId = mediaPath.startsWith("tg:")
+    ? Math.floor(Number(mediaPath.slice(3))) || null
+    : null;
+
+  // Storage files: pre-uploaded Telegram copies (Saved Messages clear copy
+  // + pre-rendered teaser clip) are the fast paths; whatever wasn't cached
+  // yet gets cached after the response so the next send is instant.
+  const cache = tgSourceId
+    ? null
+    : await getMediaCache(ownerId, mediaPath).catch(() => null);
+  if (!tgSourceId) {
+    after(async () => {
+      try {
+        await ensureMediaCached({ ownerId, session, mediaPath, mediaType });
+      } catch {
+        // best-effort — slow paths still work
+      }
+    });
+  }
+  const instantCopyId = tgSourceId ?? cache?.tgMessageId ?? null;
 
   // No price → send the clear media directly, free of charge.
   if (priceCents <= 0) {
@@ -93,7 +103,7 @@ export async function POST(req: NextRequest) {
         mediaPath,
         mediaType,
         caption,
-        cachedMessageId: cache?.tgMessageId ?? null,
+        cachedMessageId: instantCopyId,
       });
       // Record the free send so the vault can flag this media as
       // "sent free" (status highlights). Best-effort — the media is
@@ -188,6 +198,7 @@ export async function POST(req: NextRequest) {
       caption: teaserCaption,
       priceCents,
       preClip,
+      tgMessageId: tgSourceId,
     });
     // Remember the teaser message so a double-tap reaction on it can
     // auto-charge a fan with a saved card, and point the unlock at the
@@ -195,7 +206,7 @@ export async function POST(req: NextRequest) {
     // not exist until the migration runs).
     const updates: Record<string, unknown> = {};
     if (messageId) updates.tg_message_id = messageId;
-    if (cache?.tgMessageId) updates.tg_cached_message_id = cache.tgMessageId;
+    if (instantCopyId) updates.tg_cached_message_id = instantCopyId;
     if (Object.keys(updates).length) {
       await db.from("telegram_unlocks").update(updates).eq("id", unlock.id);
     }

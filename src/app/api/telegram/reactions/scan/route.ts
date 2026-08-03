@@ -5,7 +5,6 @@ import {
   chargeReactionUnlocks,
   retryUndeliveredUnlocks,
 } from "@/lib/telegramUnlock";
-import { cacheVaultBacklog } from "@/lib/telegramMediaCache";
 
 export const dynamic = "force-dynamic";
 // The background loop runs ~50s per cron tick; deliveries can add more.
@@ -85,40 +84,6 @@ async function scanLoop(): Promise<void> {
   }
 }
 
-// One backfill run per warm instance; overlapping crons skip it.
-let backfillRunning = false;
-
-/**
- * Pre-upload vault media to Telegram, a couple of items per creator per
- * cron tick. Big videos upload once here, in the background, so sends and
- * unlock deliveries never wait on an upload again. Small batches keep each
- * tick short and stay clear of Telegram's flood limits — a whole vault
- * fills in over successive ticks.
- */
-async function backfillMediaCache(): Promise<void> {
-  if (backfillRunning) return;
-  backfillRunning = true;
-  try {
-    const { data: accounts } = await supabaseAdmin()
-      .from("telegram_accounts")
-      .select("owner_id")
-      .eq("status", "connected")
-      .limit(20);
-    for (const account of accounts ?? []) {
-      const ownerId = String(account.owner_id);
-      try {
-        const session = await tgSessionFor(ownerId);
-        if (!session) continue;
-        await cacheVaultBacklog(ownerId, session, 2);
-      } catch {
-        // one creator failing shouldn't stop the rest
-      }
-    }
-  } finally {
-    backfillRunning = false;
-  }
-}
-
 /**
  * Background worker for reaction-to-pay: scans every creator's pending PPVs
  * for double-tap reactions, charges saved cards, and retries undelivered
@@ -153,6 +118,5 @@ export async function GET(req: NextRequest) {
 
   const alreadyLooping = loopRunning;
   if (!alreadyLooping) after(scanLoop);
-  if (!backfillRunning) after(backfillMediaCache);
   return NextResponse.json({ ok: true, looping: !alreadyLooping });
 }

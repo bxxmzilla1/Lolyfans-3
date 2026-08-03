@@ -64,9 +64,12 @@ export default function TelegramChatView({
   useEffect(() => {
     setMessages(null);
     void load();
+    // 6s keeps the PPV bubble state (green when bought) moving in step with
+    // the vault's 5s status poll, so a double-tap purchase shows up in both
+    // at effectively the same time.
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") void load();
-    }, 12000);
+    }, 6000);
     return () => clearInterval(timer);
   }, [load]);
 

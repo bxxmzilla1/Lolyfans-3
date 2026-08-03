@@ -41,9 +41,21 @@ type Item = {
   media_path: string;
   media_type: "image" | "video";
   created_at: string;
+  /** Video length reported by Telegram (Saved Messages items). */
+  duration_seconds?: number | null;
   // Album ids this item is shown in (it always appears in "All")
   albums: string[];
 };
+
+/** Saved Messages vault item ("tg:<messageId>")? */
+function isTgItem(path: string): boolean {
+  return path.startsWith("tg:");
+}
+
+/** Full-size media URL for a Saved Messages vault item. */
+function tgMediaSrc(path: string): string {
+  return `/api/telegram/media?peer=me&id=${encodeURIComponent(path.slice(3))}&full=1`;
+}
 
 type TypeFilter = "all" | "image" | "video";
 
@@ -63,9 +75,14 @@ const STATUS_BORDER: Record<SendStatus, string> = {
  * buffer big videos into a blob first.
  */
 function downloadMedia(item: Item) {
-  const name = item.media_path.split("/").pop() || `vault-${item.id}`;
+  const tg = isTgItem(item.media_path);
+  const name = tg
+    ? `vault-${item.id}.${item.media_type === "video" ? "mp4" : "jpg"}`
+    : item.media_path.split("/").pop() || `vault-${item.id}`;
   const a = document.createElement("a");
-  a.href = `${mediaUrl(item.media_path)}?download=${encodeURIComponent(name)}`;
+  a.href = tg
+    ? tgMediaSrc(item.media_path)
+    : `${mediaUrl(item.media_path)}?download=${encodeURIComponent(name)}`;
   a.download = name;
   a.rel = "noopener";
   document.body.appendChild(a);
@@ -109,6 +126,10 @@ export default function VaultManager() {
     run: () => void;
   } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Telegram-native vault: items mirror the creator's Saved Messages chat.
+  const [tgVault, setTgVault] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const syncInflightRef = useRef(false);
 
   // Outline each item by its send status: orange = sent free, red = locked &
   // never unlocked, green = locked & unlocked (bought). Next to an open chat
@@ -167,9 +188,10 @@ export default function VaultManager() {
   const loadAlbums = useCallback(async () => {
     const res = await fetch("/api/vault/albums");
     if (res.ok) {
-      const { albums, total } = await res.json();
+      const { albums, total, tgVault } = await res.json();
       setAlbums(albums);
       setTotal(total);
+      setTgVault(!!tgVault);
     }
   }, []);
 
@@ -187,6 +209,33 @@ export default function VaultManager() {
       });
     }
   }, [openAlbum]);
+
+  // Mirror Saved Messages into the vault: new media uploaded in Telegram
+  // appears, deleted messages disappear. Runs once on mount and on demand
+  // via the Refresh button.
+  const syncVault = useCallback(async () => {
+    if (syncInflightRef.current) return;
+    syncInflightRef.current = true;
+    setSyncing(true);
+    try {
+      const res = await fetch("/api/vault/sync", { method: "POST" }).catch(
+        () => null
+      );
+      const data = await res?.json().catch(() => null);
+      if (data?.telegram) setTgVault(true);
+    } finally {
+      syncInflightRef.current = false;
+      setSyncing(false);
+    }
+    await Promise.all([loadAlbums(), loadItems()]);
+  }, [loadAlbums, loadItems]);
+
+  const syncedOnceRef = useRef(false);
+  useEffect(() => {
+    if (syncedOnceRef.current) return;
+    syncedOnceRef.current = true;
+    void syncVault();
+  }, [syncVault]);
 
   useEffect(() => {
     loadAlbums();
@@ -429,17 +478,27 @@ export default function VaultManager() {
     return (
       <div className="space-y-4">
         <div className="flex gap-2">
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-            className="flex-1 bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
-          >
-            {uploading
-              ? uploadProgress
-                ? `Uploading… ${uploadProgress.percent}%`
-                : "Uploading…"
-              : "+ Upload media"}
-          </button>
+          {tgVault ? (
+            <button
+              onClick={() => void syncVault()}
+              disabled={syncing}
+              className="flex-1 bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
+            >
+              {syncing ? "Syncing Saved Messages…" : "↻ Refresh from Telegram"}
+            </button>
+          ) : (
+            <button
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="flex-1 bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
+            >
+              {uploading
+                ? uploadProgress
+                  ? `Uploading… ${uploadProgress.percent}%`
+                  : "Uploading…"
+                : "+ Upload media"}
+            </button>
+          )}
           <button
             onClick={() => setNewAlbumOpen(true)}
             className="px-4 bg-card2 border border-line rounded-xl font-semibold text-sm"
@@ -448,6 +507,13 @@ export default function VaultManager() {
           </button>
           {uploadInput}
         </div>
+        {tgVault && (
+          <p className="text-xs text-muted text-center">
+            Upload photos and videos in your Telegram{" "}
+            <b className="text-fg">Saved Messages</b> — they appear here after
+            a refresh.
+          </p>
+        )}
         {uploadError && (
           <p className="text-xs text-red-400 text-center">{uploadError}</p>
         )}
@@ -548,7 +614,9 @@ export default function VaultManager() {
             </div>
             <p className="font-semibold">Vault is empty</p>
             <p className="text-muted text-sm">
-              Upload photos and videos to keep them safe here.
+              {tgVault
+                ? "Save photos and videos in your Telegram Saved Messages and they show up here."
+                : "Upload photos and videos to keep them safe here."}
             </p>
           </div>
         )}
@@ -689,17 +757,27 @@ export default function VaultManager() {
         </div>
       )}
 
-      <button
-        onClick={() => fileRef.current?.click()}
-        disabled={uploading}
-        className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
-      >
-        {uploading
-          ? uploadProgress
-            ? `Uploading… ${uploadProgress.percent}%`
-            : "Uploading…"
-          : `+ Upload to ${albumName}`}
-      </button>
+      {tgVault ? (
+        <button
+          onClick={() => void syncVault()}
+          disabled={syncing}
+          className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
+        >
+          {syncing ? "Syncing Saved Messages…" : "↻ Refresh from Telegram"}
+        </button>
+      ) : (
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={uploading}
+          className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-50 active:opacity-80 transition-opacity"
+        >
+          {uploading
+            ? uploadProgress
+              ? `Uploading… ${uploadProgress.percent}%`
+              : "Uploading…"
+            : `+ Upload to ${albumName}`}
+        </button>
+      )}
       {uploadInput}
       {uploadError && (
         <p className="text-xs text-red-400 text-center">{uploadError}</p>
@@ -735,7 +813,11 @@ export default function VaultManager() {
             <IconLock className="w-6 h-6 text-white" />
           </div>
           <p className="font-semibold">Nothing here yet</p>
-          <p className="text-muted text-sm">Upload photos and videos to this album.</p>
+          <p className="text-muted text-sm">
+            {tgVault
+              ? "Save media in Telegram Saved Messages, refresh, then add it to this album."
+              : "Upload photos and videos to this album."}
+          </p>
         </div>
       ) : visibleItems.length === 0 ? (
         <p className="py-8 text-center text-muted text-sm">
@@ -795,6 +877,26 @@ export default function VaultManager() {
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                   loading="lazy"
                 />
+              ) : isTgItem(item.media_path) ? (
+                // Saved Messages video: Telegram's own thumbnail + the
+                // duration it reports — no video file loads in the grid.
+                <>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={thumbUrl(item.media_path, 320)}
+                    alt=""
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  <span className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center">
+                    <IconPlay className="w-3.5 h-3.5 text-white translate-x-px" />
+                  </span>
+                  {!!item.duration_seconds && (
+                    <span className="absolute bottom-1 right-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white tabular-nums">
+                      {formatDuration(item.duration_seconds)}
+                    </span>
+                  )}
+                </>
               ) : (
                 <>
                   <video
@@ -860,13 +962,21 @@ export default function VaultManager() {
             {viewer.media_type === "image" ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={mediaUrl(viewer.media_path)}
+                src={
+                  isTgItem(viewer.media_path)
+                    ? tgMediaSrc(viewer.media_path)
+                    : mediaUrl(viewer.media_path)
+                }
                 alt=""
                 className="max-w-full max-h-[70vh] rounded-xl object-contain"
               />
             ) : (
               <VideoPlayer
-                src={mediaUrl(viewer.media_path)}
+                src={
+                  isTgItem(viewer.media_path)
+                    ? tgMediaSrc(viewer.media_path)
+                    : mediaUrl(viewer.media_path)
+                }
                 className="rounded-xl"
                 videoClassName="max-h-[70vh]"
               />
