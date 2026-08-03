@@ -78,6 +78,8 @@ export type TgMessage = {
   mediaKind: "image" | "video" | "gif" | "sticker" | "other" | null;
   /** Outgoing only: single check = sent, double = read. */
   receipt: TgReceipt | null;
+  /** Message id this one replies to (renders the quoted bubble). */
+  replyToId: number | null;
 };
 
 function apiCreds(): { apiId: number; apiHash: string } {
@@ -553,6 +555,7 @@ export async function tgGetMessages(opts: {
           out?: boolean;
           date?: number;
           media?: unknown;
+          replyTo?: { replyToMsgId?: number } | null;
         }>
       >,
       fetchReadOutboxMaxId(client, peer),
@@ -575,6 +578,10 @@ export async function tgGetMessages(opts: {
         const text = typeof m.message === "string" ? m.message : "";
         const out = !!m.out;
         const id = m.id as number;
+        const replyToId =
+          typeof m.replyTo?.replyToMsgId === "number"
+            ? m.replyTo.replyToMsgId
+            : null;
         return {
           id,
           text,
@@ -583,6 +590,7 @@ export async function tgGetMessages(opts: {
           hasMedia: !!m.media,
           mediaKind: kind,
           receipt: out ? receiptForOutgoing(id, readOutboxMaxId) : null,
+          replyToId,
         };
       })
       // GramJS returns newest-first; UI wants oldest-first.
@@ -811,11 +819,16 @@ export async function tgSendText(opts: {
   session: string;
   peer: string;
   text: string;
+  /** Reply to this message id — Telegram shows the quoted bubble. */
+  replyToId?: number | null;
 }): Promise<void> {
   const client = await connect(opts.session);
   try {
     const peer = await resolvePeer(opts.peer);
-    await client.sendMessage(peer, { message: opts.text });
+    await client.sendMessage(peer, {
+      message: opts.text,
+      ...(opts.replyToId ? { replyTo: opts.replyToId } : {}),
+    });
   } finally {
     await client.disconnect().catch(() => {});
   }

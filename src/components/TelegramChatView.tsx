@@ -5,7 +5,16 @@ import { useRouter } from "next/navigation";
 import SendToTelegram from "./SendToTelegram";
 import TelegramReceipt from "./TelegramReceipt";
 import { uploadWithProgress } from "@/lib/uploadWithProgress";
-import { IconArchive, IconBack, IconPlay, IconSend } from "./Icons";
+import {
+  IconArchive,
+  IconBack,
+  IconCheck,
+  IconEdit,
+  IconPlay,
+  IconPlus,
+  IconReply,
+  IconSend,
+} from "./Icons";
 
 type TgMessage = {
   id: number;
@@ -17,7 +26,38 @@ type TgMessage = {
   receipt: "sent" | "read" | null;
   /** PPV teaser state: "paid" turns the bubble green. */
   ppv?: "paid" | "pending" | null;
+  /** Message id this one replies to (renders the quoted strip). */
+  replyToId?: number | null;
 };
+
+/** One-line description of a message for quote strips. */
+function messageSnippet(m: TgMessage | undefined | null): string {
+  if (!m) return "Message";
+  if (m.text) return m.text.length > 80 ? `${m.text.slice(0, 80)}…` : m.text;
+  if (m.mediaKind === "image") return "📷 Photo";
+  if (m.mediaKind === "video") return "🎬 Video";
+  if (m.mediaKind === "gif") return "GIF";
+  if (m.mediaKind === "sticker") return "Sticker";
+  if (m.hasMedia) return "Media";
+  return "Message";
+}
+
+const EMOJI_STORE_KEY = "tg-emoji-quickbar";
+const DEFAULT_EMOJIS = ["❤️", "😘", "😈", "🔥", "😍", "🥵", "💦", "🍑", "😏", "🙈"];
+
+function loadQuickEmojis(): string[] {
+  try {
+    const raw = localStorage.getItem(EMOJI_STORE_KEY);
+    if (!raw) return DEFAULT_EMOJIS;
+    const list = JSON.parse(raw);
+    if (Array.isArray(list) && list.every((e) => typeof e === "string")) {
+      return list.slice(0, 40);
+    }
+  } catch {
+    // corrupted storage — fall back to defaults
+  }
+  return DEFAULT_EMOJIS;
+}
 
 /**
  * Creator view of one Telegram dialog: replies, read receipts, and PPV by
@@ -42,7 +82,43 @@ export default function TelegramChatView({
     path: string;
     media_type: "image" | "video";
   } | null>(null);
+  const [replyTo, setReplyTo] = useState<TgMessage | null>(null);
+  // Emoji quick-bar: one tap inserts; edit mode removes / adds.
+  const [emojis, setEmojis] = useState<string[]>(DEFAULT_EMOJIS);
+  const [emojiEdit, setEmojiEdit] = useState(false);
+  const [newEmoji, setNewEmoji] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    setEmojis(loadQuickEmojis());
+  }, []);
+
+  function saveEmojis(next: string[]) {
+    setEmojis(next);
+    try {
+      localStorage.setItem(EMOJI_STORE_KEY, JSON.stringify(next));
+    } catch {
+      // storage full/blocked — the bar still works for this session
+    }
+  }
+
+  function insertEmoji(emoji: string) {
+    setText((prev) => `${prev}${emoji}`);
+    inputRef.current?.focus();
+  }
+
+  function addEmoji() {
+    const value = newEmoji.trim();
+    if (!value) return;
+    if (!emojis.includes(value)) saveEmojis([...emojis, value].slice(0, 40));
+    setNewEmoji("");
+  }
+
+  function startReply(m: TgMessage) {
+    setReplyTo(m);
+    inputRef.current?.focus();
+  }
 
   const load = useCallback(async () => {
     try {
@@ -63,6 +139,7 @@ export default function TelegramChatView({
 
   useEffect(() => {
     setMessages(null);
+    setReplyTo(null);
     void load();
     // 6s keeps the PPV bubble state (green when bought) moving in step with
     // the vault's 5s status poll, so a double-tap purchase shows up in both
@@ -82,15 +159,17 @@ export default function TelegramChatView({
     if (!body || sending) return;
     setSending(true);
     setError("");
+    const replyToId = replyTo?.id ?? null;
     try {
       const res = await fetch("/api/telegram/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ peer, text: body }),
+        body: JSON.stringify({ peer, text: body, replyToId }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         setText("");
+        setReplyTo(null);
         setMessages((prev) => [
           ...(prev ?? []),
           {
@@ -101,6 +180,7 @@ export default function TelegramChatView({
             hasMedia: false,
             mediaKind: null,
             receipt: "sent",
+            replyToId,
           },
         ]);
         // Refresh soon so real ids + receipts sync from Telegram.
@@ -270,8 +350,21 @@ export default function TelegramChatView({
           messages.map((m) => (
             <div
               key={m.id}
-              className={`flex ${m.out ? "justify-end" : "justify-start"}`}
+              className={`group flex items-center gap-1.5 ${
+                m.out ? "justify-end" : "justify-start"
+              }`}
             >
+              {m.out && (
+                <button
+                  type="button"
+                  onClick={() => startReply(m)}
+                  aria-label="Reply to this message"
+                  title="Reply"
+                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-muted/50 hover:text-accent hover:bg-card2 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                >
+                  <IconReply className="w-4 h-4" />
+                </button>
+              )}
               <div
                 className={`max-w-[80%] rounded-2xl overflow-hidden text-sm ${
                   m.out
@@ -281,6 +374,20 @@ export default function TelegramChatView({
                     : "bg-card2 border border-line rounded-bl-md"
                 }`}
               >
+                {m.replyToId ? (
+                  <div
+                    className={`mx-2 mt-2 px-2.5 py-1.5 rounded-lg border-l-2 text-xs truncate ${
+                      m.out
+                        ? "bg-white/15 border-white/60 text-white/85"
+                        : "bg-accent/10 border-accent text-muted"
+                    }`}
+                  >
+                    ↩{" "}
+                    {messageSnippet(
+                      messages.find((x) => x.id === m.replyToId)
+                    )}
+                  </div>
+                ) : null}
                 {m.hasMedia && m.mediaKind === "sticker" && (
                   <div className="p-2">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -364,6 +471,17 @@ export default function TelegramChatView({
                   </div>
                 )}
               </div>
+              {!m.out && (
+                <button
+                  type="button"
+                  onClick={() => startReply(m)}
+                  aria-label="Reply to this message"
+                  title="Reply"
+                  className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-muted/50 hover:text-accent hover:bg-card2 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                >
+                  <IconReply className="w-4 h-4" />
+                </button>
+              )}
             </div>
           ))
         )}
@@ -374,8 +492,103 @@ export default function TelegramChatView({
         <p className="px-4 pb-1 text-xs text-red-400 text-center">{error}</p>
       )}
 
+      {replyTo && (
+        <div className="border-t border-line px-3 py-2 flex items-center gap-2 bg-card/60 shrink-0">
+          <IconReply className="w-4 h-4 text-accent shrink-0" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-semibold text-accent">
+              Replying to {replyTo.out ? "yourself" : title}
+            </p>
+            <p className="text-xs text-muted truncate">
+              {messageSnippet(replyTo)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setReplyTo(null)}
+            aria-label="Cancel reply"
+            className="shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-muted hover:text-fg text-base leading-none"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
+      {/* Emoji quick-bar: tap to insert; pencil toggles edit mode where taps
+          remove and the small input adds new ones. */}
+      <div
+        className={`${replyTo ? "" : "border-t border-line "}px-2 py-1.5 flex items-center gap-1 overflow-x-auto shrink-0 bg-card/40`}
+      >
+        {emojis.map((emoji) => (
+          <button
+            key={emoji}
+            type="button"
+            onClick={() => (emojiEdit ? saveEmojis(emojis.filter((e) => e !== emoji)) : insertEmoji(emoji))}
+            title={emojiEdit ? "Remove from bar" : `Insert ${emoji}`}
+            className={`relative shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-colors ${
+              emojiEdit
+                ? "bg-red-500/10 hover:bg-red-500/25"
+                : "hover:bg-card2"
+            }`}
+          >
+            {emoji}
+            {emojiEdit && (
+              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                ×
+              </span>
+            )}
+          </button>
+        ))}
+        {emojiEdit && (
+          <div className="shrink-0 flex items-center gap-1 ml-1">
+            <input
+              value={newEmoji}
+              onChange={(e) => setNewEmoji(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  addEmoji();
+                }
+              }}
+              placeholder="😀"
+              className="w-14 bg-card2 border border-line rounded-lg px-2 py-1 text-sm text-center outline-none focus:border-accent"
+            />
+            <button
+              type="button"
+              onClick={addEmoji}
+              disabled={!newEmoji.trim()}
+              aria-label="Add emoji"
+              className="w-7 h-7 rounded-lg bg-accent/15 text-accent flex items-center justify-center disabled:opacity-40"
+            >
+              <IconPlus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={() => {
+            setEmojiEdit((v) => !v);
+            setNewEmoji("");
+          }}
+          aria-label={emojiEdit ? "Done editing emojis" : "Edit emoji bar"}
+          title={emojiEdit ? "Done" : "Edit emojis (remove or add)"}
+          className={`ml-auto shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+            emojiEdit
+              ? "bg-accent text-white"
+              : "text-muted/60 hover:text-accent hover:bg-card2"
+          }`}
+        >
+          {emojiEdit ? (
+            <IconCheck className="w-3.5 h-3.5" />
+          ) : (
+            <IconEdit className="w-3.5 h-3.5" />
+          )}
+        </button>
+      </div>
+
       <div className="border-t border-line p-3 flex items-end gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">
         <textarea
+          ref={inputRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -385,7 +598,7 @@ export default function TelegramChatView({
             }
           }}
           rows={1}
-          placeholder="Reply on Telegram…"
+          placeholder={replyTo ? "Reply to the selected message…" : "Reply on Telegram…"}
           className="flex-1 bg-card2 border border-line rounded-2xl px-4 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none resize-none max-h-28"
         />
         <button

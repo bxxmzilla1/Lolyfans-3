@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { formatTime } from "@/lib/utils";
@@ -44,7 +44,12 @@ export default function TelegramChatList() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
+  // In-flight guard: at a 1s cadence a slow Telegram round-trip must never
+  // stack a second request on top of the first.
+  const inflightRef = useRef(false);
   const load = useCallback(async () => {
+    if (inflightRef.current) return;
+    inflightRef.current = true;
     try {
       const res = await fetch("/api/telegram/dialogs");
       const data = await res.json().catch(() => ({}));
@@ -62,15 +67,18 @@ export default function TelegramChatList() {
     } catch {
       setError("Could not load Telegram chats");
     } finally {
+      inflightRef.current = false;
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
     load();
+    // Every second: new messages / unread badges show up in the sidebar
+    // almost live. The in-flight guard keeps slow responses from stacking.
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") load();
-    }, 20000);
+    }, 1000);
     return () => clearInterval(timer);
   }, [load]);
 

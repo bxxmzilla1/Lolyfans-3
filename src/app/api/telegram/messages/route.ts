@@ -93,6 +93,10 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const peer = String(body.peer || "").trim();
   const text = String(body.text || "").trim();
+  const replyToId =
+    Number.isFinite(Number(body.replyToId)) && Number(body.replyToId) > 0
+      ? Number(body.replyToId)
+      : null;
   if (!peer) return NextResponse.json({ error: "peer required" }, { status: 400 });
   if (!text) return NextResponse.json({ error: "Message is empty" }, { status: 400 });
   if (text.length > 4000) {
@@ -108,7 +112,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    await tgSendText({ session, peer, text });
+    await tgSendText({ session, peer, text, replyToId });
     return NextResponse.json({ ok: true });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Could not send";
