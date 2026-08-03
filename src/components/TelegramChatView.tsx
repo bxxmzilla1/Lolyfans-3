@@ -10,6 +10,7 @@ import {
   IconBack,
   IconCheck,
   IconEdit,
+  IconMic,
   IconPlay,
   IconPlus,
   IconReply,
@@ -41,6 +42,29 @@ function messageSnippet(m: TgMessage | undefined | null): string {
   if (m.mediaKind === "voice") return "🎤 Voice message";
   if (m.hasMedia) return "Media";
   return "Message";
+}
+
+/** Eleven v3 audio tags — quick-insert chips for expressive voice notes. */
+const VOICE_TAGS = [
+  "[giggles]",
+  "[laughs]",
+  "[whispers]",
+  "[sighs]",
+  "[excited]",
+  "[curious]",
+  "[casual]",
+  "[sarcastic]",
+];
+
+/** Base64 for the generated audio (chunked — big notes overflow the stack). */
+function b64FromBuffer(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let bin = "";
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+  }
+  return btoa(bin);
 }
 
 const EMOJI_STORE_KEY = "tg-emoji-quickbar";
@@ -119,6 +143,82 @@ export default function TelegramChatView({
   function startReply(m: TgMessage) {
     setReplyTo(m);
     inputRef.current?.focus();
+  }
+
+  // ---- AI voice notes: type text, mic turns it into an ElevenLabs voice ----
+  const [voiceNote, setVoiceNote] = useState<{ url: string; b64: string } | null>(
+    null
+  );
+  const [voiceBusy, setVoiceBusy] = useState<"generating" | "sending" | null>(
+    null
+  );
+
+  const cancelVoice = useCallback(() => {
+    setVoiceNote((prev) => {
+      if (prev) URL.revokeObjectURL(prev.url);
+      return null;
+    });
+  }, []);
+
+  // Switching chats drops any voice preview in progress.
+  useEffect(() => cancelVoice(), [peer, cancelVoice]);
+
+  async function generateVoice() {
+    const body = text.trim();
+    if (!body || voiceBusy) return;
+    setVoiceBusy("generating");
+    setError("");
+    try {
+      const res = await fetch("/api/voice/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: body }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Could not generate the voice note");
+        return;
+      }
+      const buf = await res.arrayBuffer();
+      const b64 = b64FromBuffer(buf);
+      const url = URL.createObjectURL(new Blob([buf], { type: "audio/mpeg" }));
+      setVoiceNote((prev) => {
+        if (prev) URL.revokeObjectURL(prev.url);
+        return { url, b64 };
+      });
+    } catch {
+      setError("Could not generate the voice note");
+    } finally {
+      setVoiceBusy(null);
+    }
+  }
+
+  async function sendVoice() {
+    if (!voiceNote || voiceBusy) return;
+    setVoiceBusy("sending");
+    setError("");
+    const replyToId = replyTo?.id ?? null;
+    try {
+      const res = await fetch("/api/telegram/voice", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ peer, audioB64: voiceNote.b64, replyToId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        cancelVoice();
+        setText("");
+        setReplyTo(null);
+        // Refresh so the sent voice bubble appears with its real id.
+        setTimeout(() => void load(), 1500);
+      } else {
+        setError(data.error || "Could not send the voice note");
+      }
+    } catch {
+      setError("Could not send the voice note");
+    } finally {
+      setVoiceBusy(null);
+    }
   }
 
   const load = useCallback(async () => {
@@ -538,6 +638,58 @@ export default function TelegramChatView({
         </div>
       )}
 
+      {/* Voice note preview: listen, then regenerate / send / cancel. */}
+      {voiceNote && (
+        <div className="border-t border-line px-3 py-2.5 bg-card/60 shrink-0 space-y-2">
+          <div className="flex items-center gap-2">
+            <IconMic className="w-4 h-4 text-accent shrink-0" />
+            <p className="text-[11px] font-semibold text-accent flex-1">
+              Voice note preview — edit the text and regenerate, or send it
+            </p>
+          </div>
+          <audio controls src={voiceNote.url} className="w-full h-10" />
+          <div className="flex items-center gap-1 overflow-x-auto scrollbar-none">
+            {VOICE_TAGS.map((tag) => (
+              <button
+                key={tag}
+                type="button"
+                onClick={() => insertEmoji(` ${tag} `)}
+                title={`Insert ${tag} into the text`}
+                className="shrink-0 px-2 py-1 rounded-full bg-card2 border border-line text-[10px] font-semibold text-muted hover:text-accent hover:border-accent transition-colors"
+              >
+                {tag}
+              </button>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => void generateVoice()}
+              disabled={voiceBusy !== null || !text.trim()}
+              className="flex-1 bg-card2 border border-line rounded-xl py-2 text-xs font-semibold hover:bg-line transition-colors disabled:opacity-50"
+            >
+              {voiceBusy === "generating" ? "Generating…" : "↻ Regenerate"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void sendVoice()}
+              disabled={voiceBusy !== null}
+              className="flex-1 bg-accent text-white rounded-xl py-2 text-xs font-semibold disabled:opacity-50 active:opacity-80 transition-opacity"
+            >
+              {voiceBusy === "sending" ? "Sending…" : "Send voice note"}
+            </button>
+            <button
+              type="button"
+              onClick={cancelVoice}
+              disabled={voiceBusy === "sending"}
+              className="px-3 bg-card2 border border-line rounded-xl py-2 text-xs font-semibold text-muted hover:text-fg transition-colors disabled:opacity-50"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Emoji quick-bar: tap to insert; pencil toggles edit mode where taps
           remove and the small input adds new ones. */}
       <div
@@ -618,17 +770,40 @@ export default function TelegramChatView({
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
-              void send();
+              // In voice mode Enter re-voices the edited text instead of
+              // sending it as a plain message.
+              if (voiceNote) void generateVoice();
+              else void send();
             }
           }}
           rows={1}
-          placeholder={replyTo ? "Reply to the selected message…" : "Reply on Telegram…"}
+          placeholder={
+            voiceNote
+              ? "Edit the text, add [giggles]… then regenerate"
+              : replyTo
+              ? "Reply to the selected message…"
+              : "Reply on Telegram…"
+          }
           className="flex-1 bg-card2 border border-line rounded-2xl px-4 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none resize-none max-h-28"
         />
         <button
           type="button"
+          onClick={() => void generateVoice()}
+          disabled={voiceBusy !== null || !text.trim()}
+          aria-label="Turn text into a voice note"
+          title="Turn your text into an ElevenLabs voice note — add expressions like [giggles], [whispers]"
+          className={`w-11 h-11 rounded-full flex items-center justify-center border transition-colors disabled:opacity-40 ${
+            voiceNote || voiceBusy === "generating"
+              ? "bg-accent border-accent text-white"
+              : "bg-card2 border-line text-muted hover:text-accent hover:border-accent"
+          } ${voiceBusy === "generating" ? "animate-pulse" : ""}`}
+        >
+          <IconMic className="w-4.5 h-4.5" />
+        </button>
+        <button
+          type="button"
           onClick={() => void send()}
-          disabled={sending || !text.trim()}
+          disabled={sending || !text.trim() || voiceNote !== null}
           aria-label="Send"
           className="w-11 h-11 rounded-full bg-accent text-white flex items-center justify-center disabled:opacity-40"
         >

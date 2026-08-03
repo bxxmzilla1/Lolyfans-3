@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import ConfirmDialog from "./ConfirmDialog";
+import { supabaseBrowser } from "@/lib/supabase/browser";
 
 type Status = "disconnected" | "code_sent" | "password_needed" | "connected";
 
@@ -23,6 +24,37 @@ export default function TelegramSettings() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+
+  // ElevenLabs voice used by the chat mic button (stored in user metadata).
+  const [voiceId, setVoiceId] = useState("");
+  const [voiceSaving, setVoiceSaving] = useState(false);
+  const [voiceSaved, setVoiceSaved] = useState(false);
+
+  useEffect(() => {
+    supabaseBrowser()
+      .auth.getUser()
+      .then(({ data }) => {
+        const meta = data.user?.user_metadata as
+          | { eleven_voice_id?: string }
+          | undefined;
+        setVoiceId(meta?.eleven_voice_id ?? "");
+      });
+  }, []);
+
+  async function saveVoiceId() {
+    setVoiceSaving(true);
+    setVoiceSaved(false);
+    try {
+      await supabaseBrowser().auth.updateUser({
+        data: { eleven_voice_id: voiceId.trim() },
+      });
+      setVoiceId((v) => v.trim());
+      setVoiceSaved(true);
+      setTimeout(() => setVoiceSaved(false), 2000);
+    } finally {
+      setVoiceSaving(false);
+    }
+  }
 
   async function refresh() {
     try {
@@ -214,6 +246,30 @@ export default function TelegramSettings() {
           )}
         </div>
       )}
+
+      <div className="rounded-xl border border-line bg-card2 px-3.5 py-3.5 space-y-2">
+        <p className="text-sm font-semibold">AI voice notes (ElevenLabs)</p>
+        <p className="text-xs text-muted">
+          Paste your ElevenLabs Voice ID to turn typed messages into voice
+          notes with the mic button in chats. Add expressions like [giggles]
+          or [whispers] right in the text.
+        </p>
+        <input
+          value={voiceId}
+          onChange={(e) => setVoiceId(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && saveVoiceId()}
+          placeholder="e.g. JBFqnCBsd6RMkjVDRZzb"
+          className="w-full bg-card border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+        />
+        <button
+          type="button"
+          onClick={saveVoiceId}
+          disabled={voiceSaving}
+          className="w-full bg-accent text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
+        >
+          {voiceSaving ? "Saving…" : voiceSaved ? "Saved ✓" : "Save voice ID"}
+        </button>
+      </div>
 
       {error && <p className="text-sm text-red-400">{error}</p>}
 

@@ -871,6 +871,51 @@ export async function tgSendVoiceNote(opts: {
   }
 }
 
+/**
+ * Send generated audio (ElevenLabs mp3) into a chat as a Telegram voice note.
+ * Converted to OGG/Opus first — that's what makes Telegram render the round
+ * voice bubble with a waveform instead of a plain audio-file attachment.
+ */
+export async function tgSendVoiceFromBuffer(opts: {
+  session: string;
+  peer: string;
+  audio: Buffer;
+  replyToId?: number | null;
+}): Promise<void> {
+  // Convert before connecting so a slow ffmpeg never holds the client open.
+  const ogg = await withTempFile(opts.audio, async (inFile) => {
+    const path = await import("path");
+    const fs = await import("fs/promises");
+    const out = path.join(path.dirname(inFile), "voice.ogg");
+    await runFfmpeg([
+      "-y",
+      "-i", inFile,
+      "-vn",
+      "-ac", "1",
+      "-ar", "48000",
+      "-c:a", "libopus",
+      "-b:a", "48k",
+      "-application", "voip",
+      out,
+    ]);
+    return await fs.readFile(out);
+  });
+
+  const client = await connect(opts.session);
+  try {
+    const { CustomFile } = await gramjs();
+    const peer = await resolvePeer(opts.peer);
+    await client.sendFile(peer, {
+      file: new CustomFile("voice.ogg", ogg.length, "", ogg),
+      // GramJS attaches the voice DocumentAttributeAudio(voice=true) flag.
+      voiceNote: true,
+      ...(opts.replyToId ? { replyTo: opts.replyToId } : {}),
+    });
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
 /** Run the bundled ffmpeg binary with the given args (throws on failure). */
 async function runFfmpeg(args: string[], timeout = 45000): Promise<void> {
   const ffmpegPath = (await import("ffmpeg-static")).default as unknown as
