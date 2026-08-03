@@ -141,7 +141,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not create the unlock link" }, { status: 500 });
   }
 
-  const origin = requestOrigin(req.headers);
+  // PPV pay links can live on a dedicated domain (PPV_PAYLINK_ORIGIN, e.g.
+  // "https://pay.example.com"). Unset = links use the app's own domain.
+  const origin =
+    (process.env.PPV_PAYLINK_ORIGIN || "").trim().replace(/\/+$/, "") ||
+    requestOrigin(req.headers);
   const link = shortCode
     ? `${origin}/payment/${shortCode}`
     : `${origin}/u/${unlock.id}`;

@@ -1,9 +1,42 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+/** Host of the dedicated PPV pay-link domain ("" when not configured). */
+function payLinkHost(): string {
+  const raw = (process.env.PPV_PAYLINK_ORIGIN || "").trim();
+  if (!raw) return "";
+  try {
+    return new URL(raw).host.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 /** Keeps the Supabase auth session fresh on every request. */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // The pay-link domain only serves PPV unlock pages (/payment/<code> and the
+  // long /u/<id> fallback). Anything else there bounces to the main site.
+  // API routes aren't matched by this proxy, so the unlock page's own API
+  // calls keep working on the pay domain.
+  const payHost = payLinkHost();
+  if (payHost) {
+    const host = (
+      request.headers.get("x-forwarded-host") ||
+      request.headers.get("host") ||
+      ""
+    ).toLowerCase();
+    if (
+      host === payHost &&
+      !pathname.startsWith("/payment/") &&
+      !pathname.startsWith("/u/")
+    ) {
+      return NextResponse.redirect(
+        `https://www.lolyfans.com${pathname}${request.nextUrl.search}`
+      );
+    }
+  }
 
   // Guest-facing pages never carry an owner session — skip the auth work
   // entirely so invite links respond as fast as possible.
