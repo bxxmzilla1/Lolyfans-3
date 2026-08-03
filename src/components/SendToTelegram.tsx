@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Portal from "./Portal";
 import { IconCheck, IconSend } from "./Icons";
 
@@ -29,6 +29,13 @@ export default function SendToTelegram({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
+
+  // Sent: flash the checkmark animation, then close on our own — no button.
+  useEffect(() => {
+    if (!sent) return;
+    const timer = setTimeout(onClose, 1200);
+    return () => clearTimeout(timer);
+  }, [sent, onClose]);
 
   const priceCents = Math.round(parseFloat(price) * 100) || 0;
   const isFree = priceCents <= 0;
@@ -65,6 +72,26 @@ export default function SendToTelegram({
     }
   }
 
+  // Success flash: just the animated check over the dimmed backdrop, then
+  // the sheet closes itself.
+  if (sent) {
+    return (
+      <Portal>
+        <div className="fixed inset-0 z-[70] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="relative flex flex-col items-center gap-3">
+            <span className="absolute top-0 w-20 h-20 rounded-full bg-green-500/60 check-ripple" />
+            <div className="relative w-20 h-20 rounded-full bg-green-500 flex items-center justify-center shadow-xl check-pop">
+              <IconCheck className="w-10 h-10 text-white" />
+            </div>
+            <p className="font-semibold text-white drop-shadow fade-up">
+              {isFree ? "Sent" : "Locked & sent"}
+            </p>
+          </div>
+        </div>
+      </Portal>
+    );
+  }
+
   return (
     <Portal>
       <div
@@ -88,28 +115,7 @@ export default function SendToTelegram({
             </button>
           </div>
 
-          {sent ? (
-            <div className="py-4 flex flex-col items-center gap-3 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-green-500 flex items-center justify-center">
-                <IconCheck className="w-7 h-7 text-white" />
-              </div>
-              <p className="font-semibold">
-                {isFree ? `${mediaType === "video" ? "Video" : "Photo"} sent` : `Locked ${mediaType} sent`}
-              </p>
-              <p className="text-sm text-muted">
-                {isFree
-                  ? `The ${mediaType} was sent straight into their Telegram chat, free of charge.`
-                  : `The fan got a blurred preview with a pay link. Once they pay, the clear ${mediaType} is delivered into their Telegram chat with you automatically.`}
-              </p>
-              <button
-                onClick={onClose}
-                className="w-full bg-accent text-white font-semibold rounded-xl py-2.5 text-sm mt-1"
-              >
-                Done
-              </button>
-            </div>
-          ) : (
-            <>
+          <>
               <div className="space-y-2">
                 <label className="text-sm font-semibold">
                   Fan&apos;s Telegram
@@ -190,8 +196,7 @@ export default function SendToTelegram({
                   ? "Send for free"
                   : "Send locked media"}
               </button>
-            </>
-          )}
+          </>
         </div>
       </div>
     </Portal>
