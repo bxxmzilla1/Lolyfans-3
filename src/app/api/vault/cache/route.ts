@@ -4,9 +4,7 @@ import { getOwnerId } from "@/lib/session";
 import { tgSessionFor } from "@/lib/telegram";
 import { ensureMediaCached } from "@/lib/telegramMediaCache";
 
-// A manually triggered upload of a big video runs after the response.
-// Pro-plan limit: long slices let most videos finish in one invocation;
-// anything bigger resumes on the next cron tick.
+// Manual upload only — big videos run after the response.
 export const maxDuration = 800;
 
 type CacheState = {
@@ -16,13 +14,13 @@ type CacheState = {
   /** A worker is actively uploading right now (fresh heartbeat). */
   uploading: boolean;
   /** 0–100 for the progress bar. Non-zero while `uploading` is false means
-   *  a chunked upload is paused between slices — resumable on click. */
+   *  a chunked upload paused mid-file — tap the badge to resume. */
   progress: number;
 };
 
 /**
  * GET: Saved Messages upload state for every vault file — drives the
- * vault's per-item indicators and progress bars.
+ * vault's per-item indicators and the main progress bar.
  */
 export async function GET() {
   const ownerId = await getOwnerId();
@@ -31,6 +29,7 @@ export async function GET() {
   const telegram = !!(await tgSessionFor(ownerId).catch(() => null));
   const db = supabaseAdmin();
   type CacheRow = {
+    id?: string;
     media_path: string;
     media_type: string;
     tg_message_id: number | null;
@@ -41,20 +40,47 @@ export async function GET() {
   let data: CacheRow[] | null = null;
   ({ data } = (await db
     .from("telegram_media_cache")
-    .select("media_path, media_type, tg_message_id, teaser_path, caching_at, progress")
+    .select(
+      "id, media_path, media_type, tg_message_id, teaser_path, caching_at, progress"
+    )
     .eq("owner_id", ownerId)
     .limit(2000)) as { data: CacheRow[] | null });
   if (!data) {
     // progress column missing (migration not run yet) — degrade gracefully.
     ({ data } = (await db
       .from("telegram_media_cache")
-      .select("media_path, media_type, tg_message_id, teaser_path, caching_at")
+      .select("id, media_path, media_type, tg_message_id, teaser_path, caching_at")
       .eq("owner_id", ownerId)
       .limit(2000)) as { data: CacheRow[] | null });
   }
 
-  const status: Record<string, CacheState> = {};
+  // Drop dead claims left by killed workers / the old auto-backfill so every
+  // unfinished item shows a clickable upload button again.
   const staleBefore = Date.now() - 4 * 60_000;
+  const staleIds: string[] = [];
+  for (const row of data ?? []) {
+    if (!row.id || row.tg_message_id) continue;
+    const claimedAt = row.caching_at
+      ? new Date(String(row.caching_at)).getTime()
+      : 0;
+    if (claimedAt > 0 && claimedAt <= staleBefore) {
+      staleIds.push(String(row.id));
+      row.caching_at = null;
+      row.progress = null;
+    }
+  }
+  if (staleIds.length) {
+    void db
+      .from("telegram_media_cache")
+      .update({ caching_at: null, progress: null })
+      .in("id", staleIds)
+      .then(() => {}, () => {});
+  }
+
+  const status: Record<string, CacheState> = {};
+  let readyCount = 0;
+  let uploadingCount = 0;
+  let uploadingProgressSum = 0;
   for (const row of data ?? []) {
     const ready =
       !!row.tg_message_id &&
@@ -63,26 +89,39 @@ export async function GET() {
       ? new Date(String(row.caching_at)).getTime()
       : 0;
     const progress = row.progress;
-    // Only a fresh heartbeat counts as uploading — a paused chunked upload
-    // (claim released, progress kept) must leave the manual button usable.
     const uploading = !ready && claimedAt > staleBefore;
-    status[String(row.media_path)] = {
-      ready,
-      uploading,
-      progress: ready
-        ? 100
-        : typeof progress === "number"
-          ? Math.max(0, Math.min(99, progress))
-          : 0,
-    };
+    const pct = ready
+      ? 100
+      : typeof progress === "number"
+        ? Math.max(0, Math.min(99, progress))
+        : 0;
+    status[String(row.media_path)] = { ready, uploading, progress: pct };
+    if (ready) readyCount += 1;
+    if (uploading) {
+      uploadingCount += 1;
+      uploadingProgressSum += pct;
+    }
   }
-  return NextResponse.json({ telegram, status });
+
+  return NextResponse.json({
+    telegram,
+    status,
+    summary: {
+      ready: readyCount,
+      uploading: uploadingCount,
+      // Average progress across active uploads (0 when none).
+      progress:
+        uploadingCount > 0
+          ? Math.round(uploadingProgressSum / uploadingCount)
+          : 0,
+    },
+  });
 }
 
 /**
  * POST: upload one vault file to Saved Messages now (clear copy + teaser
- * clip for videos). Responds immediately; the work runs in the background
- * and the GET above reports its progress.
+ * clip for videos). Manual only — responds immediately; work runs in the
+ * background and the GET above reports its progress.
  */
 export async function POST(req: NextRequest) {
   const ownerId = await getOwnerId();
@@ -102,6 +141,15 @@ export async function POST(req: NextRequest) {
       { status: 400 }
     );
   }
+
+  // Force-reclaim this row so a stuck claim from an old auto-upload can't
+  // swallow the click. Manual uploads always win.
+  await supabaseAdmin()
+    .from("telegram_media_cache")
+    .update({ caching_at: null })
+    .eq("owner_id", ownerId)
+    .eq("media_path", mediaPath)
+    .is("tg_message_id", null);
 
   after(async () => {
     try {

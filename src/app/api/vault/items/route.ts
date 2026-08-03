@@ -1,12 +1,6 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
-import { tgSessionFor } from "@/lib/telegram";
-import { ensureMediaCached } from "@/lib/telegramMediaCache";
-
-// New vault items pre-upload to Telegram in the background (big videos can
-// take minutes) — give the after() work the full window.
-export const maxDuration = 800;
 
 export async function GET(req: NextRequest) {
   const ownerId = await getOwnerId();
@@ -68,25 +62,6 @@ export async function POST(req: NextRequest) {
   if (albumId) {
     await db.from("vault_item_albums").insert({ item_id: data.id, album_id: albumId });
   }
-
-  // Pre-upload the new item to Telegram (Saved Messages copy + teaser clip)
-  // right away, so its first send is already instant. Best-effort — the
-  // cron backfill catches anything this misses.
-  after(async () => {
-    try {
-      const session = await tgSessionFor(ownerId);
-      if (!session) return;
-      await ensureMediaCached({
-        ownerId,
-        session,
-        mediaPath: String(mediaPath),
-        mediaType: mediaType === "video" ? "video" : "image",
-        budgetMs: 700_000,
-      });
-    } catch {
-      // ignore
-    }
-  });
 
   return NextResponse.json({
     item: { ...data, albums: albumId ? [albumId] : [] },

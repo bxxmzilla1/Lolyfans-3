@@ -122,10 +122,15 @@ export default function VaultManager() {
     : pathname?.match(/^\/inbox\/([^/?#]+)/)?.[1] ?? null;
   const [sendStatus, setSendStatus] = useState<Record<string, SendStatus>>({});
 
-  // Saved Messages upload state per media path: ready items send as PPV
-  // instantly; missing ones can be uploaded on demand with live progress.
+  // Saved Messages upload state per media path — manual uploads only.
   type CacheState = { ready: boolean; uploading: boolean; progress: number };
+  type CacheSummary = { ready: number; uploading: number; progress: number };
   const [cacheStatus, setCacheStatus] = useState<Record<string, CacheState>>({});
+  const [cacheSummary, setCacheSummary] = useState<CacheSummary>({
+    ready: 0,
+    uploading: 0,
+    progress: 0,
+  });
   const [tgReady, setTgReady] = useState(false);
   const cacheInflightRef = useRef(false);
   const loadCacheStatus = useCallback(async () => {
@@ -138,6 +143,14 @@ export default function VaultManager() {
       if (!data) return;
       setTgReady(!!data.telegram);
       setCacheStatus((data.status as Record<string, CacheState>) ?? {});
+      const summary = data.summary as CacheSummary | undefined;
+      if (summary) {
+        setCacheSummary({
+          ready: Number(summary.ready) || 0,
+          uploading: Number(summary.uploading) || 0,
+          progress: Number(summary.progress) || 0,
+        });
+      }
     } finally {
       cacheInflightRef.current = false;
     }
@@ -153,6 +166,11 @@ export default function VaultManager() {
         progress: Math.max(1, prev[item.media_path]?.progress ?? 1),
       },
     }));
+    setCacheSummary((prev) => ({
+      ...prev,
+      uploading: Math.max(1, prev.uploading + 1),
+      progress: Math.max(1, prev.progress),
+    }));
     await fetch("/api/vault/cache", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -165,7 +183,9 @@ export default function VaultManager() {
   }
 
   // Speed the poll up to 2s while an upload is running, so the bar moves.
-  const anyUploading = Object.values(cacheStatus).some((s) => s.uploading);
+  const anyUploading =
+    cacheSummary.uploading > 0 ||
+    Object.values(cacheStatus).some((s) => s.uploading);
   useEffect(() => {
     if (!anyUploading) return;
     const timer = setInterval(() => {
@@ -816,25 +836,55 @@ export default function VaultManager() {
           </div>
         )}
         {tgReady && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-sky-500 flex items-center justify-center">
-                <IconCheck className="w-2.5 h-2.5 text-white" />
+          <div className="space-y-2">
+            {(cacheSummary.uploading > 0 || anyUploading) && (
+              <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-semibold text-sky-300">
+                  <span>
+                    Uploading to Telegram
+                    {cacheSummary.uploading > 1
+                      ? ` · ${cacheSummary.uploading} files`
+                      : ""}
+                  </span>
+                  <span className="tabular-nums">
+                    {cacheSummary.progress || 1}%
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-black/40 overflow-hidden">
+                  <div
+                    className="h-full bg-sky-400 transition-all duration-700"
+                    style={{
+                      width: `${Math.max(4, cacheSummary.progress || 1)}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-[11px] text-muted">
+                  {cacheSummary.ready} ready for instant PPV · tap other
+                  badges to upload more
+                </p>
+              </div>
+            )}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-sky-500 flex items-center justify-center">
+                  <IconCheck className="w-2.5 h-2.5 text-white" />
+                </span>
+                On Telegram — instant PPV
+                {cacheSummary.ready > 0 ? ` (${cacheSummary.ready})` : ""}
               </span>
-              On Telegram — instant PPV
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="w-4 h-4 rounded-full bg-black/60 border border-white/50 flex items-center justify-center">
-                <IconSend className="w-2 h-2 text-white" />
+              <span className="inline-flex items-center gap-1.5">
+                <span className="w-4 h-4 rounded-full bg-black/60 border border-white/50 flex items-center justify-center">
+                  <IconSend className="w-2 h-2 text-white" />
+                </span>
+                Tap badge to upload (manual only)
               </span>
-              Tap the badge to upload
-            </span>
-            <span className="inline-flex items-center gap-1.5">
-              <span className="rounded bg-black/70 px-1 py-0.5 text-[9px] font-semibold text-amber-300">
-                ▶ %
+              <span className="inline-flex items-center gap-1.5">
+                <span className="rounded bg-black/70 px-1 py-0.5 text-[9px] font-semibold text-amber-300">
+                  ▶ %
+                </span>
+                Paused — tap to resume
               </span>
-              Paused — tap to resume
-            </span>
+            </div>
           </div>
         )}
         <div className="grid grid-cols-3 gap-1">

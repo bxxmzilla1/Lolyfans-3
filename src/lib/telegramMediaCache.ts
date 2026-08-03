@@ -20,9 +20,8 @@ import {
  *    stored in the media bucket. Locked video sends only overlay the price
  *    badge on this tiny clip, so they're as fast as locked image sends.
  *
- * Rows are filled by `ensureMediaCached` — kicked off when a vault item is
- * uploaded, when something is sent, and by the cron backfill worker that
- * walks the whole vault a few items per tick.
+ * Rows are filled by `ensureMediaCached` when the creator taps the upload
+ * badge in the vault (manual only — nothing auto-uploads).
  */
 
 export type MediaCache = {

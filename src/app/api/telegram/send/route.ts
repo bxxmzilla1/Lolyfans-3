@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto";
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { requestOrigin } from "@/lib/smsNotify";
@@ -11,12 +11,10 @@ import {
 import { savedCardChatForPeer } from "@/lib/telegramUnlock";
 import {
   getMediaCache,
-  ensureMediaCached,
   downloadTeaserClip,
 } from "@/lib/telegramMediaCache";
 
-// Sending a PPV uploads the full clear video to Telegram (Saved Messages
-// cache for instant unlock delivery) — give it the full window.
+// Sending a PPV may upload clear media when no Saved Messages copy exists.
 export const maxDuration = 800;
 
 /** Short unguessable token for the /payment/<code> link (8 base62 chars). */
@@ -72,23 +70,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Pre-uploaded Telegram copies for this vault file (Saved Messages clear
-  // copy + pre-rendered teaser clip) — the fast paths for everything below.
+  // copy + pre-rendered teaser clip) — used when the creator uploaded them
+  // manually from the vault. No automatic cache; sends still work without it.
   const cache = await getMediaCache(ownerId, mediaPath).catch(() => null);
-  // Whatever wasn't cached yet gets cached after the response, so the next
-  // send of this file is instant.
-  after(async () => {
-    try {
-      await ensureMediaCached({
-        ownerId,
-        session,
-        mediaPath,
-        mediaType,
-        budgetMs: 700_000,
-      });
-    } catch {
-      // best-effort — slow paths still work
-    }
-  });
 
   // No price → send the clear media directly, free of charge.
   if (priceCents <= 0) {
