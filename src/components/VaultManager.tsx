@@ -132,7 +132,13 @@ export default function VaultManager() {
     progress: 0,
   });
   const [tgReady, setTgReady] = useState(false);
+  const [cacheError, setCacheError] = useState("");
   const cacheInflightRef = useRef(false);
+  // Paths the creator started this session — we keep slicing until ready.
+  const resumeQueueRef = useRef(
+    new Map<string, { mediaType: "image" | "video" }>()
+  );
+  const sliceInflightRef = useRef(new Set<string>());
   const loadCacheStatus = useCallback(async () => {
     if (cacheInflightRef.current) return;
     cacheInflightRef.current = true;
@@ -156,8 +162,60 @@ export default function VaultManager() {
     }
   }, []);
 
+  const runUploadSlice = useCallback(
+    async (mediaPath: string, mediaType: "image" | "video") => {
+      if (sliceInflightRef.current.has(mediaPath)) return;
+      sliceInflightRef.current.add(mediaPath);
+      try {
+        const res = await fetch("/api/vault/cache", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mediaPath, mediaType }),
+        }).catch(() => null);
+        const data = res ? await res.json().catch(() => null) : null;
+        if (data?.ready) {
+          resumeQueueRef.current.delete(mediaPath);
+          setCacheError("");
+        } else if (data?.error) {
+          setCacheError(String(data.error));
+          // Migration / permanent errors: stop retrying this file.
+          if (/migration/i.test(String(data.error))) {
+            resumeQueueRef.current.delete(mediaPath);
+          }
+        }
+        if (typeof data?.progress === "number") {
+          setCacheStatus((prev) => ({
+            ...prev,
+            [mediaPath]: {
+              ready: !!data.ready,
+              uploading: !data.ready,
+              progress: data.ready
+                ? 100
+                : Math.max(1, Number(data.progress) || 1),
+            },
+          }));
+          setCacheSummary((prev) => ({
+            ...prev,
+            uploading: data.ready
+              ? Math.max(0, prev.uploading - 1)
+              : Math.max(1, prev.uploading),
+            progress: data.ready ? prev.progress : Number(data.progress) || prev.progress,
+            ready: data.ready ? prev.ready + 1 : prev.ready,
+          }));
+        }
+      } finally {
+        sliceInflightRef.current.delete(mediaPath);
+      }
+    },
+    []
+  );
+
   async function startCacheUpload(item: Item) {
-    // Optimistic: show the bar right away; the poll takes over from there.
+    resumeQueueRef.current.set(item.media_path, {
+      mediaType: item.media_type === "video" ? "video" : "image",
+    });
+    setResumeEpoch((n) => n + 1);
+    // Optimistic: show the bar right away; slices update it from there.
     setCacheStatus((prev) => ({
       ...prev,
       [item.media_path]: {
@@ -171,28 +229,37 @@ export default function VaultManager() {
       uploading: Math.max(1, prev.uploading + 1),
       progress: Math.max(1, prev.progress),
     }));
-    await fetch("/api/vault/cache", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        mediaPath: item.media_path,
-        mediaType: item.media_type,
-      }),
-    }).catch(() => {});
-    setTimeout(() => void loadCacheStatus(), 1500);
   }
 
-  // Speed the poll up to 2s while an upload is running, so the bar moves.
+  // Bumps when the user queues an upload so the resume loop mounts.
+  const [resumeEpoch, setResumeEpoch] = useState(0);
   const anyUploading =
+    resumeEpoch > 0 ||
     cacheSummary.uploading > 0 ||
-    Object.values(cacheStatus).some((s) => s.uploading);
+    Object.values(cacheStatus).some((s) => s.uploading || (!s.ready && s.progress > 0));
+
+  // Keep slicing every user-started upload until it's ready. Each POST does
+  // ~55s of work; the vault page chains them so big videos finish.
   useEffect(() => {
-    if (!anyUploading) return;
-    const timer = setInterval(() => {
-      if (document.visibilityState === "visible") void loadCacheStatus();
-    }, 2000);
-    return () => clearInterval(timer);
-  }, [anyUploading, loadCacheStatus]);
+    if (resumeQueueRef.current.size === 0) return;
+    let cancelled = false;
+    const tick = async () => {
+      if (cancelled || document.visibilityState !== "visible") return;
+      if (resumeQueueRef.current.size === 0) return;
+      for (const [mediaPath, meta] of [...resumeQueueRef.current]) {
+        if (sliceInflightRef.current.has(mediaPath)) continue;
+        await runUploadSlice(mediaPath, meta.mediaType);
+        if (cancelled) return;
+      }
+      await loadCacheStatus();
+    };
+    const timer = setInterval(() => void tick(), 4000);
+    void tick();
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [resumeEpoch, loadCacheStatus, runUploadSlice]);
 
   const statusInflightRef = useRef(false);
   const loadSendStatus = useCallback(async () => {
@@ -837,6 +904,11 @@ export default function VaultManager() {
         )}
         {tgReady && (
           <div className="space-y-2">
+            {cacheError && (
+              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
+                {cacheError}
+              </div>
+            )}
             {(cacheSummary.uploading > 0 || anyUploading) && (
               <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 space-y-1.5">
                 <div className="flex items-center justify-between text-xs font-semibold text-sky-300">
@@ -859,8 +931,8 @@ export default function VaultManager() {
                   />
                 </div>
                 <p className="text-[11px] text-muted">
-                  {cacheSummary.ready} ready for instant PPV · tap other
-                  badges to upload more
+                  {cacheSummary.ready} ready for instant PPV · keep this tab
+                  open until it finishes
                 </p>
               </div>
             )}

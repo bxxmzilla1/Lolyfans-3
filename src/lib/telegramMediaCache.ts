@@ -31,15 +31,16 @@ export type MediaCache = {
 
 const TABLE = "telegram_media_cache";
 
-/** Files above this go through the resumable chunked uploader. */
-const CHUNK_THRESHOLD = 30 * 1024 * 1024;
+/** Files above this go through the resumable chunked uploader — never the
+ *  full-buffer path, which OOMs / dies around ~10% on big videos. */
+const CHUNK_THRESHOLD = 8 * 1024 * 1024;
 
 /**
  * A claim older than this is considered dead and can be stolen. Active
  * workers heartbeat `caching_at` every few seconds while uploading, so
  * only a killed invocation ever goes stale.
  */
-const STALE_CLAIM_MS = 4 * 60_000;
+const STALE_CLAIM_MS = 90_000;
 
 /** Random 63-bit id (decimal string) for Telegram's saveBigFilePart. */
 function randomFileId(): string {
@@ -231,14 +232,21 @@ export async function ensureMediaCached(opts: {
       const url = mediaUrl(opts.mediaPath);
       const size = await fileSizeOf(url);
 
-      if (chunkable && size > CHUNK_THRESHOLD) {
-        // --- Resumable chunked path -----------------------------------
+      // Large files ALWAYS chunk — never buffer the whole video in memory
+      // (that path was dying around ~12% on serverless). Resume state needs
+      // the upload_* columns from migration-telegram.sql.
+      if (size > CHUNK_THRESHOLD) {
+        if (!chunkable) {
+          throw new Error(
+            "Run the latest telegram migration in Supabase (upload_file_id columns) so large videos can resume"
+          );
+        }
         let fileId = row.upload_file_id ?? null;
         let partsDone = Number(row.upload_parts_done ?? 0);
         if (!fileId || Number(row.upload_size ?? 0) !== size) {
           fileId = randomFileId();
           partsDone = 0;
-          await db
+          const { error: resumeErr } = await db
             .from(TABLE)
             .update({
               upload_file_id: fileId,
@@ -246,12 +254,17 @@ export async function ensureMediaCached(opts: {
               upload_size: size,
             })
             .eq("id", row.id);
+          if (resumeErr) {
+            throw new Error(
+              "Run the latest telegram migration in Supabase (upload_file_id columns) so large videos can resume"
+            );
+          }
         }
         const totalParts = Math.ceil(size / TG_PART_SIZE);
-        // Keep a minute in reserve for the finalize + teaser steps.
+        // Leave a little room to write progress / release the claim.
         const sliceDeadline = Math.max(
-          Date.now() + 15_000,
-          deadline - 60_000
+          Date.now() + 10_000,
+          deadline - 5_000
         );
         const newDone = await tgChunkedUploadSlice({
           session: opts.session,
@@ -261,7 +274,6 @@ export async function ensureMediaCached(opts: {
           partsDone,
           deadline: sliceDeadline,
           onParts: (done, total) => {
-            // Persist the resume point, heartbeat the claim, move the bar.
             void db
               .from(TABLE)
               .update({
@@ -279,8 +291,9 @@ export async function ensureMediaCached(opts: {
           .eq("id", row.id);
 
         if (newDone < totalParts) {
-          // Out of time — release the claim and let the next slice resume.
+          // Out of time — keep progress; the client (or next click) resumes.
           inProgress = true;
+          setProgress(5 + Math.round((newDone / totalParts) * 70));
           return null;
         }
 
@@ -306,8 +319,6 @@ export async function ensureMediaCached(opts: {
               .eq("id", row.id);
           }
         } catch (err) {
-          // Parts likely expired server-side — reset so the next run
-          // starts a fresh upload instead of retrying a dead finalize.
           await db
             .from(TABLE)
             .update({
@@ -318,8 +329,8 @@ export async function ensureMediaCached(opts: {
             .eq("id", row.id);
           throw err;
         }
-      } else {
-        // --- Small file: single-shot upload ---------------------------
+      } else if (size > 0) {
+        // Small file: single-shot upload is fine.
         const id = await tgCacheMedia({
           session: opts.session,
           mediaPath: opts.mediaPath,
@@ -330,6 +341,8 @@ export async function ensureMediaCached(opts: {
           tgMessageId = id;
           await db.from(TABLE).update({ tg_message_id: id }).eq("id", row.id);
         }
+      } else {
+        throw new Error("Could not read the media file size from storage");
       }
     }
     setProgress(needsTeaser ? 85 : 95);

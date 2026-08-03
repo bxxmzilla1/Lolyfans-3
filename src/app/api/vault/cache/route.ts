@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { tgSessionFor } from "@/lib/telegram";
 import { ensureMediaCached } from "@/lib/telegramMediaCache";
 
-// Manual upload only — big videos run after the response.
+// One upload slice runs inside the request (not after()) so Vercel can't
+// kill it the moment the response is sent. The client resumes until done.
 export const maxDuration = 800;
 
 type CacheState = {
@@ -13,10 +14,37 @@ type CacheState = {
   ready: boolean;
   /** A worker is actively uploading right now (fresh heartbeat). */
   uploading: boolean;
-  /** 0–100 for the progress bar. Non-zero while `uploading` is false means
-   *  a chunked upload paused mid-file — tap the badge to resume. */
+  /** 0–100 for the progress bar. */
   progress: number;
 };
+
+const STALE_MS = 90_000;
+
+function rowState(row: {
+  media_type: string;
+  tg_message_id: number | null;
+  teaser_path: string | null;
+  caching_at: string | null;
+  progress?: number | null;
+}): CacheState {
+  const ready =
+    !!row.tg_message_id &&
+    (row.media_type !== "video" || !!row.teaser_path);
+  const claimedAt = row.caching_at
+    ? new Date(String(row.caching_at)).getTime()
+    : 0;
+  const uploading = !ready && claimedAt > Date.now() - STALE_MS;
+  const progress = row.progress;
+  return {
+    ready,
+    uploading,
+    progress: ready
+      ? 100
+      : typeof progress === "number"
+        ? Math.max(0, Math.min(99, progress))
+        : 0,
+  };
+}
 
 /**
  * GET: Saved Messages upload state for every vault file — drives the
@@ -46,7 +74,6 @@ export async function GET() {
     .eq("owner_id", ownerId)
     .limit(2000)) as { data: CacheRow[] | null });
   if (!data) {
-    // progress column missing (migration not run yet) — degrade gracefully.
     ({ data } = (await db
       .from("telegram_media_cache")
       .select("id, media_path, media_type, tg_message_id, teaser_path, caching_at")
@@ -54,9 +81,8 @@ export async function GET() {
       .limit(2000)) as { data: CacheRow[] | null });
   }
 
-  // Drop dead claims left by killed workers / the old auto-backfill so every
-  // unfinished item shows a clickable upload button again.
-  const staleBefore = Date.now() - 4 * 60_000;
+  // Drop dead claims so unfinished items become clickable again quickly.
+  const staleBefore = Date.now() - STALE_MS;
   const staleIds: string[] = [];
   for (const row of data ?? []) {
     if (!row.id || row.tg_message_id) continue;
@@ -66,13 +92,12 @@ export async function GET() {
     if (claimedAt > 0 && claimedAt <= staleBefore) {
       staleIds.push(String(row.id));
       row.caching_at = null;
-      row.progress = null;
     }
   }
   if (staleIds.length) {
     void db
       .from("telegram_media_cache")
-      .update({ caching_at: null, progress: null })
+      .update({ caching_at: null })
       .in("id", staleIds)
       .then(() => {}, () => {});
   }
@@ -82,24 +107,18 @@ export async function GET() {
   let uploadingCount = 0;
   let uploadingProgressSum = 0;
   for (const row of data ?? []) {
-    const ready =
-      !!row.tg_message_id &&
-      (row.media_type !== "video" || !!row.teaser_path);
-    const claimedAt = row.caching_at
-      ? new Date(String(row.caching_at)).getTime()
-      : 0;
-    const progress = row.progress;
-    const uploading = !ready && claimedAt > staleBefore;
-    const pct = ready
-      ? 100
-      : typeof progress === "number"
-        ? Math.max(0, Math.min(99, progress))
-        : 0;
-    status[String(row.media_path)] = { ready, uploading, progress: pct };
-    if (ready) readyCount += 1;
-    if (uploading) {
-      uploadingCount += 1;
-      uploadingProgressSum += pct;
+    const state = rowState(row);
+    status[String(row.media_path)] = state;
+    if (state.ready) readyCount += 1;
+    if (state.uploading || (!state.ready && state.progress > 0)) {
+      // Count paused mid-upload too so the main bar stays visible.
+      if (state.uploading) {
+        uploadingCount += 1;
+        uploadingProgressSum += state.progress;
+      } else if (state.progress > 0) {
+        uploadingCount += 1;
+        uploadingProgressSum += state.progress;
+      }
     }
   }
 
@@ -109,7 +128,6 @@ export async function GET() {
     summary: {
       ready: readyCount,
       uploading: uploadingCount,
-      // Average progress across active uploads (0 when none).
       progress:
         uploadingCount > 0
           ? Math.round(uploadingProgressSum / uploadingCount)
@@ -119,9 +137,9 @@ export async function GET() {
 }
 
 /**
- * POST: upload one vault file to Saved Messages now (clear copy + teaser
- * clip for videos). Manual only — responds immediately; work runs in the
- * background and the GET above reports its progress.
+ * POST: run one upload slice for a vault file (clear copy + teaser).
+ * Returns when the slice finishes or the file is ready — the vault client
+ * keeps calling until `ready` is true.
  */
 export async function POST(req: NextRequest) {
   const ownerId = await getOwnerId();
@@ -142,27 +160,55 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Force-reclaim this row so a stuck claim from an old auto-upload can't
-  // swallow the click. Manual uploads always win.
-  await supabaseAdmin()
+  const db = supabaseAdmin();
+  // Steal any dead claim so a stuck row can't block this slice.
+  await db
     .from("telegram_media_cache")
     .update({ caching_at: null })
     .eq("owner_id", ownerId)
     .eq("media_path", mediaPath)
     .is("tg_message_id", null);
 
-  after(async () => {
-    try {
-      await ensureMediaCached({
-        ownerId,
-        session,
-        mediaPath,
-        mediaType,
-        budgetMs: 700_000,
-      });
-    } catch {
-      // the row's progress resets to null; the creator can retry
-    }
+  let errorMsg: string | null = null;
+  try {
+    // ~55s of upload work per request — short enough to finish reliably,
+    // long enough to move a meaningful chunk. Client resumes until ready.
+    await ensureMediaCached({
+      ownerId,
+      session,
+      mediaPath,
+      mediaType,
+      budgetMs: 55_000,
+    });
+  } catch (err) {
+    errorMsg = err instanceof Error ? err.message : "Upload failed";
+    console.error("[vault/cache] upload slice failed", mediaPath, errorMsg);
+  }
+
+  type CacheRow = {
+    media_type: string;
+    tg_message_id: number | null;
+    teaser_path: string | null;
+    caching_at: string | null;
+    progress?: number | null;
+  };
+  let row: CacheRow | null = null;
+  ({ data: row } = (await db
+    .from("telegram_media_cache")
+    .select("media_type, tg_message_id, teaser_path, caching_at, progress")
+    .eq("owner_id", ownerId)
+    .eq("media_path", mediaPath)
+    .maybeSingle()) as { data: CacheRow | null });
+
+  const state = row
+    ? rowState({ ...row, media_type: mediaType })
+    : { ready: false, uploading: false, progress: 0 };
+
+  return NextResponse.json({
+    ok: !errorMsg,
+    error: errorMsg,
+    ready: state.ready,
+    uploading: state.uploading,
+    progress: state.progress,
   });
-  return NextResponse.json({ ok: true });
 }

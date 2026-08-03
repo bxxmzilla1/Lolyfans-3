@@ -1313,7 +1313,7 @@ export async function tgChunkedUploadSlice(opts: {
   const client = await connect(opts.session);
   try {
     const { Api } = await gramjs();
-    const BATCH_PARTS = 16; // 8 MB per storage fetch
+    const BATCH_PARTS = 8; // 4 MB per storage fetch — frequent heartbeats
     let part = Math.max(0, opts.partsDone);
     while (part < totalParts && Date.now() < opts.deadline) {
       const from = part * TG_PART_SIZE;
@@ -1322,7 +1322,10 @@ export async function tgChunkedUploadSlice(opts: {
       const res = await fetch(opts.url, {
         headers: { Range: `bytes=${from}-${to}` },
       });
-      if (!res.ok) throw new Error("Could not read the media file");
+      // 206 Partial Content is the happy path; some CDNs still return 200.
+      if (!res.ok && res.status !== 206) {
+        throw new Error(`Could not read the media file (${res.status})`);
+      }
       const expected = to - from + 1;
       const claimed = Number(res.headers.get("content-length"));
       if (Number.isFinite(claimed) && claimed > expected + TG_PART_SIZE) {
@@ -1330,6 +1333,9 @@ export async function tgChunkedUploadSlice(opts: {
         throw new Error("Storage does not support ranged reads");
       }
       const batch = Buffer.from(await res.arrayBuffer());
+      if (batch.length === 0) {
+        throw new Error("Empty range from storage");
+      }
       for (
         let off = 0;
         off < batch.length && part < totalParts;
@@ -1339,15 +1345,37 @@ export async function tgChunkedUploadSlice(opts: {
           off,
           Math.min(batch.length, off + TG_PART_SIZE)
         );
-        const ok = (await client.invoke(
-          new Api.upload.SaveBigFilePart({
-            fileId: bigInt(opts.fileId),
-            filePart: part,
-            fileTotalParts: totalParts,
-            bytes: Buffer.from(bytes),
-          })
-        )) as boolean;
-        if (!ok) throw new Error("Telegram rejected an upload part");
+        // Retry a couple of times on transient Telegram flood / network errors.
+        let saved = false;
+        for (let attempt = 0; attempt < 4 && !saved; attempt++) {
+          try {
+            const ok = (await client.invoke(
+              new Api.upload.SaveBigFilePart({
+                fileId: bigInt(opts.fileId),
+                filePart: part,
+                fileTotalParts: totalParts,
+                bytes: Buffer.from(bytes),
+              })
+            )) as boolean;
+            if (!ok) throw new Error("Telegram rejected an upload part");
+            saved = true;
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const waitMatch = msg.match(/FLOOD_WAIT_(\d+)/i);
+            if (waitMatch) {
+              const waitSec = Math.min(30, Number(waitMatch[1]) || 1);
+              if (Date.now() + waitSec * 1000 >= opts.deadline) {
+                // Out of time — return so the next slice can continue.
+                opts.onParts?.(part, totalParts);
+                return part;
+              }
+              await new Promise((r) => setTimeout(r, waitSec * 1000));
+              continue;
+            }
+            if (attempt >= 3) throw err;
+            await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+          }
+        }
         part += 1;
         if (Date.now() >= opts.deadline) break;
       }
