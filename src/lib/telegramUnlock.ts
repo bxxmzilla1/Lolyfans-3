@@ -2,7 +2,12 @@ import "server-only";
 import { headers } from "next/headers";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { stripe, stripeConfigured } from "@/lib/stripe";
-import { tgSessionFor, tgDeliverMedia, tgReactedMessageIds } from "@/lib/telegram";
+import {
+  tgSessionFor,
+  tgDeliverMedia,
+  tgReactedMessageIds,
+  tgSendText,
+} from "@/lib/telegram";
 import { getMediaCache } from "@/lib/telegramMediaCache";
 
 export type TelegramUnlock = {
@@ -241,6 +246,59 @@ export async function savedCardChatForPeer(
     : null;
 }
 
+/** Public pay-page link for an unlock (dedicated pay domain when configured). */
+function payLinkFor(unlock: TelegramUnlock): string {
+  const raw = (process.env.PPV_PAYLINK_ORIGIN || "").trim().replace(/\/+$/, "");
+  const origin = raw
+    ? raw.includes("://")
+      ? raw
+      : `https://${raw}`
+    : "https://www.lolyfans.com";
+  return unlock.short_code
+    ? `${origin}/payment/${unlock.short_code}`
+    : `${origin}/u/${unlock.id}`;
+}
+
+/** DM the fan the web pay link for this unlock (reply to the teaser). */
+async function sendPayLinkFallback(opts: {
+  unlock: TelegramUnlock;
+  session: string;
+}): Promise<void> {
+  try {
+    await tgSendText({
+      session: opts.session,
+      peer: opts.unlock.tg_peer,
+      text: `⚠️ Your card payment didn't go through. Unlock it here by entering your card again: ${payLinkFor(opts.unlock)}`,
+      replyToId: opts.unlock.tg_message_id ?? null,
+    });
+  } catch {
+    // Fan can still open the link later — the unlock stays payable by web.
+  }
+}
+
+/**
+ * A reaction charge failed (declined / expired card). Park the unlock for web
+ * pay, forget the dead saved card — so this fan's future PPVs carry the
+ * payment link again and the pay page opens the card form directly — and DM
+ * them the link so they can pay with fresh card details right away.
+ */
+async function reactionChargeFailed(opts: {
+  unlock: TelegramUnlock;
+  chatId: string;
+  session: string;
+}): Promise<void> {
+  const db = supabaseAdmin();
+  await db
+    .from("telegram_unlocks")
+    .update({ status: "react_failed" })
+    .eq("id", opts.unlock.id);
+  await db
+    .from("chats")
+    .update({ stripe_payment_method_id: null })
+    .eq("id", opts.chatId);
+  await sendPayLinkFallback(opts);
+}
+
 /**
  * Reaction-to-pay: fans who already paid once (saved card) can unlock a PPV
  * by double-tapping (reacting to) the teaser message in Telegram.
@@ -249,8 +307,9 @@ export async function savedCardChatForPeer(
  * finds the fan's saved card via their previous paid unlock from the same
  * Telegram peer, and charges it off-session. An atomic `pending → charging`
  * status claim means each PPV can only ever be charged once, no matter how
- * many times the fan reacts. Failed charges park the row in `react_failed`
- * (never retried automatically; the web pay link still works).
+ * many times the fan reacts. A failed charge parks the row in `react_failed`,
+ * drops the dead saved card (future PPVs go back to payment links) and DMs
+ * the fan the pay link so they can enter fresh card details on the web.
  */
 export async function chargeReactionUnlocks(
   ownerId: string,
@@ -296,9 +355,20 @@ export async function chargeReactionUnlocks(
     if (!reacted.size) continue;
 
     // The fan's saved card: whatever chat their last paid unlock from this
-    // peer was charged to.
-    const chatId = await savedCardChatForPeer(ownerId, peer);
-    if (!chatId) continue; // never paid before — reaction can't charge them
+    // peer was charged to (looked up without requiring the card to still be
+    // on file — a dropped card is handled below with the pay-link fallback).
+    const { data: prior } = await db
+      .from("telegram_unlocks")
+      .select("paid_chat_id")
+      .eq("owner_id", ownerId)
+      .eq("tg_peer", peer)
+      .eq("status", "paid")
+      .not("paid_chat_id", "is", null)
+      .order("paid_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const chatId = (prior?.paid_chat_id as string | null) ?? null;
+    if (!chatId) continue; // never paid before — their teaser carries the link
 
     const { data: chat } = await db
       .from("chats")
@@ -307,7 +377,24 @@ export async function chargeReactionUnlocks(
       .maybeSingle();
     const customer = (chat?.stripe_customer_id as string | null) ?? null;
     const pm = (chat?.stripe_payment_method_id as string | null) ?? null;
-    if (!customer || !pm) continue;
+
+    if (!customer || !pm) {
+      // Saved card is gone (e.g. dropped after a failed charge), so reacting
+      // can't pay — point the fan at the payment link instead. The atomic
+      // pending → react_failed claim makes sure the DM goes out only once.
+      for (const unlock of unlocks) {
+        if (!reacted.has(Number(unlock.tg_message_id))) continue;
+        const { data: claimed } = await db
+          .from("telegram_unlocks")
+          .update({ status: "react_failed" })
+          .eq("id", unlock.id)
+          .eq("status", "pending")
+          .select("id");
+        if (!claimed?.length) continue;
+        await sendPayLinkFallback({ unlock, session });
+      }
+      continue;
+    }
 
     for (const unlock of unlocks) {
       if (!reacted.has(Number(unlock.tg_message_id))) continue;
@@ -340,17 +427,11 @@ export async function chargeReactionUnlocks(
         if (pi.status === "succeeded") {
           await markPaidAndDeliver({ unlock, chatId, paymentIntentId: pi.id });
         } else {
-          await db
-            .from("telegram_unlocks")
-            .update({ status: "react_failed" })
-            .eq("id", unlock.id);
+          await reactionChargeFailed({ unlock, chatId, session });
         }
       } catch {
-        // Declined / needs authentication — leave it for the web pay link.
-        await db
-          .from("telegram_unlocks")
-          .update({ status: "react_failed" })
-          .eq("id", unlock.id);
+        // Declined / needs authentication — fall back to the payment link.
+        await reactionChargeFailed({ unlock, chatId, session });
       }
     }
   }
