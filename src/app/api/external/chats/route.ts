@@ -1,10 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ownerFromApiKey } from "@/lib/apiKey";
-import { mediaUrl } from "@/lib/utils";
+import { requestOrigin } from "@/lib/smsNotify";
+import {
+  telegramConfigured,
+  tgListDialogs,
+  tgGetMessages,
+  tgSessionFor,
+  type TgDialog,
+  type TgMessage,
+} from "@/lib/telegram";
 
-// Loading hundreds of chats with messages can exceed the default serverless
-// budget — allow up to 60s so the list never dies mid-page.
+// Telegram reads (userbot connect + getMessages) can be slow on big dialogs —
+// allow up to 60s so a deep fetch never dies mid-page.
 export const maxDuration = 60;
 
 // Allow the Orion desktop app (or any external client) to call this.
@@ -18,180 +26,191 @@ export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
 
-type MsgRow = {
+/**
+ * Orion talks to the platform in a fixed chat/message shape (role "me"/"fan",
+ * media {kind,url,path}, locked/priceTokens/unlocked). Chats now live in the
+ * creator's Telegram account, so this endpoint maps Telegram dialogs/messages
+ * into that same shape — Orion's pipeline is unchanged, only the source moved.
+ *
+ * A "chat id" is now the Telegram peer key ("user:<id>:<hash>"). Media has no
+ * public URL, so each media message points at /api/external/telegram-media,
+ * which streams the bytes (API key rides in ?key= so a bare fetch works).
+ */
+
+type OrionMessage = {
   id: string;
-  chat_id: string;
-  sender: string;
-  content: string | null;
-  media_path: string | null;
-  media_type: string | null;
-  media_items: { path: string; type: string }[] | null;
-  locked: boolean | null;
-  price_cents: number | null;
-  created_at: string;
+  role: "me" | "fan";
+  content: string;
+  at: string;
+  media: { kind: "image" | "video" | "audio"; url: string; path: string } | null;
+  mediaItems: never[];
+  locked: boolean;
+  priceTokens: number;
+  unlocked: boolean;
 };
 
-function shapeMessage(m: MsgRow, unlockedIds?: Set<string>) {
-  const items =
-    Array.isArray(m.media_items) && m.media_items.length
-      ? m.media_items
-      : m.media_path
-        ? [{ path: m.media_path, type: m.media_type || "image" }]
-        : [];
-  const priceCents = m.price_cents || 0;
+function isoFromEpochSeconds(sec: number): string {
+  const ms = (Number(sec) || 0) * 1000;
+  return ms > 0 ? new Date(ms).toISOString() : new Date(0).toISOString();
+}
+
+function mediaKindForOrion(
+  k: TgMessage["mediaKind"]
+): "image" | "video" | "audio" | null {
+  if (k === "image") return "image";
+  if (k === "video" || k === "gif") return "video";
+  if (k === "voice") return "audio";
+  // stickers / other: nothing useful for the bot to "see", skip.
+  return null;
+}
+
+function mediaUrlFor(
+  origin: string,
+  apiKey: string,
+  peer: string,
+  id: number
+): string {
+  const q = new URLSearchParams({ peer, id: String(id), key: apiKey });
+  // Absolute URL: Orion fetches media.url directly (frame extraction, UI),
+  // not through its base-prepending request helper.
+  return `${origin}/api/external/telegram-media?${q.toString()}`;
+}
+
+function shapeTgMessage(
+  m: TgMessage & { ppv?: "paid" | "pending" | null },
+  origin: string,
+  apiKey: string,
+  peer: string
+): OrionMessage {
+  const kind = m.hasMedia ? mediaKindForOrion(m.mediaKind) : null;
   return {
-    id: m.id,
-    role: m.sender === "owner" ? "me" : "fan",
-    content: m.content || "",
-    at: m.created_at,
-    media: m.media_path
-      ? {
-          kind:
-            m.media_type === "video" || m.media_type === "audio"
-              ? m.media_type
-              : "image",
-          url: mediaUrl(m.media_path),
-          path: m.media_path,
-        }
+    id: String(m.id),
+    role: m.out ? "me" : "fan",
+    content: m.text || "",
+    at: isoFromEpochSeconds(m.date),
+    media: kind
+      ? { kind, url: mediaUrlFor(origin, apiKey, peer, m.id), path: "" }
       : null,
-    mediaItems: items.map((it) => ({
-      kind: it.type,
-      url: mediaUrl(it.path),
-      path: it.path,
-    })),
-    locked: !!m.locked,
-    priceTokens: priceCents > 0 ? Math.max(1, Math.ceil(priceCents / 10)) : 0,
-    unlocked: unlockedIds ? unlockedIds.has(m.id) : false,
+    mediaItems: [],
+    // A priced teaser we sent is "locked"; only a paid one counts as unlocked.
+    locked: !!m.ppv,
+    priceTokens: 0,
+    unlocked: m.ppv === "paid",
   };
 }
 
-const MSG_COLUMNS =
-  "id, chat_id, sender, content, media_path, media_type, media_items, locked, price_cents, created_at";
+/** Only fans (DMs). The bot never auto-replies in groups or channels. */
+function dmDialogs(dialogs: TgDialog[]): TgDialog[] {
+  return dialogs.filter((d) => d.kind === "user");
+}
 
-/** Which locked messages each fan has already paid for. */
-async function loadUnlockedIds(db: ReturnType<typeof supabaseAdmin>, chatIds: string[]) {
-  const unlocked = new Set<string>();
-  const CHUNK = 40;
-  for (let i = 0; i < chatIds.length; i += CHUNK) {
-    const { data } = await db
-      .from("message_unlocks")
-      .select("message_id")
-      .in("chat_id", chatIds.slice(i, i + CHUNK));
-    for (const u of data ?? []) unlocked.add(u.message_id);
+/** PPV state per outgoing teaser message id, so paid drops read as unlocked. */
+async function ppvStatusByMessageId(
+  ownerId: string,
+  peer: string,
+  messageIds: number[]
+): Promise<Map<number, "paid" | "pending">> {
+  const map = new Map<number, "paid" | "pending">();
+  if (!messageIds.length) return map;
+  const { data } = await supabaseAdmin()
+    .from("telegram_unlocks")
+    .select("tg_message_id, tg_peer, status, delivered_at")
+    .eq("owner_id", ownerId)
+    .in("tg_message_id", messageIds);
+  for (const row of data ?? []) {
+    if (row.tg_peer !== peer) continue;
+    const id = Number(row.tg_message_id);
+    if (!Number.isFinite(id)) continue;
+    map.set(
+      id,
+      row.status === "paid" || row.status === "delivering" || row.delivered_at
+        ? "paid"
+        : "pending"
+    );
   }
-  return unlocked;
+  return map;
 }
 
-/** Recent messages for one chat (newest first, then flipped). */
-async function loadMessagesForChat(db: ReturnType<typeof supabaseAdmin>, chatId: string, limit = 200) {
-  const [{ data, error }, unlockedIds] = await Promise.all([
-    db
-      .from("messages")
-      .select(MSG_COLUMNS)
-      .eq("chat_id", chatId)
-      .order("created_at", { ascending: false })
-      .limit(limit),
-    loadUnlockedIds(db, [chatId]),
-  ]);
-  if (error) throw new Error(error.message);
-  return ((data as MsgRow[]) ?? []).reverse().map((m) => shapeMessage(m, unlockedIds));
+/** Deep fetch: full recent transcript for one peer, mapped to Orion shape. */
+async function deepFetch(
+  session: string,
+  ownerId: string,
+  origin: string,
+  apiKey: string,
+  peer: string,
+  limit: number
+): Promise<OrionMessage[]> {
+  const messages = await tgGetMessages({ session, peer, limit });
+  const ppv = await ppvStatusByMessageId(
+    ownerId,
+    peer,
+    messages.filter((m) => m.out).map((m) => m.id)
+  ).catch(() => new Map<number, "paid" | "pending">());
+  return messages.map((m) =>
+    shapeTgMessage(
+      { ...m, ppv: (m.out && ppv.get(m.id)) || null },
+      origin,
+      apiKey,
+      peer
+    )
+  );
 }
 
-/**
- * Recent messages for many chats. Chunks the `.in()` filter so PostgREST
- * never chokes on a giant URL, pages newest-first, and caps per chat so a
- * busy chat can't starve the rest.
- */
-async function loadMessagesForChats(
-  db: ReturnType<typeof supabaseAdmin>,
-  chatIds: string[],
-  perChat = 80
-) {
-  const messagesByChat = new Map<string, ReturnType<typeof shapeMessage>[]>();
-  const counts = new Map<string, number>();
-  const CHUNK = 40;
-  const PAGE = 1000;
-  const unlockedIds = await loadUnlockedIds(db, chatIds);
-
-  for (let i = 0; i < chatIds.length; i += CHUNK) {
-    const chunk = chatIds.slice(i, i + CHUNK);
-    for (let from = 0; from < 5000; from += PAGE) {
-      const { data: page, error } = await db
-        .from("messages")
-        .select(MSG_COLUMNS)
-        .in("chat_id", chunk)
-        .order("created_at", { ascending: false })
-        .range(from, from + PAGE - 1);
-      if (error) throw new Error(error.message);
-      if (!page?.length) break;
-      for (const m of page as MsgRow[]) {
-        const n = counts.get(m.chat_id) ?? 0;
-        if (n >= perChat) continue;
-        counts.set(m.chat_id, n + 1);
-        const list = messagesByChat.get(m.chat_id) ?? [];
-        list.push(shapeMessage(m, unlockedIds));
-        messagesByChat.set(m.chat_id, list);
-      }
-      if (page.length < PAGE) break;
-      // Every chat in this chunk already full — stop paging it.
-      if (chunk.every((id) => (counts.get(id) ?? 0) >= perChat)) break;
-    }
-  }
-
-  for (const list of messagesByChat.values()) list.reverse();
-  return messagesByChat;
-}
-
-/**
- * External read API for connected apps (Orion). Returns every chat the owner
- * has, with recent messages, shaped so a chatbot can display and answer them.
- *
- * Optional `?chatId=<uuid>` returns only that chat with a deeper message
- * history — used when Orion opens a conversation so the transcript never
- * arrives empty because of a list-level cap.
- */
 export async function GET(req: NextRequest) {
   const ownerId = await ownerFromApiKey(req);
   if (!ownerId) {
     return NextResponse.json({ error: "Invalid API key" }, { status: 401, headers: CORS });
   }
 
-  const db = supabaseAdmin();
-  const chatId = req.nextUrl.searchParams.get("chatId");
+  // The raw token, so media URLs can be fetched without a header.
+  const apiKey =
+    (req.headers.get("authorization") || "").toLowerCase().startsWith("bearer ")
+      ? (req.headers.get("authorization") || "").slice(7).trim()
+      : req.headers.get("x-api-key")?.trim() ||
+        req.nextUrl.searchParams.get("key")?.trim() ||
+        "";
 
-  // Optional per-chat message window (?limit=N): callers that only need the
-  // most recent slice of every transcript get a much cheaper read. Absent or
-  // 0 keeps the defaults (80 in the list, 200 on a deep fetch).
+  if (!telegramConfigured()) {
+    return NextResponse.json(
+      { error: "Telegram is not configured on the server" },
+      { status: 503, headers: CORS }
+    );
+  }
+  const session = await tgSessionFor(ownerId);
+  if (!session) {
+    return NextResponse.json(
+      { error: "Connect your Telegram account first (Settings → Telegram)" },
+      { status: 400, headers: CORS }
+    );
+  }
+
+  const origin = requestOrigin(req.headers) || req.nextUrl.origin;
+  const peer = req.nextUrl.searchParams.get("chatId");
   const limitParam = Math.floor(Number(req.nextUrl.searchParams.get("limit") || 0));
   const msgLimit = limitParam > 0 ? Math.min(500, Math.max(10, limitParam)) : 0;
 
-  // Single-chat deep fetch (opened conversation).
-  if (chatId) {
-    const { data: chat, error } = await db
-      .from("chats")
-      .select("id, guest_name, custom_name, guest_country, last_message_at, bot_replied_at")
-      .eq("owner_id", ownerId)
-      .eq("id", chatId)
-      .maybeSingle();
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500, headers: CORS });
-    }
-    if (!chat) {
-      return NextResponse.json({ error: "Chat not found" }, { status: 404, headers: CORS });
-    }
+  // Single-chat deep fetch (an opened conversation / drafting a reply).
+  if (peer) {
     try {
-      const msgs = await loadMessagesForChat(db, chat.id, msgLimit || 200);
+      const msgs = await deepFetch(
+        session,
+        ownerId,
+        origin,
+        apiKey,
+        peer,
+        msgLimit || 200
+      );
       const last = msgs[msgs.length - 1];
       return NextResponse.json(
         {
           chat: {
-            id: chat.id,
-            name: chat.custom_name || chat.guest_name || "Guest",
+            id: peer,
+            name: "",
             username: "",
-            country: chat.guest_country || "",
+            country: "",
             lastMessage: last?.content || "",
-            lastMessageAt: chat.last_message_at,
-            botRepliedAt: chat.bot_replied_at || null,
+            lastMessageAt: last?.at || null,
+            botRepliedAt: last?.role === "me" ? last.at : null,
             messages: msgs,
           },
         },
@@ -203,42 +222,50 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const { data: chats, error } = await db
-    .from("chats")
-    .select("id, guest_name, custom_name, guest_country, last_message_at, bot_replied_at")
-    .eq("owner_id", ownerId)
-    .order("last_message_at", { ascending: false })
-    .limit(500);
-
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500, headers: CORS });
+  // List: every DM, newest first. Messages aren't embedded (one Telegram
+  // fetch per dialog would be slow and hit rate limits) — instead each chat
+  // carries a single synthesized "last message" built from the dialog preview,
+  // which is all Orion's need-detection (reply-needed / silent) requires. It
+  // deep-fetches the full transcript per chat before drafting.
+  let dialogs: TgDialog[];
+  try {
+    dialogs = dmDialogs(await tgListDialogs({ session, limit: 200 }));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to load chats";
+    return NextResponse.json({ error: message }, { status: 500, headers: CORS });
   }
 
-  const ids = (chats ?? []).map((c) => c.id);
-  let messagesByChat = new Map<string, ReturnType<typeof shapeMessage>[]>();
-  if (ids.length) {
-    try {
-      messagesByChat = await loadMessagesForChats(db, ids, msgLimit || 80);
-    } catch (err) {
-      console.error("external/chats message load failed:", err);
-      // Still return the chat list — Orion can deep-fetch per chat.
-    }
-  }
-
-  const out = (chats ?? []).map((c) => {
-    const msgs = messagesByChat.get(c.id) ?? [];
-    const last = msgs[msgs.length - 1];
+  const chats = dialogs.map((d) => {
+    const at = isoFromEpochSeconds(d.date);
+    // The preview is the newest message; role tells Orion whether the fan is
+    // waiting (incoming) or we spoke last (outgoing → nothing to answer).
+    const lastMsg: OrionMessage | null = d.preview
+      ? {
+          id: `preview:${d.peer}:${d.date}`,
+          role: d.lastOut ? "me" : "fan",
+          content: d.preview,
+          at,
+          media: null,
+          mediaItems: [],
+          locked: false,
+          priceTokens: 0,
+          unlocked: false,
+        }
+      : null;
     return {
-      id: c.id,
-      name: c.custom_name || c.guest_name || "Guest",
-      username: "",
-      country: c.guest_country || "",
-      lastMessage: last?.content || "",
-      lastMessageAt: c.last_message_at,
-      botRepliedAt: c.bot_replied_at || null,
-      messages: msgs,
+      id: d.peer,
+      name: d.title,
+      username: d.username || "",
+      country: "",
+      lastMessage: d.preview,
+      lastMessageAt: at,
+      // If we spoke last there's nothing to answer; mark bot-replied so the
+      // auto-responder leaves it alone until the fan writes back.
+      botRepliedAt: d.lastOut ? at : null,
+      unread: d.unread,
+      messages: lastMsg ? [lastMsg] : [],
     };
   });
 
-  return NextResponse.json({ chats: out }, { headers: CORS });
+  return NextResponse.json({ chats }, { headers: CORS });
 }

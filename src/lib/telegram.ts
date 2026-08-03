@@ -843,6 +843,34 @@ export async function tgSendText(opts: {
   }
 }
 
+/**
+ * Send a stored audio file into a DM as a Telegram voice note (the round
+ * inline player). Used by the external API so Orion's ElevenLabs voice notes
+ * arrive as real voice messages, never a file attachment.
+ */
+export async function tgSendVoiceNote(opts: {
+  session: string;
+  peer: string;
+  mediaPath: string;
+  caption?: string;
+}): Promise<void> {
+  const client = await connect(opts.session);
+  try {
+    const { CustomFile } = await gramjs();
+    const peer = await resolvePeer(opts.peer);
+    const file = await downloadMedia(opts.mediaPath);
+    const name = opts.mediaPath.split("/").pop() || "voice.ogg";
+    await client.sendFile(peer, {
+      file: new CustomFile(name, file.length, "", file),
+      // GramJS attaches the voice DocumentAttributeAudio(voice=true) flag.
+      voiceNote: true,
+      caption: opts.caption || "",
+    });
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
 /** Run the bundled ffmpeg binary with the given args (throws on failure). */
 async function runFfmpeg(args: string[], timeout = 45000): Promise<void> {
   const ffmpegPath = (await import("ffmpeg-static")).default as unknown as

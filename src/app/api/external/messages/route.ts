@@ -1,8 +1,21 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { randomBytes } from "crypto";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ownerFromApiKey } from "@/lib/apiKey";
-import { broadcast } from "@/lib/realtime";
-import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
+import { requestOrigin } from "@/lib/smsNotify";
+import {
+  telegramConfigured,
+  tgSessionFor,
+  tgSendText,
+  tgSendTeaser,
+  tgSendVoiceNote,
+  tgDeliverMedia,
+} from "@/lib/telegram";
+import { savedCardChatForPeer } from "@/lib/telegramUnlock";
+import { getMediaCache, downloadTeaserClip } from "@/lib/telegramMediaCache";
+
+// A priced send may upload clear media when no Saved Messages copy exists.
+export const maxDuration = 800;
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -14,29 +27,156 @@ export function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS });
 }
 
+type MediaItem = { path: string; type: "image" | "video" | "audio" };
+
+function shortPayCode(): string {
+  const alphabet =
+    "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+  const bytes = randomBytes(8);
+  let out = "";
+  for (const b of bytes) out += alphabet[b % alphabet.length];
+  return out;
+}
+
 /**
- * External send API for connected apps (Orion): post a reply into a chat as
- * the owner. Marks the chat as bot-replied so auto-respond won't answer the
- * same fan message twice. Auth is the owner's API key.
- *
- * Supports media packages: `mediaItems: [{ path, type }, ...]` plus an
- * optional `priceCents` — a positive price sends it locked (pay-to-unlock
- * with a one-tap card charge), mirroring the owner inbox composer.
+ * Send one locked media file as a Telegram PPV: create the unlock row (its
+ * short code is the pay-link token), send a blurred teaser + link (or a
+ * double-tap-to-pay prompt for fans with a saved card), and let the fan pay
+ * on /payment/<code>. Mirrors /api/telegram/send for a single item.
+ */
+async function sendPricedPpv(opts: {
+  ownerId: string;
+  session: string;
+  peer: string;
+  item: MediaItem;
+  priceCents: number;
+  caption: string;
+  origin: string;
+}): Promise<void> {
+  const { ownerId, session, peer, item, priceCents, caption, origin } = opts;
+  const mediaType = item.type === "video" ? "video" : "image";
+  const db = supabaseAdmin();
+
+  const cache = await getMediaCache(ownerId, item.path).catch(() => null);
+
+  const row = {
+    owner_id: ownerId,
+    media_path: item.path,
+    media_type: mediaType,
+    price_cents: priceCents,
+    tg_peer: peer,
+    status: "pending",
+  };
+  let shortCode: string | null = shortPayCode();
+  let { data: unlock, error } = await db
+    .from("telegram_unlocks")
+    .insert({ ...row, short_code: shortCode })
+    .select()
+    .single();
+  if (error || !unlock) {
+    shortCode = null;
+    ({ data: unlock, error } = await db
+      .from("telegram_unlocks")
+      .insert(row)
+      .select()
+      .single());
+  }
+  if (error || !unlock) throw new Error("Could not create the unlock link");
+
+  const payOrigin =
+    (process.env.PPV_PAYLINK_ORIGIN || "").trim().replace(/\/+$/, "") || origin;
+  const link = shortCode
+    ? `${payOrigin}/payment/${shortCode}`
+    : `${payOrigin}/u/${unlock.id}`;
+  const isDm = !peer.startsWith("channel:") && !peer.startsWith("chat:");
+  const reactionPay = isDm && !!(await savedCardChatForPeer(ownerId, peer));
+  const safeCaption = caption
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const teaserCaption = [
+    safeCaption,
+    reactionPay
+      ? `❤️ <b>Double-tap this message to unlock</b>`
+      : `🔓 <b><a href="${link}">Tap Here To Unlock</a></b>`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  try {
+    const preClip =
+      mediaType === "video" && cache?.teaserPath
+        ? await downloadTeaserClip(cache.teaserPath)
+        : null;
+    const messageId = await tgSendTeaser({
+      session,
+      peer,
+      mediaPath: item.path,
+      mediaType,
+      caption: teaserCaption,
+      priceCents,
+      preClip,
+    });
+    const updates: Record<string, unknown> = {};
+    if (messageId) updates.tg_message_id = messageId;
+    if (cache?.tgMessageId) updates.tg_cached_message_id = cache.tgMessageId;
+    if (Object.keys(updates).length) {
+      await db.from("telegram_unlocks").update(updates).eq("id", unlock.id);
+    }
+  } catch (err) {
+    await db.from("telegram_unlocks").delete().eq("id", unlock.id);
+    throw err;
+  }
+}
+
+function friendlyTgError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : "Could not send the message";
+  if (/USERNAME_NOT_OCCUPIED|PEER_ID_INVALID|USERNAME_INVALID/.test(msg)) {
+    return "Couldn't find that Telegram user";
+  }
+  if (/that user|privacy|PEER_FLOOD/i.test(msg)) {
+    return "Telegram wouldn't let you message that user (privacy or rate limit)";
+  }
+  return msg;
+}
+
+/**
+ * External send API for Orion. `chatId` is the Telegram peer key. Sends a
+ * reply into the fan's DM: plain text, a free media drop, a locked PPV, or a
+ * voice note. Media "packages" (mediaItems array) send one Telegram message
+ * per item; a positive priceCents locks EACH item at that price (Telegram
+ * PPVs are one-file-one-price, unlike the old bundled locked message).
  */
 export async function POST(req: NextRequest) {
   const ownerId = await ownerFromApiKey(req);
   if (!ownerId) {
     return NextResponse.json({ error: "Invalid API key" }, { status: 401, headers: CORS });
   }
+  if (!telegramConfigured()) {
+    return NextResponse.json(
+      { error: "Telegram is not configured on the server" },
+      { status: 503, headers: CORS }
+    );
+  }
+  const session = await tgSessionFor(ownerId);
+  if (!session) {
+    return NextResponse.json(
+      { error: "Connect your Telegram account first (Settings → Telegram)" },
+      { status: 400, headers: CORS }
+    );
+  }
 
-  const body = await req.json();
-  const { chatId, content, mediaPath, mediaType, locked, notify, priceCents, decideSeconds } =
-    body;
+  const body = await req.json().catch(() => ({}));
+  const peer = String(body.chatId || "").trim();
+  const content = String(body.content || "").trim();
+  const priceCents =
+    Number.isFinite(Number(body.priceCents)) && Number(body.priceCents) > 0
+      ? Math.max(0, Math.round(Number(body.priceCents)))
+      : 0;
 
-  // Normalize single mediaPath (legacy) or mediaItems (packages).
-  const mediaItems: { path: string; type: "image" | "video" | "audio" }[] = [];
-  const normType = (t: unknown): "image" | "video" | "audio" =>
+  const normType = (t: unknown): MediaItem["type"] =>
     t === "video" ? "video" : t === "audio" ? "audio" : "image";
+  const mediaItems: MediaItem[] = [];
   if (Array.isArray(body.mediaItems)) {
     for (const it of body.mediaItems) {
       if (it && typeof it.path === "string" && it.path) {
@@ -44,83 +184,77 @@ export async function POST(req: NextRequest) {
       }
     }
   }
-  if (mediaItems.length === 0 && typeof mediaPath === "string" && mediaPath) {
-    mediaItems.push({ path: mediaPath, type: normType(mediaType) });
+  if (mediaItems.length === 0 && typeof body.mediaPath === "string" && body.mediaPath) {
+    mediaItems.push({ path: body.mediaPath, type: normType(body.mediaType) });
   }
 
-  if (!chatId) {
+  if (!peer) {
     return NextResponse.json({ error: "chatId required" }, { status: 400, headers: CORS });
   }
-  if (!content?.trim() && mediaItems.length === 0) {
+  if (!content && mediaItems.length === 0) {
     return NextResponse.json({ error: "Empty message" }, { status: 400, headers: CORS });
   }
 
-  const db = supabaseAdmin();
-  // Only allow sending into a chat this owner actually owns.
-  const { data: chat } = await db
-    .from("chats")
-    .select("id")
-    .eq("id", chatId)
-    .eq("owner_id", ownerId)
-    .maybeSingle();
-  if (!chat) {
-    return NextResponse.json({ error: "Chat not found" }, { status: 404, headers: CORS });
+  const origin = requestOrigin(req.headers);
+
+  try {
+    // Text-only reply.
+    if (mediaItems.length === 0) {
+      await tgSendText({ session, peer, text: content });
+      return NextResponse.json({ ok: true }, { headers: CORS });
+    }
+
+    // Media: one Telegram message per item. The caption rides on the first
+    // item only, so a package doesn't repeat the same line under every file.
+    for (let i = 0; i < mediaItems.length; i++) {
+      const item = mediaItems[i];
+      const caption = i === 0 ? content : "";
+
+      if (item.type === "audio") {
+        await tgSendVoiceNote({ session, peer, mediaPath: item.path, caption });
+        continue;
+      }
+      if (priceCents > 0) {
+        await sendPricedPpv({
+          ownerId,
+          session,
+          peer,
+          item,
+          priceCents,
+          caption,
+          origin,
+        });
+        continue;
+      }
+      // Free drop: deliver the clear media directly.
+      const cache = await getMediaCache(ownerId, item.path).catch(() => null);
+      await tgDeliverMedia({
+        session,
+        peer,
+        mediaPath: item.path,
+        mediaType: item.type,
+        caption,
+        cachedMessageId: cache?.tgMessageId ?? null,
+      });
+      try {
+        await supabaseAdmin().from("telegram_unlocks").insert({
+          owner_id: ownerId,
+          media_path: item.path,
+          media_type: item.type,
+          price_cents: 0,
+          tg_peer: peer,
+          status: "free",
+        });
+      } catch {
+        // logging the free send is best-effort
+      }
+    }
+
+    return NextResponse.json({ ok: true }, { headers: CORS });
+  } catch (err) {
+    return NextResponse.json(
+      { error: friendlyTgError(err) },
+      { status: 400, headers: CORS }
+    );
   }
-
-  const price =
-    mediaItems.length > 0 && Number.isFinite(Number(priceCents))
-      ? Math.max(0, Math.round(Number(priceCents)))
-      : 0;
-
-  // Optional decision countdown for the incoming-media gate (photos/videos).
-  const hasVisualMedia = mediaItems.some((i) => i.type === "image" || i.type === "video");
-  const decide = hasVisualMedia
-    ? Math.max(0, Math.min(3600, Math.round(Number(decideSeconds)) || 0))
-    : 0;
-
-  const { data: message, error } = await db
-    .from("messages")
-    .insert({
-      chat_id: chatId,
-      sender: "owner",
-      content: content?.trim() || null,
-      media_path: mediaItems[0]?.path ?? null,
-      media_type: mediaItems[0]?.type ?? null,
-      media_items: mediaItems,
-      // A positive price implies locked; `locked` alone still works (manual blur).
-      locked: (!!locked || price > 0) && mediaItems.length > 0,
-      price_cents: price,
-      ...(decide > 0 ? { decide_seconds: decide } : {}),
-    })
-    .select()
-    .single();
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500, headers: CORS });
-  }
-
-  const now = message.created_at;
-  await Promise.all([
-    db
-      .from("chats")
-      .update({ last_message_at: now, last_read_at: now, bot_replied_at: now })
-      .eq("id", chatId),
-    broadcast(`chat:${chatId}`, "new-message", message),
-    broadcast(`inbox:${ownerId}`, "new-message", {
-      chatId,
-      content: message.content ?? null,
-      media_type: message.media_type ?? null,
-      created_at: message.created_at,
-      sender: message.sender,
-    }),
-  ]);
-
-  // Offline guest? Nudge them by SMS. Orion sends `notify: false` on every
-  // bubble except its last one, so the text goes out exactly once, after the
-  // reply is complete.
-  if (notify !== false) {
-    const origin = requestOrigin(req.headers);
-    after(() => notifyGuestSms(chatId, origin));
-  }
-
-  return NextResponse.json({ message }, { headers: CORS });
 }
