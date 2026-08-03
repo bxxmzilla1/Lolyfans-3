@@ -64,6 +64,10 @@ create table if not exists telegram_media_cache (
   unique (owner_id, media_path)
 );
 
+-- Upload progress (0–100) while a vault file is being copied to Saved
+-- Messages, so the vault can show a live progress bar. Safe to re-run.
+alter table telegram_media_cache add column if not exists progress int;
+
 -- Server-only tables (accessed with the service key); RLS keeps the anon key out.
 alter table telegram_accounts enable row level security;
 alter table telegram_unlocks enable row level security;

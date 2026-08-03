@@ -122,6 +122,58 @@ export default function VaultManager() {
     : pathname?.match(/^\/inbox\/([^/?#]+)/)?.[1] ?? null;
   const [sendStatus, setSendStatus] = useState<Record<string, SendStatus>>({});
 
+  // Saved Messages upload state per media path: ready items send as PPV
+  // instantly; missing ones can be uploaded on demand with live progress.
+  type CacheState = { ready: boolean; uploading: boolean; progress: number };
+  const [cacheStatus, setCacheStatus] = useState<Record<string, CacheState>>({});
+  const [tgReady, setTgReady] = useState(false);
+  const cacheInflightRef = useRef(false);
+  const loadCacheStatus = useCallback(async () => {
+    if (cacheInflightRef.current) return;
+    cacheInflightRef.current = true;
+    try {
+      const res = await fetch("/api/vault/cache").catch(() => null);
+      if (!res?.ok) return;
+      const data = await res.json().catch(() => null);
+      if (!data) return;
+      setTgReady(!!data.telegram);
+      setCacheStatus((data.status as Record<string, CacheState>) ?? {});
+    } finally {
+      cacheInflightRef.current = false;
+    }
+  }, []);
+
+  async function startCacheUpload(item: Item) {
+    // Optimistic: show the bar right away; the poll takes over from there.
+    setCacheStatus((prev) => ({
+      ...prev,
+      [item.media_path]: {
+        ready: false,
+        uploading: true,
+        progress: Math.max(1, prev[item.media_path]?.progress ?? 1),
+      },
+    }));
+    await fetch("/api/vault/cache", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mediaPath: item.media_path,
+        mediaType: item.media_type,
+      }),
+    }).catch(() => {});
+    setTimeout(() => void loadCacheStatus(), 1500);
+  }
+
+  // Speed the poll up to 2s while an upload is running, so the bar moves.
+  const anyUploading = Object.values(cacheStatus).some((s) => s.uploading);
+  useEffect(() => {
+    if (!anyUploading) return;
+    const timer = setInterval(() => {
+      if (document.visibilityState === "visible") void loadCacheStatus();
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [anyUploading, loadCacheStatus]);
+
   const statusInflightRef = useRef(false);
   const loadSendStatus = useCallback(async () => {
     if (statusInflightRef.current) return;
@@ -145,6 +197,7 @@ export default function VaultManager() {
     setSendStatus({});
     // Immediate refresh on chat switch — this is the important path.
     loadSendStatus();
+    loadCacheStatus();
     // Live updates for legacy chats: repaint when something is sent or the
     // fan unlocks. Telegram/global scopes rely on the backup poll below.
     const supabase = chatId ? supabaseBrowser() : null;
@@ -156,13 +209,16 @@ export default function VaultManager() {
     channel?.subscribe();
     // Gentle backup poll — 1 Hz was 503-ing the deployment.
     const timer = setInterval(() => {
-      if (document.visibilityState === "visible") loadSendStatus();
+      if (document.visibilityState === "visible") {
+        loadSendStatus();
+        loadCacheStatus();
+      }
     }, 5000);
     return () => {
       clearInterval(timer);
       if (supabase && channel) supabase.removeChannel(channel);
     };
-  }, [chatId, loadSendStatus]);
+  }, [chatId, loadSendStatus, loadCacheStatus]);
 
   const loadAlbums = useCallback(async () => {
     const res = await fetch("/api/vault/albums");
@@ -759,6 +815,22 @@ export default function VaultManager() {
             </span>
           </div>
         )}
+        {tgReady && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-sky-500 flex items-center justify-center">
+                <IconCheck className="w-2.5 h-2.5 text-white" />
+              </span>
+              On Telegram — instant PPV
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-4 h-4 rounded-full bg-black/60 border border-white/50 flex items-center justify-center">
+                <IconSend className="w-2 h-2 text-white" />
+              </span>
+              Tap the badge to upload
+            </span>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-1">
           {visibleItems.map((item) => (
             <button
@@ -831,6 +903,53 @@ export default function VaultManager() {
                   }`}
                 />
               )}
+              {/* Saved Messages state: blue check = uploaded (instant PPV),
+                  progress bar = uploading now, cloud button = tap to upload. */}
+              {!selectMode &&
+                tgReady &&
+                (cacheStatus[item.media_path]?.ready ? (
+                  <span
+                    title="On Telegram — sends instantly as PPV"
+                    className="absolute top-1 left-1 w-5 h-5 rounded-full bg-sky-500 flex items-center justify-center shadow"
+                  >
+                    <IconCheck className="w-3 h-3 text-white" />
+                  </span>
+                ) : cacheStatus[item.media_path]?.uploading ? (
+                  <>
+                    <span className="absolute top-1 left-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300 tabular-nums">
+                      {cacheStatus[item.media_path].progress}%
+                    </span>
+                    <span className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/60">
+                      <span
+                        className="block h-full bg-sky-400 transition-all duration-700"
+                        style={{
+                          width: `${Math.max(4, cacheStatus[item.media_path].progress)}%`,
+                        }}
+                      />
+                    </span>
+                  </>
+                ) : (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    title="Not on Telegram yet — click to upload it for instant PPV sending"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      void startCacheUpload(item);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void startCacheUpload(item);
+                      }
+                    }}
+                    className="absolute top-1 left-1 w-5 h-5 rounded-full bg-black/60 border border-white/50 flex items-center justify-center hover:bg-sky-600 hover:border-sky-400 transition-colors"
+                  >
+                    <IconSend className="w-2.5 h-2.5 text-white" />
+                  </span>
+                ))}
               {selectMode && (
                 <span
                   className={`absolute top-1.5 right-1.5 w-5.5 h-5.5 rounded-full border-2 flex items-center justify-center ${

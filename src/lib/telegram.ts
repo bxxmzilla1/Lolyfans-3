@@ -1184,6 +1184,8 @@ export async function tgCacheMedia(opts: {
   session: string;
   mediaPath: string;
   mediaType: "image" | "video";
+  /** Telegram upload progress, 0..1 — drives the vault progress bar. */
+  onProgress?: (fraction: number) => void;
 }): Promise<number | null> {
   const client = await connect(opts.session);
   try {
@@ -1193,6 +1195,15 @@ export async function tgCacheMedia(opts: {
       opts.mediaType === "video"
         ? await videoUploadExtras(file)
         : { attributes: [], thumb: null };
+    const progressCallback = opts.onProgress
+      ? (progress: number) => {
+          try {
+            opts.onProgress!(Math.max(0, Math.min(1, Number(progress) || 0)));
+          } catch {
+            // progress reporting must never break the upload
+          }
+        }
+      : undefined;
     const sent = await client.sendFile("me", {
       file: new CustomFile(
         mediaFileName(opts.mediaPath, opts.mediaType),
@@ -1207,6 +1218,7 @@ export async function tgCacheMedia(opts: {
         ? { attributes: extras.attributes as never }
         : {}),
       ...(extras.thumb ? { thumb: extras.thumb } : {}),
+      ...(progressCallback ? { progressCallback } : {}),
     });
     const id = (sent as { id?: unknown } | null)?.id;
     return typeof id === "number" && id > 0 ? id : null;

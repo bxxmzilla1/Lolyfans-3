@@ -128,18 +128,42 @@ export async function ensureMediaCached(opts: {
 
   let tgMessageId = row.tg_message_id;
   let teaserPath = row.teaser_path;
+
+  // Progress for the vault UI (0–100). Best-effort: the column may not
+  // exist until the migration runs, and supabase-js reports (not throws)
+  // errors, so a missing column just no-ops.
+  const rowId = row.id;
+  const setProgress = (value: number | null) => {
+    void db.from(TABLE).update({ progress: value }).eq("id", rowId).then(
+      () => {},
+      () => {}
+    );
+  };
+  // Telegram upload is the long part: map its 0..1 onto 10–80. Throttled so
+  // a big video doesn't hammer the database.
+  let lastProgressWrite = 0;
+  const onUploadProgress = (fraction: number) => {
+    const now = Date.now();
+    if (now - lastProgressWrite < 1500) return;
+    lastProgressWrite = now;
+    setProgress(10 + Math.round(fraction * 70));
+  };
+
+  setProgress(5);
   try {
     if (needsCopy) {
       const id = await tgCacheMedia({
         session: opts.session,
         mediaPath: opts.mediaPath,
         mediaType: opts.mediaType,
+        onProgress: onUploadProgress,
       });
       if (id) {
         tgMessageId = id;
         await db.from(TABLE).update({ tg_message_id: id }).eq("id", row.id);
       }
     }
+    setProgress(needsTeaser ? 85 : 95);
     if (needsTeaser) {
       const clip = await tgBuildTeaserClip(opts.mediaPath);
       const path = teaserStoragePath(opts.ownerId, opts.mediaPath);
@@ -152,6 +176,9 @@ export async function ensureMediaCached(opts: {
       }
     }
   } finally {
+    const complete =
+      !!tgMessageId && (opts.mediaType !== "video" || !!teaserPath);
+    setProgress(complete ? 100 : null);
     try {
       await db.from(TABLE).update({ caching_at: null }).eq("id", row.id);
     } catch {
