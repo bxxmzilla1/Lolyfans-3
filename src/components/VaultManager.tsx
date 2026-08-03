@@ -708,6 +708,9 @@ export default function VaultManager() {
 
   return (
     <div className="space-y-4">
+      {/* Pinned controls: back/title/select, upload and filters stay put
+          while the media grid scrolls underneath — faster navigation. */}
+      <div className="sticky top-0 z-20 -mx-4 -mt-4 px-4 pt-4 pb-3 bg-card/80 backdrop-blur-xl border-b border-line space-y-3">
       <div className="flex items-center gap-2.5">
         <button
           onClick={() => setOpenAlbum(null)}
@@ -795,7 +798,7 @@ export default function VaultManager() {
               Tap media below, then check the albums it should show in.
             </p>
           ) : (
-            <ul className="space-y-1">
+            <ul className="space-y-1 max-h-44 overflow-y-auto">
               {albums.map((album) => {
                 const ids = [...selected];
                 const inCount = ids.filter((id) =>
@@ -871,6 +874,7 @@ export default function VaultManager() {
           ))}
         </div>
       )}
+      </div>
 
       {items.length === 0 ? (
         <div className="py-10 text-center flex flex-col items-center gap-3">

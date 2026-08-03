@@ -150,9 +150,22 @@ export default function TelegramChatView({
     return () => clearInterval(timer);
   }, [load]);
 
+  // First paint of a chat lands directly on the newest bubble (no slow
+  // scroll down from the top); later refreshes only glide when new
+  // messages actually arrived.
+  const lastMsgKeyRef = useRef<string>("");
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+    if (!messages || messages.length === 0) return;
+    const last = messages[messages.length - 1];
+    const key = `${peer}:${last.id}`;
+    if (lastMsgKeyRef.current === key) return;
+    const firstPaint = !lastMsgKeyRef.current.startsWith(`${peer}:`);
+    lastMsgKeyRef.current = key;
+    bottomRef.current?.scrollIntoView({
+      behavior: firstPaint ? "instant" : "smooth",
+      block: "end",
+    });
+  }, [messages, peer]);
 
   async function send() {
     const body = text.trim();
