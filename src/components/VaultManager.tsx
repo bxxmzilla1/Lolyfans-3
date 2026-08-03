@@ -829,6 +829,12 @@ export default function VaultManager() {
               </span>
               Tap the badge to upload
             </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="rounded bg-black/70 px-1 py-0.5 text-[9px] font-semibold text-amber-300">
+                ▶ %
+              </span>
+              Paused — tap to resume
+            </span>
           </div>
         )}
         <div className="grid grid-cols-3 gap-1">
@@ -904,7 +910,8 @@ export default function VaultManager() {
                 />
               )}
               {/* Saved Messages state: blue check = uploaded (instant PPV),
-                  progress bar = uploading now, cloud button = tap to upload. */}
+                  progress bar = uploading now, paused bar = click to resume,
+                  cloud button = tap to upload. */}
               {!selectMode &&
                 tgReady &&
                 (cacheStatus[item.media_path]?.ready ? (
@@ -922,6 +929,39 @@ export default function VaultManager() {
                     <span className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/60">
                       <span
                         className="block h-full bg-sky-400 transition-all duration-700"
+                        style={{
+                          width: `${Math.max(4, cacheStatus[item.media_path].progress)}%`,
+                        }}
+                      />
+                    </span>
+                  </>
+                ) : (cacheStatus[item.media_path]?.progress ?? 0) > 0 ? (
+                  // Paused mid-upload (big video between slices) — click to
+                  // resume right away instead of waiting for the worker.
+                  <>
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      title="Upload paused — click to resume now"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        void startCacheUpload(item);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          void startCacheUpload(item);
+                        }
+                      }}
+                      className="absolute top-1 left-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300 tabular-nums hover:bg-sky-600 hover:text-white transition-colors"
+                    >
+                      ▶ {cacheStatus[item.media_path].progress}%
+                    </span>
+                    <span className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/60">
+                      <span
+                        className="block h-full bg-amber-400/80"
                         style={{
                           width: `${Math.max(4, cacheStatus[item.media_path].progress)}%`,
                         }}

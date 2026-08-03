@@ -13,9 +13,10 @@ type CacheState = {
   /** Clear copy in Saved Messages (and teaser clip for videos) — ready for
    *  instant PPV sends and deliveries. */
   ready: boolean;
-  /** An upload/pre-render is currently running. */
+  /** A worker is actively uploading right now (fresh heartbeat). */
   uploading: boolean;
-  /** 0–100 for the progress bar. */
+  /** 0–100 for the progress bar. Non-zero while `uploading` is false means
+   *  a chunked upload is paused between slices — resumable on click. */
   progress: number;
 };
 
@@ -62,12 +63,9 @@ export async function GET() {
       ? new Date(String(row.caching_at)).getTime()
       : 0;
     const progress = row.progress;
-    // A chunked upload pauses between slices (claim released, progress
-    // kept) — still show it as uploading so the bar doesn't flicker away.
-    const uploading =
-      !ready &&
-      (claimedAt > staleBefore ||
-        (typeof progress === "number" && progress > 0));
+    // Only a fresh heartbeat counts as uploading — a paused chunked upload
+    // (claim released, progress kept) must leave the manual button usable.
+    const uploading = !ready && claimedAt > staleBefore;
     status[String(row.media_path)] = {
       ready,
       uploading,
