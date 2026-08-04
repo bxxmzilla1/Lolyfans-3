@@ -246,6 +246,54 @@ export async function savedCardChatForPeer(
     : null;
 }
 
+/**
+ * Chat to save a paying fan's card to, so double-tap (reaction) unlocks work
+ * from their very first web payment.
+ *
+ * Fans opening pay links on the dedicated pay domain usually can't be
+ * recognised as Lolyfans guests (the guest cookie lives on the app's own
+ * domain), so their card used to be attached to an orphan Stripe customer
+ * and every following PPV fell back to a payment link. Instead: reuse the
+ * chat from any earlier paid unlock of the same Telegram peer, or create a
+ * hidden (pending) chat that exists just to hold the fan's saved card.
+ */
+export async function fanChatForCard(opts: {
+  unlock: TelegramUnlock;
+  ip?: string | null;
+  country?: string | null;
+}): Promise<string | null> {
+  const db = supabaseAdmin();
+  const { unlock } = opts;
+
+  const { data: prior } = await db
+    .from("telegram_unlocks")
+    .select("paid_chat_id")
+    .eq("owner_id", unlock.owner_id)
+    .eq("tg_peer", unlock.tg_peer)
+    .not("paid_chat_id", "is", null)
+    .order("paid_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (prior?.paid_chat_id) return prior.paid_chat_id as string;
+
+  const { data: created } = await db
+    .from("chats")
+    .insert({
+      owner_id: unlock.owner_id,
+      guest_name: unlock.tg_peer.startsWith("@")
+        ? unlock.tg_peer
+        : "Telegram fan",
+      guest_ip: opts.ip ?? null,
+      guest_country: opts.country ?? null,
+      // Hidden from the creator's Lolyfans inbox — this row only carries
+      // the saved card (and geo) for a Telegram-side fan.
+      pending: true,
+    })
+    .select("id")
+    .single();
+  return (created?.id as string | undefined) ?? null;
+}
+
 /** Public pay-page link for an unlock (dedicated pay domain when configured). */
 function payLinkFor(unlock: TelegramUnlock): string {
   const raw = (process.env.PPV_PAYLINK_ORIGIN || "").trim().replace(/\/+$/, "");

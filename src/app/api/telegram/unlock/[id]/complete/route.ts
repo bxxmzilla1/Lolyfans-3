@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { visitorCountryCode } from "@/lib/geo";
+import { ipFromHeaders } from "@/lib/invites";
 import { saveStripePaymentMethod } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
-import { getUnlock, markPaidAndDeliver } from "@/lib/telegramUnlock";
+import {
+  fanChatForCard,
+  getUnlock,
+  markPaidAndDeliver,
+} from "@/lib/telegramUnlock";
 
 // Delivering a paid video into Telegram can take minutes.
 export const maxDuration = 300;
@@ -38,13 +44,25 @@ export async function POST(
     return NextResponse.json({ error: "Payment not completed" }, { status: 402 });
   }
 
-  const chatId = pi.metadata?.chatId ?? unlock.paid_chat_id ?? null;
+  const paymentMethodId =
+    typeof pi.payment_method === "string"
+      ? pi.payment_method
+      : pi.payment_method?.id ?? null;
+  const customerId = typeof pi.customer === "string" ? pi.customer : null;
+
+  // Save the card so this fan can double-tap future PPVs. Fans paying on
+  // the dedicated pay domain aren't recognised as Lolyfans guests (no
+  // cookie there), so when no chat was matched at pay time, give the card
+  // a home: a hidden chat tied to this Telegram peer.
+  let chatId: string | null = pi.metadata?.chatId ?? unlock.paid_chat_id ?? null;
+  if (!chatId && customerId && paymentMethodId) {
+    chatId = await fanChatForCard({
+      unlock,
+      ip: ipFromHeaders(req.headers),
+      country: await visitorCountryCode(req.headers),
+    });
+  }
   if (chatId) {
-    const paymentMethodId =
-      typeof pi.payment_method === "string"
-        ? pi.payment_method
-        : pi.payment_method?.id ?? null;
-    const customerId = typeof pi.customer === "string" ? pi.customer : null;
     await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
   }
 
