@@ -58,31 +58,33 @@ export default function EmojiQuickBar({
   }
 
   return (
-    <div
-      className={`px-2 py-1.5 flex items-center gap-1 overflow-x-auto ${className}`}
-    >
-      {emojis.map((emoji) => (
-        <button
-          key={emoji}
-          type="button"
-          onClick={() =>
-            edit ? save(emojis.filter((e) => e !== emoji)) : onInsert(emoji)
-          }
-          title={edit ? "Remove from bar" : `Insert ${emoji}`}
-          className={`relative shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-colors ${
-            edit ? "bg-red-500/10 hover:bg-red-500/25" : "hover:bg-card2"
-          }`}
-        >
-          {emoji}
-          {edit && (
-            <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
-              ×
-            </span>
-          )}
-        </button>
-      ))}
+    <div className={`pl-2 pr-1.5 py-1.5 flex items-center gap-1 ${className}`}>
+      {/* Only the emojis scroll — the add input and pencil stay pinned on
+          the right so editing never requires sliding to the end. */}
+      <div className="flex-1 min-w-0 flex items-center gap-1 overflow-x-auto scrollbar-none">
+        {emojis.map((emoji) => (
+          <button
+            key={emoji}
+            type="button"
+            onClick={() =>
+              edit ? save(emojis.filter((e) => e !== emoji)) : onInsert(emoji)
+            }
+            title={edit ? "Remove from bar" : `Insert ${emoji}`}
+            className={`relative shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-colors ${
+              edit ? "bg-red-500/10 hover:bg-red-500/25" : "hover:bg-card2"
+            }`}
+          >
+            {emoji}
+            {edit && (
+              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
+                ×
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
       {edit && (
-        <div className="shrink-0 flex items-center gap-1 ml-1">
+        <div className="shrink-0 flex items-center gap-1">
           <input
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -114,7 +116,7 @@ export default function EmojiQuickBar({
         }}
         aria-label={edit ? "Done editing emojis" : "Edit emoji bar"}
         title={edit ? "Done" : "Edit emojis (remove or add)"}
-        className={`ml-auto shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
+        className={`shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
           edit
             ? "bg-accent text-white"
             : "text-muted/60 hover:text-accent hover:bg-card2"
