@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import EmojiQuickBar from "./EmojiQuickBar";
 import SendToTelegram from "./SendToTelegram";
 import TelegramReceipt from "./TelegramReceipt";
 import VoiceNotePlayer from "./VoiceNotePlayer";
@@ -9,11 +10,8 @@ import { uploadWithProgress } from "@/lib/uploadWithProgress";
 import {
   IconArchive,
   IconBack,
-  IconCheck,
-  IconEdit,
   IconMic,
   IconPlay,
-  IconPlus,
   IconReply,
   IconSend,
 } from "./Icons";
@@ -56,23 +54,6 @@ function b64FromBuffer(buf: ArrayBuffer): string {
   return btoa(bin);
 }
 
-const EMOJI_STORE_KEY = "tg-emoji-quickbar";
-const DEFAULT_EMOJIS = ["❤️", "😘", "😈", "🔥", "😍", "🥵", "💦", "🍑", "😏", "🙈"];
-
-function loadQuickEmojis(): string[] {
-  try {
-    const raw = localStorage.getItem(EMOJI_STORE_KEY);
-    if (!raw) return DEFAULT_EMOJIS;
-    const list = JSON.parse(raw);
-    if (Array.isArray(list) && list.every((e) => typeof e === "string")) {
-      return list.slice(0, 40);
-    }
-  } catch {
-    // corrupted storage — fall back to defaults
-  }
-  return DEFAULT_EMOJIS;
-}
-
 /**
  * Creator view of one Telegram dialog: replies, read receipts, and PPV by
  * dragging vault media (or dropping a file) into the chat to set a price.
@@ -97,36 +78,12 @@ export default function TelegramChatView({
     media_type: "image" | "video";
   } | null>(null);
   const [replyTo, setReplyTo] = useState<TgMessage | null>(null);
-  // Emoji quick-bar: one tap inserts; edit mode removes / adds.
-  const [emojis, setEmojis] = useState<string[]>(DEFAULT_EMOJIS);
-  const [emojiEdit, setEmojiEdit] = useState(false);
-  const [newEmoji, setNewEmoji] = useState("");
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    setEmojis(loadQuickEmojis());
-  }, []);
-
-  function saveEmojis(next: string[]) {
-    setEmojis(next);
-    try {
-      localStorage.setItem(EMOJI_STORE_KEY, JSON.stringify(next));
-    } catch {
-      // storage full/blocked — the bar still works for this session
-    }
-  }
 
   function insertEmoji(emoji: string) {
     setText((prev) => `${prev}${emoji}`);
     inputRef.current?.focus();
-  }
-
-  function addEmoji() {
-    const value = newEmoji.trim();
-    if (!value) return;
-    if (!emojis.includes(value)) saveEmojis([...emojis, value].slice(0, 40));
-    setNewEmoji("");
   }
 
   function startReply(m: TgMessage) {
@@ -633,78 +590,12 @@ export default function TelegramChatView({
         </div>
       )}
 
-      {/* Emoji quick-bar: tap to insert; pencil toggles edit mode where taps
-          remove and the small input adds new ones. */}
+      {/* Emoji quick-bar (shared with the PPV send sheet). */}
       {!voiceNote && (
-      <div
-        className={`${replyTo ? "" : "border-t border-line "}px-2 py-1.5 flex items-center gap-1 overflow-x-auto shrink-0 bg-card/40`}
-      >
-        {emojis.map((emoji) => (
-          <button
-            key={emoji}
-            type="button"
-            onClick={() => (emojiEdit ? saveEmojis(emojis.filter((e) => e !== emoji)) : insertEmoji(emoji))}
-            title={emojiEdit ? "Remove from bar" : `Insert ${emoji}`}
-            className={`relative shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-lg transition-colors ${
-              emojiEdit
-                ? "bg-red-500/10 hover:bg-red-500/25"
-                : "hover:bg-card2"
-            }`}
-          >
-            {emoji}
-            {emojiEdit && (
-              <span className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center leading-none">
-                ×
-              </span>
-            )}
-          </button>
-        ))}
-        {emojiEdit && (
-          <div className="shrink-0 flex items-center gap-1 ml-1">
-            <input
-              value={newEmoji}
-              onChange={(e) => setNewEmoji(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  addEmoji();
-                }
-              }}
-              placeholder="😀"
-              className="w-14 bg-card2 border border-line rounded-lg px-2 py-1 text-sm text-center outline-none focus:border-accent"
-            />
-            <button
-              type="button"
-              onClick={addEmoji}
-              disabled={!newEmoji.trim()}
-              aria-label="Add emoji"
-              className="w-7 h-7 rounded-lg bg-accent/15 text-accent flex items-center justify-center disabled:opacity-40"
-            >
-              <IconPlus className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
-        <button
-          type="button"
-          onClick={() => {
-            setEmojiEdit((v) => !v);
-            setNewEmoji("");
-          }}
-          aria-label={emojiEdit ? "Done editing emojis" : "Edit emoji bar"}
-          title={emojiEdit ? "Done" : "Edit emojis (remove or add)"}
-          className={`ml-auto shrink-0 w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${
-            emojiEdit
-              ? "bg-accent text-white"
-              : "text-muted/60 hover:text-accent hover:bg-card2"
-          }`}
-        >
-          {emojiEdit ? (
-            <IconCheck className="w-3.5 h-3.5" />
-          ) : (
-            <IconEdit className="w-3.5 h-3.5" />
-          )}
-        </button>
-      </div>
+        <EmojiQuickBar
+          onInsert={insertEmoji}
+          className={`${replyTo ? "" : "border-t border-line "}shrink-0 bg-card/40`}
+        />
       )}
 
       <div className="border-t border-line p-3 flex items-end gap-2 shrink-0 pb-[max(12px,env(safe-area-inset-bottom))]">

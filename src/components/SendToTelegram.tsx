@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import EmojiQuickBar from "./EmojiQuickBar";
 import Portal from "./Portal";
 import { IconCheck, IconSend } from "./Icons";
 
@@ -29,6 +30,7 @@ export default function SendToTelegram({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [sent, setSent] = useState(false);
+  const captionRef = useRef<HTMLTextAreaElement>(null);
 
   // Sent: flash the checkmark animation, then close on our own — no button.
   useEffect(() => {
@@ -173,7 +175,15 @@ export default function SendToTelegram({
                 <label className="text-sm font-semibold">
                   Message <span className="text-muted font-normal">(optional)</span>
                 </label>
+                <EmojiQuickBar
+                  onInsert={(emoji) => {
+                    setCaption((prev) => `${prev}${emoji}`);
+                    captionRef.current?.focus();
+                  }}
+                  className="-mx-1 rounded-xl bg-card2/60"
+                />
                 <textarea
+                  ref={captionRef}
                   value={caption}
                   onChange={(e) => setCaption(e.target.value)}
                   rows={2}
