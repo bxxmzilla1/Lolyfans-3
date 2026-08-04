@@ -32,7 +32,7 @@ export default function TelegramUnlockView({
   mediaType: "image" | "video";
   priceCents: number;
   alreadyUnlocked: boolean;
-  /** Show the TelegramPay logo + wordmark (pay-link domain only). */
+  /** Show the Payontele logo + wordmark (pay-link domain only). */
   brand?: boolean;
 }) {
   const [unlocked, setUnlocked] = useState(alreadyUnlocked);
@@ -90,15 +90,20 @@ export default function TelegramUnlockView({
     <div className="min-h-dvh bg-bg text-fg flex flex-col items-center justify-center p-5">
       <div className="w-full max-w-xs space-y-4">
         {brand && (
-          <div className="flex items-center justify-center gap-2 pb-1">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/telegrampay-logo.webp"
-              alt="TelegramPay"
-              className="w-8 h-8"
-            />
-            <p className="text-xl font-extrabold tracking-tight">
-              Telegram<span className="text-[#2AABEE]">Pay</span>
+          <div className="flex flex-col items-center gap-1.5 pb-2">
+            <div className="flex items-center justify-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src="/telegrampay-logo.webp"
+                alt="Payontele"
+                className="w-8 h-8"
+              />
+              <p className="text-xl font-extrabold tracking-tight">
+                Payon<span className="text-[#2AABEE]">tele</span>
+              </p>
+            </div>
+            <p className="text-[11px] text-muted tracking-wide">
+              Safe payments on Telegram
             </p>
           </div>
         )}

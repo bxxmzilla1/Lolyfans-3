@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   return (await onPayLinkDomain())
-    ? { title: "TelegramPay", icons: { icon: "/telegrampay-logo.webp" } }
+    ? { title: "Payontele", icons: { icon: "/telegrampay-logo.webp" } }
     : {};
 }
 

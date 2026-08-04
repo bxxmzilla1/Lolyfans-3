@@ -29,7 +29,7 @@ export type TelegramUnlock = {
 
 /**
  * True when the current request came in on the dedicated pay-link domain
- * (PPV_PAYLINK_ORIGIN) — unlock pages show TelegramPay branding there.
+ * (PPV_PAYLINK_ORIGIN) — unlock pages show Payontele branding there.
  */
 export async function onPayLinkDomain(): Promise<boolean> {
   const raw = (process.env.PPV_PAYLINK_ORIGIN || "").trim();
