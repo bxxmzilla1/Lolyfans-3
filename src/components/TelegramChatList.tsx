@@ -47,6 +47,9 @@ export default function TelegramChatList() {
   // In-flight guard: at a 1s cadence a slow Telegram round-trip must never
   // stack a second request on top of the first.
   const inflightRef = useRef(false);
+  // Last payload fingerprint: most 1s polls return the exact same data, and
+  // re-rendering the whole list for those made the app feel sluggish.
+  const lastPayloadRef = useRef("");
   const load = useCallback(async () => {
     if (inflightRef.current) return;
     inflightRef.current = true;
@@ -54,7 +57,12 @@ export default function TelegramChatList() {
       const res = await fetch("/api/telegram/dialogs");
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setDialogs(data.dialogs ?? []);
+        const next = data.dialogs ?? [];
+        const fingerprint = JSON.stringify(next);
+        if (fingerprint !== lastPayloadRef.current) {
+          lastPayloadRef.current = fingerprint;
+          setDialogs(next);
+        }
         setDisconnected(false);
         setError("");
       } else if (data.disconnected) {
@@ -85,6 +93,9 @@ export default function TelegramChatList() {
   async function togglePin(d: Dialog) {
     const pinned = !d.pinned;
     // Optimistic: flip locally so the row jumps to/from the top right away.
+    // Local state no longer matches the last server payload — drop the
+    // fingerprint so the next poll always re-syncs.
+    lastPayloadRef.current = "";
     setDialogs(
       (prev) =>
         prev?.map((x) => (x.peer === d.peer ? { ...x, pinned } : x)) ?? prev

@@ -184,6 +184,10 @@ export default function TelegramChatView({
     }
   }
 
+  // Last payload fingerprint: most polls return the same 50 messages, and
+  // re-rendering every bubble (media, players, receipts) for those made the
+  // chat increasingly sluggish.
+  const lastPayloadRef = useRef("");
   const load = useCallback(async () => {
     try {
       const res = await fetch(
@@ -191,7 +195,12 @@ export default function TelegramChatView({
       );
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
-        setMessages(data.messages ?? []);
+        const next = data.messages ?? [];
+        const fingerprint = JSON.stringify(next);
+        if (fingerprint !== lastPayloadRef.current) {
+          lastPayloadRef.current = fingerprint;
+          setMessages(next);
+        }
         setError("");
       } else {
         setError(data.error || "Could not load messages");
@@ -204,6 +213,7 @@ export default function TelegramChatView({
   useEffect(() => {
     setMessages(null);
     setReplyTo(null);
+    lastPayloadRef.current = "";
     void load();
     // 6s keeps the PPV bubble state (green when bought) moving in step with
     // the vault's 5s status poll, so a double-tap purchase shows up in both

@@ -41,7 +41,9 @@ export async function GET(req: NextRequest) {
     return new NextResponse(new Uint8Array(file.data), {
       headers: {
         "Content-Type": file.mime,
-        "Cache-Control": "private, max-age=3600",
+        // A message's media never changes — cache it for a day so revisiting
+        // the chat doesn't re-download every thumbnail through Telegram.
+        "Cache-Control": "private, max-age=86400, immutable",
       },
     });
   } catch (err) {

@@ -112,8 +112,8 @@ async function gramjs() {
   };
 }
 
-/** Build + connect a client for the given (possibly empty) session string. */
-async function connect(session: string): Promise<AnyClient> {
+/** Build + connect a fresh client for the given (possibly empty) session. */
+async function rawConnect(session: string): Promise<AnyClient> {
   const { TelegramClient, StringSession } = await gramjs();
   const { apiId, apiHash } = apiCreds();
   const client = new TelegramClient(new StringSession(session), apiId, apiHash, {
@@ -122,6 +122,89 @@ async function connect(session: string): Promise<AnyClient> {
   }) as unknown as AnyClient;
   await client.connect();
   return client;
+}
+
+// ---------------------------------------------------------------------------
+// Connection pool
+// ---------------------------------------------------------------------------
+//
+// The inbox polls dialogs every second, messages every few seconds, and every
+// thumbnail/avatar is its own request. Doing a full MTProto handshake for
+// each of those (connect → one call → disconnect) made the whole app crawl
+// and risks Telegram rate limits. Instead, one warm client is shared per
+// session: `connect()` hands out a lease and the caller's `disconnect()`
+// just returns it — the real connection closes after sitting idle.
+
+type PoolEntry = {
+  clientPromise: Promise<AnyClient>;
+  leases: number;
+  timer: ReturnType<typeof setTimeout> | null;
+};
+
+const clientPool = new Map<string, PoolEntry>();
+const POOL_IDLE_MS = 45_000;
+
+function scheduleIdleClose(session: string) {
+  const entry = clientPool.get(session);
+  if (!entry) return;
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.timer = setTimeout(() => {
+    const cur = clientPool.get(session);
+    if (!cur || cur.leases > 0) return;
+    clientPool.delete(session);
+    void cur.clientPromise.then((c) => c.disconnect()).catch(() => {});
+  }, POOL_IDLE_MS);
+  // Never keep the process alive just for the idle close.
+  (entry.timer as { unref?: () => void }).unref?.();
+}
+
+/**
+ * Connected client for the session, reused across requests. Callers keep
+ * calling `disconnect()` in their `finally` blocks — on a pooled client that
+ * releases the lease instead of tearing the connection down.
+ */
+async function connect(session: string): Promise<AnyClient> {
+  // Login flows mutate the session as they authenticate — give those a
+  // dedicated throwaway client instead of a pooled one.
+  if (!session) return rawConnect(session);
+
+  let entry = clientPool.get(session);
+  if (!entry) {
+    const fresh: PoolEntry = {
+      clientPromise: rawConnect(session),
+      leases: 0,
+      timer: null,
+    };
+    clientPool.set(session, fresh);
+    entry = fresh;
+  }
+  entry.leases++;
+
+  let client: AnyClient;
+  try {
+    client = await entry.clientPromise;
+    // The connection may have died while the serverless instance was idle
+    // or frozen — revive it before handing the client out.
+    if (!(client as { connected?: boolean }).connected) {
+      await client.connect();
+    }
+  } catch (err) {
+    entry.leases = Math.max(0, entry.leases - 1);
+    if (clientPool.get(session) === entry) clientPool.delete(session);
+    throw err;
+  }
+
+  const release = async () => {
+    entry.leases = Math.max(0, entry.leases - 1);
+    if (entry.leases === 0) scheduleIdleClose(session);
+  };
+  return new Proxy(client as object, {
+    get(target, prop, receiver) {
+      if (prop === "disconnect") return release;
+      const value = Reflect.get(target, prop, receiver);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as AnyClient;
 }
 
 // ---------------------------------------------------------------------------
