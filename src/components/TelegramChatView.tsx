@@ -10,6 +10,7 @@ import { uploadWithProgress } from "@/lib/uploadWithProgress";
 import {
   IconArchive,
   IconBack,
+  IconMapPin,
   IconMic,
   IconPlay,
   IconReply,
@@ -108,6 +109,22 @@ export default function TelegramChatView({
 
   // Switching chats drops any voice preview in progress.
   useEffect(() => cancelVoice(), [peer, cancelVoice]);
+
+  // Where this fan signed up on Lolyfans (matched through their paid PPVs).
+  const [fanLocation, setFanLocation] = useState<string | null>(null);
+  useEffect(() => {
+    setFanLocation(null);
+    let cancelled = false;
+    fetch(`/api/telegram/fan?peer=${encodeURIComponent(peer)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.location) setFanLocation(data.location);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [peer]);
 
   async function generateVoice() {
     const body = text.trim();
@@ -379,7 +396,15 @@ export default function TelegramChatView({
           <IconBack className="w-5 h-5" />
         </button>
         <div className="min-w-0 flex-1">
-          <p className="font-bold text-[15px] truncate">{title}</p>
+          <p className="font-bold text-[15px] truncate flex items-center gap-1.5">
+            <span className="truncate">{title}</span>
+            {fanLocation && (
+              <span className="flex items-center gap-1 min-w-0 shrink-0 text-[11px] font-medium text-muted">
+                <IconMapPin className="w-3 h-3 text-accent shrink-0" />
+                <span className="truncate max-w-[180px]">{fanLocation}</span>
+              </span>
+            )}
+          </p>
           <p className="text-[11px] text-muted truncate">
             Telegram · drag media from vault to send PPV
           </p>
