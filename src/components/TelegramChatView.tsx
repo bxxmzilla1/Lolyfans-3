@@ -502,7 +502,9 @@ export default function TelegramChatView({
                       )}
                     </div>
                   )}
-                {(m.text || m.out) && (
+                {/* Text row. Media-only outgoing messages skip it — their
+                    receipt renders once in the compact row below instead. */}
+                {(m.text || (m.out && !m.hasMedia)) && (
                   <div className="px-3.5 py-2 flex items-end gap-1.5">
                     {m.text ? (
                       <p className="whitespace-pre-wrap break-words flex-1 min-w-0">
