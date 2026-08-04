@@ -294,14 +294,20 @@ export async function fanChatForCard(opts: {
   return (created?.id as string | undefined) ?? null;
 }
 
+/**
+ * Origin used for PPV pay links. Accepts bare hosts ("payontele.com") or full
+ * URLs ("https://payontele.com") — always returns an https origin with no
+ * trailing slash. Falls back to the given value (or lolyfans) when unset.
+ */
+export function payLinkOrigin(fallback = "https://www.lolyfans.com"): string {
+  const raw = (process.env.PPV_PAYLINK_ORIGIN || "").trim().replace(/\/+$/, "");
+  if (!raw) return fallback.replace(/\/+$/, "");
+  return raw.includes("://") ? raw : `https://${raw}`;
+}
+
 /** Public pay-page link for an unlock (dedicated pay domain when configured). */
 function payLinkFor(unlock: TelegramUnlock): string {
-  const raw = (process.env.PPV_PAYLINK_ORIGIN || "").trim().replace(/\/+$/, "");
-  const origin = raw
-    ? raw.includes("://")
-      ? raw
-      : `https://${raw}`
-    : "https://www.lolyfans.com";
+  const origin = payLinkOrigin();
   return unlock.short_code
     ? `${origin}/payment/${unlock.short_code}`
     : `${origin}/u/${unlock.id}`;

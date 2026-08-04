@@ -8,7 +8,7 @@ import {
   tgSendTeaser,
   tgDeliverMedia,
 } from "@/lib/telegram";
-import { savedCardChatForPeer } from "@/lib/telegramUnlock";
+import { payLinkOrigin, savedCardChatForPeer } from "@/lib/telegramUnlock";
 import {
   getMediaCache,
   downloadTeaserClip,
@@ -142,10 +142,9 @@ export async function POST(req: NextRequest) {
   }
 
   // PPV pay links can live on a dedicated domain (PPV_PAYLINK_ORIGIN, e.g.
-  // "https://pay.example.com"). Unset = links use the app's own domain.
-  const origin =
-    (process.env.PPV_PAYLINK_ORIGIN || "").trim().replace(/\/+$/, "") ||
-    requestOrigin(req.headers);
+  // "payontele.com" or "https://payontele.com"). Unset = app's own domain.
+  // Bare hosts get https:// so Telegram links are always clickable.
+  const origin = payLinkOrigin(requestOrigin(req.headers));
   const link = shortCode
     ? `${origin}/payment/${shortCode}`
     : `${origin}/u/${unlock.id}`;

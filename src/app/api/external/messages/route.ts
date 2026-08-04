@@ -11,7 +11,7 @@ import {
   tgSendVoiceNote,
   tgDeliverMedia,
 } from "@/lib/telegram";
-import { savedCardChatForPeer } from "@/lib/telegramUnlock";
+import { payLinkOrigin, savedCardChatForPeer } from "@/lib/telegramUnlock";
 import { getMediaCache, downloadTeaserClip } from "@/lib/telegramMediaCache";
 
 // A priced send may upload clear media when no Saved Messages copy exists.
@@ -83,8 +83,7 @@ async function sendPricedPpv(opts: {
   }
   if (error || !unlock) throw new Error("Could not create the unlock link");
 
-  const payOrigin =
-    (process.env.PPV_PAYLINK_ORIGIN || "").trim().replace(/\/+$/, "") || origin;
+  const payOrigin = payLinkOrigin(origin);
   const link = shortCode
     ? `${payOrigin}/payment/${shortCode}`
     : `${payOrigin}/u/${unlock.id}`;
