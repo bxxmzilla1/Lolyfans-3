@@ -127,9 +127,10 @@ export async function chargeCpmMinutes(
 }
 
 /**
- * Start a new metering session. No money moves here — minutes accrue and are
- * billed in one lump at the 10-minute settle or when the fan closes the chat,
- * so a fan reopening the chat repeatedly never racks up rapid card charges.
+ * Start a new metering session. The first minute is charged upfront — that
+ * one charge confirms the saved card still works before the fan starts
+ * chatting. After that, minutes accrue and are billed in one lump every
+ * 10 minutes or when the fan closes the browser (never minute-by-minute).
  */
 export async function startCpmSession(opts: {
   chatId: string;
@@ -153,7 +154,16 @@ export async function startCpmSession(opts: {
     .select("*")
     .single();
   if (error || !data) return null;
-  return data as CpmSession;
+  const session = data as CpmSession;
+  // Card check: bill minute 1 now. Declined → no session, no free chatting.
+  if (!(await chargeCpmMinutes(session, 1))) {
+    await db
+      .from("cpm_sessions")
+      .update({ status: "ended", ended_at: new Date().toISOString() })
+      .eq("id", session.id);
+    return null;
+  }
+  return session;
 }
 
 /** Bill any unpaid minutes and mark the session ended. */
