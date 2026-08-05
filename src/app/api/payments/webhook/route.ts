@@ -16,6 +16,7 @@ import {
   markPaidAndDeliver,
 } from "@/lib/telegramUnlock";
 import { stripe } from "@/lib/stripe";
+import { broadcast } from "@/lib/realtime";
 import Stripe from "stripe";
 
 export const runtime = "nodejs";
@@ -59,6 +60,38 @@ export async function POST(req: NextRequest) {
   // posted by /api/payments/tip directly; tip Checkout via session.completed.
   if (event.type === "payment_intent.succeeded") {
     const pi = event.data.object as Stripe.PaymentIntent;
+
+    // Chat-per-minute first-minute payment: save the card + reveal the chat
+    // if the client closed the tab before /api/cpm/[code]/start PUT ran.
+    if (pi.metadata?.kind === "cpm-start" && pi.metadata.chatId) {
+      const chatId = pi.metadata.chatId;
+      const pmId =
+        typeof pi.payment_method === "string"
+          ? pi.payment_method
+          : pi.payment_method?.id ?? null;
+      const custId = typeof pi.customer === "string" ? pi.customer : null;
+      await saveStripePaymentMethod(chatId, custId, pmId);
+      await supabaseAdmin()
+        .from("chats")
+        .update({ pending: false })
+        .eq("id", chatId);
+      // Start a session only when none is active (client PUT may have won).
+      const { data: live } = await supabaseAdmin()
+        .from("cpm_sessions")
+        .select("id")
+        .eq("chat_id", chatId)
+        .eq("status", "active")
+        .maybeSingle();
+      if (!live && pi.metadata.ownerId) {
+        await supabaseAdmin().from("cpm_sessions").insert({
+          chat_id: chatId,
+          owner_id: pi.metadata.ownerId,
+          minutes_charged: 1,
+        });
+        await broadcast(`inbox:${pi.metadata.ownerId}`, "new-chat", { chatId });
+      }
+      return NextResponse.json({ received: true });
+    }
 
     // Telegram-DM unlock: deliver the clear media (safety net for the
     // client-side complete call). May have no chatId when the fan paid with

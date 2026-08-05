@@ -431,6 +431,19 @@ export function IconCard({ className }: IconProps) {
   );
 }
 
+export function IconStar({ className }: IconProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className={className}
+      fill="currentColor"
+      stroke="none"
+    >
+      <path d="M12 2.5l2.95 6.18 6.8.99-4.92 4.8 1.16 6.78L12 17.77l-6 3.48 1.16-6.78-4.92-4.8 6.8-.99L12 2.5z" />
+    </svg>
+  );
+}
+
 export function IconVerified({ className }: IconProps) {
   return (
     <svg

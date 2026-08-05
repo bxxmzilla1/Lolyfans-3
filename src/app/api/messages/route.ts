@@ -5,6 +5,7 @@ import { broadcast } from "@/lib/realtime";
 import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
+import { activeCpmSession, startCpmSession } from "@/lib/cpm";
 
 type ChatAuth = { role: "owner" | "guest"; chatOwnerId: string };
 
@@ -152,6 +153,37 @@ export async function POST(req: NextRequest) {
   }
 
   const db = supabaseAdmin();
+
+  // Chat-per-minute: a returning fan with a saved card starts a new billed
+  // session the moment they send a message (first minute charged then).
+  if (auth.role === "guest") {
+    const { data: cpmChat } = await db
+      .from("chats")
+      .select("*")
+      .eq("id", chatId)
+      .maybeSingle();
+    if ((cpmChat as { cpm?: boolean } | null)?.cpm) {
+      if (!cpmChat.stripe_payment_method_id) {
+        return NextResponse.json(
+          { error: "Add a card to keep chatting", needCard: true },
+          { status: 402 }
+        );
+      }
+      const live = await activeCpmSession(chatId);
+      if (!live) {
+        const started = await startCpmSession({
+          chatId,
+          ownerId: cpmChat.owner_id as string,
+        });
+        if (!started) {
+          return NextResponse.json(
+            { error: "Your card was declined — chat paused.", needCard: true },
+            { status: 402 }
+          );
+        }
+      }
+    }
+  }
 
   // Optional decision countdown for the incoming-media gate (owner-set, only
   // meaningful on photos/videos). Clamped to 1 hour; 0 = no time limit. The

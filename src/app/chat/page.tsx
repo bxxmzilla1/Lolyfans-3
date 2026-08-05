@@ -10,6 +10,7 @@ import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
 import GuestNav from "@/components/GuestNav";
 import GuestPresence from "@/components/GuestPresence";
+import CpmMeter from "@/components/CpmMeter";
 import OwnerEscapeHatch from "@/components/OwnerEscapeHatch";
 
 export const dynamic = "force-dynamic";
@@ -97,6 +98,7 @@ export default async function GuestChatPage() {
     // 42px matches the icon-only footer height (24px icon + 16px padding + border)
     <div className="h-dvh pb-[calc(42px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-60">
       <GuestPresence chatId={chatId} ownerId={chat.owner_id} />
+      {chat.cpm ? <CpmMeter chatId={chatId} /> : null}
       <OwnerEscapeHatch />
       <ChatView
         chatId={chatId}

@@ -438,6 +438,33 @@ export async function tgDownloadProfilePhoto(opts: {
   }
 }
 
+/** The connected account's own Telegram profile photo (webp, ~256px). */
+export async function tgDownloadOwnProfilePhoto(
+  session: string
+): Promise<Buffer | null> {
+  const client = await connect(session);
+  try {
+    const me = await client.getMe();
+    const raw = await client.downloadProfilePhoto(me as never, {
+      isBig: false,
+    });
+    if (!raw) return null;
+    const buf = Buffer.isBuffer(raw)
+      ? raw
+      : typeof raw === "string"
+        ? await (await import("fs/promises")).readFile(raw)
+        : null;
+    if (!buf?.length) return null;
+    const sharp = (await import("sharp")).default;
+    return await sharp(buf)
+      .resize(256, 256, { fit: "cover" })
+      .webp({ quality: 75 })
+      .toBuffer();
+  } finally {
+    await client.disconnect().catch(() => {});
+  }
+}
+
 /** Pin (or unpin) a dialog — mirrors pinning it in the Telegram app. */
 export async function tgSetPinned(opts: {
   session: string;

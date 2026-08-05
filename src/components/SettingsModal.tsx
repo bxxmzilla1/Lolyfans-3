@@ -10,6 +10,7 @@ import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
 import TelegramSettings from "./TelegramSettings";
+import ChatPerMinuteSettings from "./ChatPerMinuteSettings";
 import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
 import {
@@ -19,6 +20,7 @@ import {
   IconLink,
   IconLogout,
   IconSend,
+  IconStar,
   IconTip,
   IconUser,
 } from "./Icons";
@@ -29,6 +31,7 @@ type Section =
   | "social"
   | "subscriptions"
   | "telegram"
+  | "cpm"
   | "links"
   | "apikey";
 
@@ -392,6 +395,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconSend className="w-3.5 h-3.5" /> Telegram
         </button>
         <button
+          onClick={() => setSection("cpm")}
+          className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+            section === "cpm"
+              ? "bg-violet-500 text-white"
+              : "bg-card2 border border-line text-muted hover:text-fg"
+          }`}
+        >
+          <IconStar className="w-3.5 h-3.5" /> Chat per minute
+        </button>
+        <button
           onClick={() => openGated("links")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "links"
@@ -433,7 +446,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           className={`mx-auto w-full ${
             section === "profile" ||
             section === "subscriptions" ||
-            section === "telegram"
+            section === "telegram" ||
+            section === "cpm"
               ? "max-w-2xl"
               : section === "posts"
               ? "max-w-4xl"
@@ -450,6 +464,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <SubscriptionSettings />
           ) : section === "telegram" ? (
             <TelegramSettings />
+          ) : section === "cpm" ? (
+            <ChatPerMinuteSettings />
           ) : section === "apikey" ? (
             <ApiKeyManager />
           ) : (
