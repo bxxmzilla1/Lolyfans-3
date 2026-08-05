@@ -7,6 +7,14 @@ export const CPM_PRICE_CENTS_PER_MIN = 100;
 /** How often an active session is billed while the fan stays in chat. */
 export const CPM_BILL_EVERY_MS = 30 * 60_000;
 
+/** Main app origin (guest cookie + /chat live here). */
+export function appOrigin(): string {
+  const raw = (process.env.NEXT_PUBLIC_APP_ORIGIN || "https://www.lolyfans.com")
+    .trim()
+    .replace(/\/+$/, "");
+  return raw.includes("://") ? raw : `https://${raw}`;
+}
+
 export type CpmSession = {
   id: string;
   chat_id: string;

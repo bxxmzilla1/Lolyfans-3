@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { elementsEnabled } from "@/lib/stripeClient";
 import { IconCheck, IconUser, IconVerified } from "./Icons";
@@ -30,17 +29,30 @@ export default function CpmLanding({
   code,
   ownerName,
   verified,
+  appOrigin,
 }: {
   code: string;
   ownerName: string;
   verified: boolean;
+  /** Lolyfans origin — after paying we claim the cookie there, then /chat. */
+  appOrigin: string;
 }) {
-  const router = useRouter();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [intent, setIntent] = useState<Intent | null>(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
+
+  function goToChatAfterPay(chatId: string, paymentIntentId: string) {
+    // Must land on the app domain so the guest cookie is set there (not on
+    // the pay-link domain), then the claim route redirects to /chat.
+    const q = new URLSearchParams({
+      code,
+      chatId,
+      paymentIntentId,
+    });
+    window.location.href = `${appOrigin.replace(/\/+$/, "")}/api/cpm/claim?${q}`;
+  }
 
   async function start() {
     if (busy) return;
@@ -54,7 +66,9 @@ export default function CpmLanding({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.resume && data.chatId) {
-        router.push("/chat");
+        // Resume only works when the cookie is already on this domain
+        // (rare on the pay domain) — send them to the app chat.
+        window.location.href = `${appOrigin.replace(/\/+$/, "")}/chat`;
         return;
       }
       if (res.ok && data.clientSecret) {
@@ -80,20 +94,7 @@ export default function CpmLanding({
 
   async function onCardSuccess(paymentIntentId: string) {
     if (!intent) return;
-    const res = await fetch(`/api/cpm/${encodeURIComponent(code)}/start`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        paymentIntentId,
-        chatId: intent.chatId,
-      }),
-    }).catch(() => null);
-    if (res?.ok) {
-      router.push("/chat");
-      return;
-    }
-    const data = await res?.json().catch(() => ({}));
-    setError(data?.error || "Payment went through but chat setup failed.");
+    goToChatAfterPay(intent.chatId, paymentIntentId);
   }
 
   return (

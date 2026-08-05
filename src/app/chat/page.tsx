@@ -12,6 +12,7 @@ import GuestNav from "@/components/GuestNav";
 import GuestPresence from "@/components/GuestPresence";
 import CpmMeter from "@/components/CpmMeter";
 import OwnerEscapeHatch from "@/components/OwnerEscapeHatch";
+import { activeCpmSession, startCpmSession } from "@/lib/cpm";
 
 export const dynamic = "force-dynamic";
 
@@ -91,6 +92,17 @@ export default async function GuestChatPage() {
       callHref={(meta.eleven_voice_id || "").trim() ? "/call" : undefined}
     />
   );
+
+  // Chat-per-minute: metering starts the moment the chat loads (not on the
+  // first message). Claim already started a session for brand-new pays; this
+  // covers returning fans reopening /chat.
+  if (
+    chat.cpm &&
+    chat.stripe_payment_method_id &&
+    !(await activeCpmSession(chatId))
+  ) {
+    await startCpmSession({ chatId, ownerId: chat.owner_id });
+  }
 
   return (
     // On mobile the footer menu stays visible, so the chat (and its message

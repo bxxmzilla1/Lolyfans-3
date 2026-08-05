@@ -1,11 +1,10 @@
 import { NextResponse } from "next/server";
 import { getOwnerId } from "@/lib/session";
-import { ensureCpmLink } from "@/lib/cpm";
-import { requestOrigin } from "@/lib/smsNotify";
-import { headers } from "next/headers";
+import { appOrigin, ensureCpmLink } from "@/lib/cpm";
 
 /**
- * Creator's Chat-per-minute share link. Creates one on first open.
+ * Creator's Chat-per-minute share link (always on Lolyfans). Opening it
+ * redirects unpaid fans to the pay-link domain for the card page.
  */
 export async function GET() {
   const ownerId = await getOwnerId();
@@ -14,11 +13,9 @@ export async function GET() {
   }
   try {
     const code = await ensureCpmLink(ownerId);
-    const h = await headers();
-    const origin = requestOrigin(h);
     return NextResponse.json({
       code,
-      url: `${origin}/m/${code}`,
+      url: `${appOrigin()}/m/${code}`,
       pricePerMinCents: 100,
     });
   } catch (err) {

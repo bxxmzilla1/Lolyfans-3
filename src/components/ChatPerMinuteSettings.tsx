@@ -98,8 +98,13 @@ export default function ChatPerMinuteSettings() {
         <li>New fans see a TelegramPay page with the benefits and $1/min.</li>
         <li>Their first minute is charged when they tap Start Chatting.</li>
         <li>
-          Returning fans with a saved card go straight to chat — metering
-          restarts when they send a message.
+          The link opens on Lolyfans, then unpaid fans are sent to your
+          pay domain for the card page; after paying they land in chat with
+          metering already running.
+        </li>
+        <li>
+          Returning fans with a saved card skip the paywall — metering
+          restarts the moment their chat loads.
         </li>
       </ul>
     </div>
