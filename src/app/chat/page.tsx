@@ -88,8 +88,11 @@ export default async function GuestChatPage() {
       location={location}
       verified={!!meta.invite_verified}
       initialOnline={!chat.owner_appears_offline}
-      // Voice calls only exist once the creator saved an ElevenLabs voice.
-      callHref={(meta.eleven_voice_id || "").trim() ? "/call" : undefined}
+      // Voice calls only exist once the creator saved an ElevenLabs voice —
+      // and never on Chat-per-minute chats (text chat only there).
+      callHref={
+        !chat.cpm && (meta.eleven_voice_id || "").trim() ? "/call" : undefined
+      }
     />
   );
 

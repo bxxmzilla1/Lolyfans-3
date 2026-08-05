@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { formatTime } from "@/lib/utils";
-import { IconStar } from "./Icons";
+import { IconStar, IconTrash } from "./Icons";
 
 type CpmChat = {
   id: string;
@@ -32,6 +32,7 @@ function previewLabel(p: CpmChat["preview"]): string {
 export default function CpmChatList() {
   const pathname = usePathname();
   const [chats, setChats] = useState<CpmChat[] | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const inflight = useRef(false);
   const lastFp = useRef("");
 
@@ -64,6 +65,29 @@ export default function CpmChatList() {
     return () => clearInterval(t);
   }, [load]);
 
+  async function remove(chat: CpmChat) {
+    const name = chat.custom_name || chat.guest_name;
+    const sure = window.confirm(
+      `Delete ${name}? This permanently removes their chat and wipes their account and card details from Stripe and Lolyfans.`
+    );
+    if (!sure) return;
+    setDeletingId(chat.id);
+    try {
+      const res = await fetch(
+        `/api/cpm/chats?chatId=${encodeURIComponent(chat.id)}`,
+        { method: "DELETE" }
+      );
+      if (res.ok) {
+        lastFp.current = "";
+        setChats((prev) => (prev ?? []).filter((c) => c.id !== chat.id));
+      }
+    } catch {
+      // next poll restores the row if the delete didn't go through
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   if (!chats || chats.length === 0) return null;
 
   return (
@@ -82,7 +106,7 @@ export default function CpmChatList() {
             <Link
               key={c.id}
               href={`/inbox/${c.id}`}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+              className={`group flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
                 active
                   ? "bg-violet-500/20 ring-1 ring-violet-400/40"
                   : "hover:bg-violet-500/10"
@@ -124,6 +148,24 @@ export default function CpmChatList() {
                   {c.unread > 99 ? "99+" : c.unread}
                 </span>
               )}
+              <button
+                type="button"
+                aria-label={`Delete ${name}`}
+                title="Delete chat, account and card details"
+                disabled={deletingId === c.id}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  void remove(c);
+                }}
+                className="shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-violet-300/50 hover:text-red-400 hover:bg-red-500/10 lg:opacity-0 lg:group-hover:opacity-100 focus:opacity-100 transition-opacity disabled:opacity-60"
+              >
+                {deletingId === c.id ? (
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-red-400/40 border-t-red-400 animate-spin" />
+                ) : (
+                  <IconTrash className="w-4 h-4" />
+                )}
+              </button>
             </Link>
           );
         })}

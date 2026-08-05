@@ -4,11 +4,11 @@ import { useEffect, useRef } from "react";
 
 /**
  * Guest-side Chat-per-minute metering. Mounted only on CPM chats:
- *  - Soft heartbeat every 60s (keeps last_active fresh).
- *  - Hard settle every 30 minutes (charges unpaid minutes).
+ *  - Soft heartbeat every 60s (keeps last_active fresh — no charge).
+ *  - Hard settle every 10 minutes (charges accrued minutes in one lump).
  *  - On tab close / navigate away, settle remaining minutes via sendBeacon.
  *
- * Session start itself lives in /api/messages (first send after a return).
+ * Session start itself lives in /chat page load (returning fans).
  */
 export default function CpmMeter({ chatId }: { chatId: string }) {
   const chatIdRef = useRef(chatId);
@@ -23,13 +23,14 @@ export default function CpmMeter({ chatId }: { chatId: string }) {
       }).catch(() => {});
     }, 60_000);
 
+    // One lump charge every 10 minutes — never per-minute (bank card blocks).
     const settle = setInterval(() => {
       void fetch("/api/cpm/tick", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settle: true }),
       }).catch(() => {});
-    }, 30 * 60_000);
+    }, 10 * 60_000);
 
     const onLeave = () => {
       navigator.sendBeacon(

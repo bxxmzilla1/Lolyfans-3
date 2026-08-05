@@ -186,7 +186,7 @@ export default function CpmLanding({
             </button>
             <p className="text-[11px] text-muted text-center">
               Secured by Stripe · First minute charged when you start · then
-              every 30 minutes
+              billed every 10 minutes
             </p>
           </div>
         )}

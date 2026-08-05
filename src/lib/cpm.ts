@@ -4,8 +4,14 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { chargeChatDollars } from "@/lib/payments";
 
 export const CPM_PRICE_CENTS_PER_MIN = 100;
-/** How often an active session is billed while the fan stays in chat. */
-export const CPM_BILL_EVERY_MS = 30 * 60_000;
+/**
+ * How often an active session is billed while the fan stays in chat. Minutes
+ * accrue and are charged in one lump every 10 minutes (or on close) — never
+ * minute-by-minute, so banks don't flag the card for rapid small charges.
+ */
+export const CPM_BILL_EVERY_MS = 10 * 60_000;
+/** Unpaid minutes that trigger a bill outside the timer. */
+export const CPM_BILL_EVERY_MIN = 10;
 
 /** Main app origin (guest cookie + /chat live here). */
 export function appOrigin(): string {
@@ -120,7 +126,11 @@ export async function chargeCpmMinutes(
   return true;
 }
 
-/** Start a new metering session and charge the first minute immediately. */
+/**
+ * Start a new metering session. No money moves here — minutes accrue and are
+ * billed in one lump at the 10-minute settle or when the fan closes the chat,
+ * so a fan reopening the chat repeatedly never racks up rapid card charges.
+ */
 export async function startCpmSession(opts: {
   chatId: string;
   ownerId: string;
@@ -143,15 +153,7 @@ export async function startCpmSession(opts: {
     .select("*")
     .single();
   if (error || !data) return null;
-  const session = data as CpmSession;
-  if (!(await chargeCpmMinutes(session, 1))) {
-    await db
-      .from("cpm_sessions")
-      .update({ status: "ended", ended_at: new Date().toISOString() })
-      .eq("id", session.id);
-    return null;
-  }
-  return session;
+  return data as CpmSession;
 }
 
 /** Bill any unpaid minutes and mark the session ended. */
