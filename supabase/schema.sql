@@ -716,6 +716,37 @@ alter table telegram_unlocks enable row level security;
 create index if not exists telegram_unlocks_owner_idx
   on telegram_unlocks (owner_id, created_at desc);
 
+-- ---------------------------------------------------------------------------
+-- AI voice calls: fans call the creator's chatbot from the web at $1/minute.
+-- Each thing the fan says is a "turn"; the connected chatbot (Orion) answers
+-- turns through /api/external/calls and the reply is spoken with ElevenLabs.
+-- ---------------------------------------------------------------------------
+create table if not exists voice_calls (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  chat_id uuid not null references chats(id) on delete cascade,
+  status text not null default 'active' check (status in ('active', 'ended')),
+  price_cents_per_min int not null default 100,
+  minutes_charged int not null default 0,
+  started_at timestamptz not null default now(),
+  last_active_at timestamptz not null default now(),
+  ended_at timestamptz
+);
+create index if not exists voice_calls_owner_idx on voice_calls (owner_id, started_at desc);
+create index if not exists voice_calls_chat_idx on voice_calls (chat_id, started_at desc);
+alter table voice_calls enable row level security;
+
+create table if not exists voice_call_turns (
+  id uuid primary key default gen_random_uuid(),
+  call_id uuid not null references voice_calls(id) on delete cascade,
+  text text not null,   -- the fan's transcript
+  reply text,           -- the chatbot's answer (null until answered)
+  created_at timestamptz not null default now(),
+  answered_at timestamptz
+);
+create index if not exists voice_call_turns_call_idx on voice_call_turns (call_id, created_at);
+alter table voice_call_turns enable row level security;
+
 -- Public storage bucket for chat media and vault files.
 -- file_size_limit null = no per-bucket cap (project global Storage limit applies).
 insert into storage.buckets (id, name, public, file_size_limit)

@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { mediaUrl } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { IconMapPin, IconUser, IconVerified } from "./Icons";
+import { IconMapPin, IconPhone, IconUser, IconVerified } from "./Icons";
 
 /**
  * Guest-side chat header: the owner's profile. Shown as online unless the
@@ -17,6 +18,7 @@ export default function GuestChatHeader({
   location,
   verified = false,
   initialOnline = true,
+  callHref,
 }: {
   chatId?: string;
   name: string;
@@ -24,6 +26,8 @@ export default function GuestChatHeader({
   location?: string | null;
   verified?: boolean;
   initialOnline?: boolean;
+  /** Link to the voice-call page (shown as a phone button when set). */
+  callHref?: string;
 }) {
   const [online, setOnline] = useState(initialOnline);
 
@@ -93,6 +97,16 @@ export default function GuestChatHeader({
           )}
         </div>
       </div>
+      {callHref && (
+        <Link
+          href={callHref}
+          aria-label={`Call ${name}`}
+          title="Voice call · $1/min"
+          className="ml-auto shrink-0 w-10 h-10 rounded-full bg-green-500/15 text-green-400 hover:bg-green-500/25 flex items-center justify-center transition-colors"
+        >
+          <IconPhone className="w-5 h-5" />
+        </Link>
+      )}
     </header>
   );
 }
