@@ -35,7 +35,9 @@ export async function GET(req: NextRequest) {
   const ownerId = await ownerIdForCpmCode(code);
   if (!ownerId) return NextResponse.redirect(appOrigin());
 
-  const pi = await stripe().paymentIntents.retrieve(paymentIntentId).catch(() => null);
+  const pi = await stripe()
+    .paymentIntents.retrieve(paymentIntentId, { expand: ["payment_method"] })
+    .catch(() => null);
   if (
     !pi ||
     pi.metadata?.kind !== "cpm-start" ||
@@ -61,7 +63,20 @@ export async function GET(req: NextRequest) {
       : pi.payment_method?.id ?? null;
   const customerId = typeof pi.customer === "string" ? pi.customer : null;
   await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
-  await db.from("chats").update({ pending: false }).eq("id", chatId);
+
+  // The name typed into the card form doubles as the fan's display name —
+  // there is no separate name input on the CPM landing page.
+  const cardholderName =
+    typeof pi.payment_method === "object" && pi.payment_method
+      ? (pi.payment_method.billing_details?.name || "").trim().slice(0, 40)
+      : "";
+  await db
+    .from("chats")
+    .update({
+      pending: false,
+      ...(cardholderName ? { guest_name: cardholderName } : {}),
+    })
+    .eq("id", chatId);
 
   // Session with first minute already paid by this PI — don't charge again.
   const { data: live } = await db

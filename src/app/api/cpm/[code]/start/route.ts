@@ -134,7 +134,9 @@ export async function PUT(
     );
   }
 
-  const pi = await stripe().paymentIntents.retrieve(paymentIntentId);
+  const pi = await stripe().paymentIntents.retrieve(paymentIntentId, {
+    expand: ["payment_method"],
+  });
   if (
     pi.metadata?.kind !== "cpm-start" ||
     pi.metadata?.chatId !== chatId ||
@@ -161,9 +163,17 @@ export async function PUT(
   await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
 
   // Reveal + mark first minute as already paid (the PI we just confirmed).
+  // The cardholder name from the card form becomes the fan's display name.
+  const cardholderName =
+    typeof pi.payment_method === "object" && pi.payment_method
+      ? (pi.payment_method.billing_details?.name || "").trim().slice(0, 40)
+      : "";
   await db
     .from("chats")
-    .update({ pending: false })
+    .update({
+      pending: false,
+      ...(cardholderName ? { guest_name: cardholderName } : {}),
+    })
     .eq("id", chatId);
 
   // Session with minutes_charged=1 already (PI paid for minute 1) — insert

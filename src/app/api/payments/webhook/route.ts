@@ -71,9 +71,21 @@ export async function POST(req: NextRequest) {
           : pi.payment_method?.id ?? null;
       const custId = typeof pi.customer === "string" ? pi.customer : null;
       await saveStripePaymentMethod(chatId, custId, pmId);
+      // Cardholder name doubles as the fan's display name (the CPM landing
+      // page has no separate name input).
+      let cardholderName = "";
+      if (pmId) {
+        const pm = await stripe()
+          .paymentMethods.retrieve(pmId)
+          .catch(() => null);
+        cardholderName = (pm?.billing_details?.name || "").trim().slice(0, 40);
+      }
       await supabaseAdmin()
         .from("chats")
-        .update({ pending: false })
+        .update({
+          pending: false,
+          ...(cardholderName ? { guest_name: cardholderName } : {}),
+        })
         .eq("id", chatId);
       // Start a session only when none is active (client PUT may have won).
       const { data: live } = await supabaseAdmin()

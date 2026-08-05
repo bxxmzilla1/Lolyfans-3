@@ -10,7 +10,7 @@ const BENEFITS = [
   "Unlimited free photos and video",
   "Chat unfiltered",
   "Completely private",
-  "Safe payments on telegram",
+  "This person is ID verified",
 ];
 
 type Intent = {
@@ -37,7 +37,6 @@ export default function CpmLanding({
   /** Lolyfans origin — after paying we claim the cookie there, then /chat. */
   appOrigin: string;
 }) {
-  const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [intent, setIntent] = useState<Intent | null>(null);
@@ -62,7 +61,9 @@ export default function CpmLanding({
       const res = await fetch(`/api/cpm/${encodeURIComponent(code)}/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim() || "Fan" }),
+        // No name here — the cardholder name from the card form becomes the
+        // fan's display name after payment.
+        body: JSON.stringify({}),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.resume && data.chatId) {
@@ -175,14 +176,6 @@ export default function CpmLanding({
           />
         ) : (
           <div className="space-y-2.5">
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Your name"
-              maxLength={40}
-              className="w-full rounded-xl border border-line bg-card2 px-3.5 py-2.5 text-sm placeholder:text-muted outline-none focus:border-accent"
-            />
             <button
               type="button"
               onClick={() => void start()}

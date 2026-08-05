@@ -252,6 +252,9 @@ async function resolvePeer(peer: string): Promise<unknown> {
   const p = peer.trim();
   if (!p) throw new Error("Missing Telegram peer");
 
+  // Saved Messages — GramJS resolves the literal "me" itself.
+  if (p === "me") return "me";
+
   if (p.startsWith("user:")) {
     const [, id, accessHash] = p.split(":");
     const { Api } = await gramjs();
@@ -865,12 +868,15 @@ export async function tgSendText(opts: {
   text: string;
   /** Reply to this message id — Telegram shows the quoted bubble. */
   replyToId?: number | null;
+  /** Parse the text as HTML — lets us send clickable link words. */
+  html?: boolean;
 }): Promise<void> {
   const client = await connect(opts.session);
   try {
     const peer = await resolvePeer(opts.peer);
     await client.sendMessage(peer, {
       message: opts.text,
+      ...(opts.html ? { parseMode: "html" } : {}),
       ...(opts.replyToId ? { replyTo: opts.replyToId } : {}),
     });
   } finally {
