@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   CardCvcElement,
   CardExpiryElement,
@@ -68,6 +68,11 @@ function CardWizard({
   const [paying, setPaying] = useState(false);
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 3D Secure in flight: the fan is confirming with their bank (in Stripe's
+  // popup iframe or a new tab). We poll Stripe meanwhile, so the payment
+  // completes even when the popup can't report back (in-app browsers).
+  const [verifying, setVerifying] = useState(false);
+  const settledRef = useRef(false);
 
   const countries = useMemo(() => {
     let names: Intl.DisplayNames | null = null;
@@ -104,29 +109,107 @@ function CardWizard({
     };
   }, []);
 
+  const failMsg =
+    mode === "setup"
+      ? "Verification failed. Please try again."
+      : "Payment failed. Please try again.";
+
+  /** Current intent state straight from Stripe (works from any tab/moment). */
+  async function fetchIntent(): Promise<{ id: string; status: string } | null> {
+    if (!stripe) return null;
+    try {
+      if (mode === "setup") {
+        const { setupIntent } = await stripe.retrieveSetupIntent(clientSecret);
+        return setupIntent
+          ? { id: setupIntent.id, status: setupIntent.status }
+          : null;
+      }
+      const { paymentIntent } = await stripe.retrievePaymentIntent(clientSecret);
+      return paymentIntent
+        ? { id: paymentIntent.id, status: paymentIntent.status }
+        : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function settleSuccess(intentId: string) {
+    if (settledRef.current) return;
+    settledRef.current = true;
+    setVerifying(false);
+    setDone(true);
+    await onSuccess(intentId);
+  }
+
+  function settleFailure(message: string) {
+    if (settledRef.current) return;
+    settledRef.current = true;
+    setVerifying(false);
+    setPaying(false);
+    setError(message);
+  }
+
+  /** One status check — used by the poll loop and the "I've done it" button. */
+  async function checkIntentNow(): Promise<boolean> {
+    if (settledRef.current) return true;
+    const intent = await fetchIntent();
+    if (!intent || settledRef.current) return settledRef.current;
+    if (intent.status === "succeeded") {
+      await settleSuccess(intent.id);
+      return true;
+    }
+    if (intent.status === "requires_payment_method" || intent.status === "canceled") {
+      settleFailure(
+        "The bank verification didn't go through. Please try again."
+      );
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Poll Stripe while the bank challenge is open. In-app browsers (Telegram,
+   * Instagram) often lose the challenge popup's result message — the payment
+   * actually succeeded at the bank but the page never learns it and looks
+   * frozen. Asking Stripe directly every few seconds sidesteps that.
+   */
+  async function pollUntilSettled() {
+    const deadline = Date.now() + 5 * 60_000;
+    while (!settledRef.current && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 3000));
+      if (await checkIntentNow()) return;
+    }
+    if (!settledRef.current) {
+      settleFailure("The bank verification timed out. Please try again.");
+    }
+  }
+
   async function pay() {
     if (!stripe || !elements || paying) return;
     const card = elements.getElement(CardNumberElement);
     if (!card) return;
     setPaying(true);
     setError(null);
-    const failMsg =
-      mode === "setup"
-        ? "Verification failed. Please try again."
-        : "Payment failed. Please try again.";
+    settledRef.current = false;
     try {
       const paymentMethod = {
         card,
         billing_details: { name: name.trim(), address: { country } },
       };
+      // handleActions: false — we run the 3D Secure step ourselves below,
+      // so a stuck challenge can never freeze the page silently.
       const result =
         mode === "setup"
-          ? await stripe.confirmCardSetup(clientSecret, {
-              payment_method: paymentMethod,
-            })
-          : await stripe.confirmCardPayment(clientSecret, {
-              payment_method: paymentMethod,
-            });
+          ? await stripe.confirmCardSetup(
+              clientSecret,
+              { payment_method: paymentMethod },
+              { handleActions: false }
+            )
+          : await stripe.confirmCardPayment(
+              clientSecret,
+              { payment_method: paymentMethod },
+              { handleActions: false }
+            );
       if (result.error) {
         setError(result.error.message || failMsg);
         setPaying(false);
@@ -134,19 +217,65 @@ function CardWizard({
       }
       const intent =
         mode === "setup"
-          ? (result as { setupIntent?: { id: string; status: string } }).setupIntent
-          : (result as { paymentIntent?: { id: string; status: string } })
-              .paymentIntent;
-      if (intent?.status === "succeeded") {
-        setDone(true);
-        await onSuccess(intent.id);
+          ? (result as { setupIntent?: { id: string; status: string; next_action?: { redirect_to_url?: { url?: string } } } }).setupIntent
+          : (result as { paymentIntent?: { id: string; status: string; next_action?: { redirect_to_url?: { url?: string } } } }).paymentIntent;
+      if (!intent) {
+        setError(failMsg);
+        setPaying(false);
         return;
       }
+      if (intent.status === "succeeded") {
+        await settleSuccess(intent.id);
+        return;
+      }
+
+      if (
+        intent.status === "requires_action" ||
+        intent.status === "requires_confirmation"
+      ) {
+        // Bank verification (3D Secure) needed — show it and wait.
+        setVerifying(true);
+        void pollUntilSettled();
+
+        const redirectUrl = intent.next_action?.redirect_to_url?.url;
+        if (redirectUrl) {
+          // Bank uses a redirect flow: open it in a new tab; the poll loop
+          // completes this page once the bank approves.
+          window.open(redirectUrl, "_blank", "noopener");
+          return;
+        }
+
+        // Standard 3DS2: Stripe shows the bank challenge in its own popup
+        // iframe over the page.
+        const action = await stripe.handleNextAction({ clientSecret });
+        if (settledRef.current) return;
+        const after =
+          mode === "setup" ? action.setupIntent : action.paymentIntent;
+        if (after?.status === "succeeded") {
+          await settleSuccess(after.id);
+        } else if (
+          after &&
+          (after.status === "requires_payment_method" ||
+            after.status === "canceled")
+        ) {
+          settleFailure(
+            action.error?.message ||
+              "The bank verification didn't go through. Please try again."
+          );
+        }
+        // Anything else (or an error opening the popup): the poll loop keeps
+        // watching, and the fan sees the "confirm with your bank" panel with
+        // a manual check button — never a silent freeze.
+        return;
+      }
+
       setError(failMsg);
       setPaying(false);
     } catch {
-      setError(failMsg);
-      setPaying(false);
+      if (!settledRef.current && !verifying) {
+        setError(failMsg);
+        setPaying(false);
+      }
     }
   }
 
@@ -314,6 +443,24 @@ function CardWizard({
                       : `Pay ${priceLabel(amountCents)}`}
             </button>
           </div>
+        </div>
+      )}
+
+      {verifying && !done && (
+        <div className="rounded-xl border border-accent/40 bg-card px-3 py-3 space-y-2 text-center">
+          <div className="w-8 h-8 mx-auto rounded-full border-2 border-accent border-t-transparent animate-spin" />
+          <p className="text-sm font-bold">Confirm with your bank</p>
+          <p className="text-[11px] text-muted leading-snug">
+            A verification window from your bank should have opened — approve
+            the payment there. This page will finish automatically.
+          </p>
+          <button
+            type="button"
+            onClick={() => void checkIntentNow()}
+            className="w-full rounded-xl border border-line bg-card2 text-xs font-bold py-2"
+          >
+            I&apos;ve completed the verification
+          </button>
         </div>
       )}
 
