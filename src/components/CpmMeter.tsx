@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 /**
  * Guest-side Chat-per-minute metering. Mounted only on CPM chats:
  *  - Soft heartbeat every 20s while the tab is visible (keeps Active fresh).
- *  - Hard settle every 10 minutes (charges accrued minutes in one lump).
+ *  - Hard settle every hour (charges accrued minutes in one lump).
  *  - The moment the tab is hidden / closed → settle + end the session so
  *    they show Idle and are not charged again until they send a message or
  *    interact with media (metering is restarted server-side on those actions).
@@ -39,7 +39,7 @@ export default function CpmMeter({ chatId }: { chatId: string }) {
     tick();
     const heartbeat = setInterval(tick, 20_000);
 
-    // One lump charge every 10 minutes while still visible.
+    // One lump charge every hour while still visible.
     const settle = setInterval(() => {
       if (document.visibilityState !== "visible") return;
       void fetch("/api/cpm/tick", {
@@ -47,7 +47,7 @@ export default function CpmMeter({ chatId }: { chatId: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ settle: true }),
       }).catch(() => {});
-    }, 10 * 60_000);
+    }, 60 * 60_000);
 
     // Tab hidden / app backgrounded / close → charge what's owed and stop.
     const onHidden = () => {

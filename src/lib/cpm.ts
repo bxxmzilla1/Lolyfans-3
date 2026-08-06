@@ -10,12 +10,12 @@ import {
 export { CPM_PRICE_CENTS_PER_MIN };
 /**
  * How often an active session is billed while the fan stays in chat. Minutes
- * accrue and are charged in one lump every 10 minutes (or on close) — never
+ * accrue and are charged in one lump every hour (or on close) — never
  * minute-by-minute, so banks don't flag the card for rapid small charges.
  */
-export const CPM_BILL_EVERY_MS = 10 * 60_000;
+export const CPM_BILL_EVERY_MS = 60 * 60_000;
 /** Unpaid minutes that trigger a bill outside the timer. */
-export const CPM_BILL_EVERY_MIN = 10;
+export const CPM_BILL_EVERY_MIN = 60;
 
 /** Main app origin (guest cookie + /chat live here). */
 export function appOrigin(): string {

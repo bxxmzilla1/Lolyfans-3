@@ -145,7 +145,7 @@ export default function ChatPerMinuteSettings() {
         <p className="text-sm text-muted mt-1">
           Share this link. Fans verify a card, then chat with you on Lolyfans
           at <span className="text-fg font-semibold">$1 per minute</span> —
-          billed every 10 minutes or when they leave. They show up in your
+          billed every hour or when they leave. They show up in your
           sidebar in purple with a gold star.
         </p>
       </div>

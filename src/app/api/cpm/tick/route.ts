@@ -12,12 +12,12 @@ import {
 /**
  * Heartbeat while a Chat-per-minute fan is in the chat.
  *  - Always bumps last_active_at.
- *  - Every ~10 minutes of wall time since session start (or since the last
+ *  - Every ~hour of active time since session start (or since the last
  *    bill), charges the accrued minutes in one lump on the saved card —
  *    never minute-by-minute, so banks don't block the card.
  *  - A declined charge ends the session.
  *
- * Body: `{ settle?: boolean }` — when true (10-min timer / close), force a
+ * Body: `{ settle?: boolean }` — when true (hourly timer / close), force a
  * bill for whatever minutes are owed right now.
  */
 export async function POST(req: NextRequest) {
@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const settle = !!body.settle;
 
-  // Bill when asked (10-min timer) or whenever 10+ unpaid active minutes piled up.
+  // Bill when asked (hourly timer) or whenever 60+ unpaid active minutes piled up.
   const owed = minutesOwed(session);
   const shouldBill = settle || owed >= CPM_BILL_EVERY_MIN;
   if (shouldBill && owed > 0) {
