@@ -21,6 +21,7 @@ export default function ChatPerMinuteSettings() {
   const [copied, setCopied] = useState(false);
   const [loading, setLoading] = useState(true);
   const [linkText, setLinkText] = useState("Chat with me privately 💬");
+  const [customUrl, setCustomUrl] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [sendError, setSendError] = useState("");
@@ -118,7 +119,7 @@ export default function ChatPerMinuteSettings() {
       const res = await fetch("/api/cpm/send-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: linkText.trim() }),
+        body: JSON.stringify({ text: linkText.trim(), url: customUrl.trim() }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -192,20 +193,42 @@ export default function ChatPerMinuteSettings() {
             Share as clickable text
           </p>
           <p className="text-xs text-muted mt-1">
-            Sends the link to your Telegram{" "}
+            Sends a link to your Telegram{" "}
             <span className="text-fg font-semibold">Saved Messages</span> as
             clickable words — copy and paste it into DMs or your channel and it
-            opens the payment page in Telegram&apos;s in-app browser.
+            opens in Telegram&apos;s in-app browser. Leave the link empty to
+            use your Chat per minute link.
           </p>
         </div>
-        <input
-          type="text"
-          value={linkText}
-          onChange={(e) => setLinkText(e.target.value)}
-          maxLength={80}
-          placeholder="Chat with me privately 💬"
-          className="w-full rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm placeholder:text-muted outline-none focus:border-violet-500/60"
-        />
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-fg/80">
+            Link{" "}
+            <span className="text-muted font-normal">
+              (empty = your Chat per minute link)
+            </span>
+          </label>
+          <input
+            type="url"
+            value={customUrl}
+            onChange={(e) => setCustomUrl(e.target.value)}
+            maxLength={500}
+            placeholder={url || "https://…"}
+            className="w-full rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm placeholder:text-muted outline-none focus:border-violet-500/60"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-fg/80">
+            Clickable text
+          </label>
+          <input
+            type="text"
+            value={linkText}
+            onChange={(e) => setLinkText(e.target.value)}
+            maxLength={80}
+            placeholder="Chat with me privately 💬"
+            className="w-full rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm placeholder:text-muted outline-none focus:border-violet-500/60"
+          />
+        </div>
         <button
           type="button"
           onClick={() => void sendToSaved()}
