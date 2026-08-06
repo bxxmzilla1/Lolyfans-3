@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     await tgSendText({
       session,
       peer: "me",
-      text: `<a href="${url}">${esc(label)}</a>`,
+      text: `<a href="${url}"><b>${esc(label)}</b></a>`,
       html: true,
     });
     return NextResponse.json({ ok: true });
