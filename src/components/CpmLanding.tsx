@@ -193,34 +193,6 @@ export default function CpmLanding({
           </p>
         </div>
 
-        {/* Scarcity: limited spots + per-visitor countdown */}
-        {(showSlots || countdown) && (
-          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 space-y-1.5">
-            {showSlots && (
-              <p className="text-sm font-bold text-amber-300 text-center">
-                🔥 This chat is available for {slotsTotal}{" "}
-                {slotsTotal === 1 ? "person" : "people"} only —{" "}
-                {left > 0 ? (
-                  <>
-                    {left} {left === 1 ? "spot" : "spots"} left
-                  </>
-                ) : (
-                  "last chance"
-                )}
-              </p>
-            )}
-            {countdown && (
-              <p className="text-xs font-semibold text-amber-200/90 text-center flex items-center justify-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                Offer ends in{" "}
-                <span className="font-mono font-bold text-amber-300 tabular-nums">
-                  {countdown}
-                </span>
-              </p>
-            )}
-          </div>
-        )}
-
         {/* Offer */}
         <div className="rounded-2xl border border-line bg-card2/80 p-4 space-y-3">
           <div className="text-center">
@@ -242,6 +214,29 @@ export default function CpmLanding({
               </li>
             ))}
           </ul>
+
+          {/* Scarcity: limited spots + per-visitor countdown, page-themed */}
+          {(showSlots || countdown) && (
+            <div className="pt-3 border-t border-line space-y-1 text-center">
+              {showSlots && (
+                <p className="text-sm font-semibold text-accent">
+                  {left > 0
+                    ? `Only ${left} of ${slotsTotal} ${
+                        slotsTotal === 1 ? "spot" : "spots"
+                      } left`
+                    : "No spots left — last chance"}
+                </p>
+              )}
+              {countdown && (
+                <p className="text-xs text-muted">
+                  Offer ends in{" "}
+                  <span className="font-mono font-bold text-fg tabular-nums">
+                    {countdown}
+                  </span>
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         {intent ? (
