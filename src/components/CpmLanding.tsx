@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { elementsEnabled } from "@/lib/stripeClient";
-import { IconCheck, IconUser, IconVerified } from "./Icons";
+import { IconCheck, IconMapPin, IconUser, IconVerified } from "./Icons";
 
 const DEFAULT_BENEFITS = [
   "Unlimited chatting",
@@ -69,6 +69,7 @@ export default function CpmLanding({
   slotsTotal,
   slotsLeft,
   timerMinutes,
+  visitorLocation,
 }: {
   code: string;
   ownerName: string;
@@ -82,6 +83,8 @@ export default function CpmLanding({
   slotsLeft?: number | null;
   /** Per-visitor countdown length in minutes; null → no timer. */
   timerMinutes?: number | null;
+  /** The visitor's own "City, Country" — shown under the creator's name. */
+  visitorLocation?: string | null;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -191,6 +194,12 @@ export default function CpmLanding({
             {ownerName}
             {verified && <IconVerified className="w-4 h-4 text-sky-500" />}
           </p>
+          {visitorLocation && (
+            <p className="text-xs text-muted flex items-center gap-1 -mt-1">
+              <IconMapPin className="w-3 h-3 text-accent" />
+              {visitorLocation}
+            </p>
+          )}
         </div>
 
         {/* Offer */}

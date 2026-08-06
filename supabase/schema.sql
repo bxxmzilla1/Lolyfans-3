@@ -52,6 +52,8 @@ create table if not exists chats (
 alter table invites add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 alter table chats add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 alter table chats add column if not exists guest_ip text;
+-- Visitor's city captured at signup/payment (country lives in guest_country).
+alter table chats add column if not exists guest_city text;
 alter table chats add column if not exists last_read_at timestamptz not null default now();
 -- Owner-chosen display name (the guest's original name stays visible subtly)
 alter table chats add column if not exists custom_name text;

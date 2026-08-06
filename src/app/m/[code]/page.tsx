@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { appOrigin, cpmLinkSettings, ownerIdForCpmCode } from "@/lib/cpm";
+import { visitorLocation } from "@/lib/geo";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { onPayLinkDomain, payLinkOrigin } from "@/lib/telegramUnlock";
@@ -88,6 +89,9 @@ export default async function CpmPage({
     invite_verified?: boolean;
   };
   const settings = await cpmLinkSettings(code);
+  // The visitor's own "City, Country" — shown under the creator's name so
+  // the page feels local to them.
+  const location = await visitorLocation(h);
 
   return (
     <CpmLanding
@@ -99,6 +103,7 @@ export default async function CpmPage({
       slotsTotal={settings.slotsTotal}
       slotsLeft={settings.slotsLeft}
       timerMinutes={settings.timerMinutes}
+      visitorLocation={location}
     />
   );
 }

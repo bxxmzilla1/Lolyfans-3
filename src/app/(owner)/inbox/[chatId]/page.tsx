@@ -72,10 +72,15 @@ export default async function OwnerChatPage({
       ...(drainMap.has(m.id) ? { blur_layers_cleared: drainMap.get(m.id) } : {}),
     }));
 
-  // Where the guest is chatting from: precise City, Country from their IP,
-  // falling back to the country stored when they joined.
+  // Where the guest is from: the City, Country captured at signup/payment
+  // wins, then a live IP lookup, then just the stored country.
+  const storedCountry = fullCountryName(chat.guest_country);
   const guestLocation =
-    (await locationFromIp(chat.guest_ip)) ?? fullCountryName(chat.guest_country);
+    (chat.guest_city
+      ? [chat.guest_city, storedCountry].filter(Boolean).join(", ")
+      : null) ??
+    (await locationFromIp(chat.guest_ip)) ??
+    storedCountry;
 
   const header = (
     <header className="border-b border-line2 px-3 py-2.5 flex items-center gap-3 bg-card/60 backdrop-blur-lg">

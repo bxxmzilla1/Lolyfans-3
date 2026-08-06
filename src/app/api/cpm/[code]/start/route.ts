@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { createToken, GUEST_COOKIE, cookieOptions, getGuestChatId } from "@/lib/session";
-import { visitorCountryCode } from "@/lib/geo";
+import { visitorGeoParts } from "@/lib/geo";
 import { ipFromHeaders } from "@/lib/invites";
 import { ensureStripeCustomer, saveStripePaymentMethod } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
@@ -61,19 +61,31 @@ export async function POST(
   // We create a pending chat up front so the PI metadata has a chatId to
   // attach the card to — revealed (pending=false) on successful payment.
   const ip = ipFromHeaders(req.headers);
-  const country = await visitorCountryCode(req.headers);
-  const { data: chat, error } = await db
+  // City + country from the payment-page visit — shown next to the fan's
+  // name in the creator's chat once they've paid.
+  const geo = await visitorGeoParts(req.headers);
+  const country = geo.countryCode;
+  const row = {
+    owner_id: ownerId,
+    guest_name: guestName,
+    guest_ip: ip,
+    guest_country: country,
+    cpm: true,
+    pending: true,
+  };
+  let { data: chat, error } = await db
     .from("chats")
-    .insert({
-      owner_id: ownerId,
-      guest_name: guestName,
-      guest_ip: ip,
-      guest_country: country,
-      cpm: true,
-      pending: true,
-    })
+    .insert({ ...row, guest_city: geo.city })
     .select("id")
     .single();
+  // guest_city column missing (migration not run) — insert without it.
+  if (error && /guest_city/i.test(error.message)) {
+    ({ data: chat, error } = await db
+      .from("chats")
+      .insert(row)
+      .select("id")
+      .single());
+  }
   if (error || !chat) {
     return NextResponse.json(
       { error: "Could not start (run the Chat per minute DB migration?)" },
