@@ -723,9 +723,6 @@ create index if not exists telegram_unlocks_owner_idx
 -- chat on Lolyfans at $1/min (billed every 30 minutes or when they leave).
 -- ---------------------------------------------------------------------------
 alter table chats add column if not exists cpm boolean not null default false;
--- Telegram peer (@username / phone / user:id:hash) linked so the creator can
--- open a DM with a Chat-per-minute fan from the Lolyfans sidebar.
-alter table chats add column if not exists tg_peer text;
 
 create table if not exists cpm_links (
   owner_id uuid primary key references auth.users(id) on delete cascade,

@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { formatTime } from "@/lib/utils";
-import { IconSend, IconStar, IconTrash } from "./Icons";
+import { IconStar, IconTrash } from "./Icons";
 
 type CpmChat = {
   id: string;
@@ -12,7 +12,6 @@ type CpmChat = {
   custom_name: string | null;
   last_message_at: string;
   hasCard: boolean;
-  tgPeer: string | null;
   unread: number;
   preview: { content: string | null; media_type: string | null } | null;
 };
@@ -32,10 +31,8 @@ function previewLabel(p: CpmChat["preview"]): string {
  */
 export default function CpmChatList() {
   const pathname = usePathname();
-  const router = useRouter();
   const [chats, setChats] = useState<CpmChat[] | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [linkingId, setLinkingId] = useState<string | null>(null);
   const inflight = useRef(false);
   const lastFp = useRef("");
 
@@ -91,43 +88,6 @@ export default function CpmChatList() {
     }
   }
 
-  /** Open (or first link, then open) this fan's Telegram DM in the inbox. */
-  async function openTelegramDm(chat: CpmChat) {
-    let peer = chat.tgPeer;
-    if (!peer) {
-      const typed = window.prompt(
-        `Telegram @username for ${chat.custom_name || chat.guest_name}`,
-        ""
-      );
-      if (!typed?.trim()) return;
-      setLinkingId(chat.id);
-      try {
-        const res = await fetch("/api/cpm/telegram-dm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chatId: chat.id, peer: typed.trim() }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok || !data.peer) {
-          window.alert(data.error || "Could not link Telegram");
-          return;
-        }
-        peer = data.peer as string;
-        setChats((prev) =>
-          (prev ?? []).map((c) =>
-            c.id === chat.id ? { ...c, tgPeer: peer } : c
-          )
-        );
-      } catch {
-        window.alert("Could not link Telegram");
-        return;
-      } finally {
-        setLinkingId(null);
-      }
-    }
-    if (peer) router.push(`/inbox/tg/${encodeURIComponent(peer)}`);
-  }
-
   if (!chats || chats.length === 0) return null;
 
   return (
@@ -159,7 +119,7 @@ export default function CpmChatList() {
                 <div className="flex items-center gap-1.5 min-w-0">
                   <IconStar className="w-3.5 h-3.5 text-amber-400 shrink-0 drop-shadow-[0_0_4px_rgba(251,191,36,0.55)]" />
                   <p
-                    className={`text-[14px] truncate min-w-0 ${
+                    className={`text-[14px] truncate flex-1 ${
                       c.unread && !active
                         ? "font-bold text-violet-200"
                         : "font-semibold text-violet-100"
@@ -167,30 +127,8 @@ export default function CpmChatList() {
                   >
                     {name}
                   </p>
-                  <button
-                    type="button"
-                    aria-label={`Message ${name} on Telegram`}
-                    title={
-                      c.tgPeer
-                        ? "Open Telegram DM"
-                        : "Link Telegram & open DM"
-                    }
-                    disabled={linkingId === c.id}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      void openTelegramDm(c);
-                    }}
-                    className="shrink-0 w-6 h-6 rounded-md flex items-center justify-center text-[#2AABEE] hover:bg-[#2AABEE]/15 disabled:opacity-50"
-                  >
-                    {linkingId === c.id ? (
-                      <span className="w-3 h-3 rounded-full border-2 border-[#2AABEE]/40 border-t-[#2AABEE] animate-spin" />
-                    ) : (
-                      <IconSend className="w-3.5 h-3.5" />
-                    )}
-                  </button>
                   {when && (
-                    <span className="text-[11px] text-violet-300/70 shrink-0 ml-auto">
+                    <span className="text-[11px] text-violet-300/70 shrink-0">
                       {when}
                     </span>
                   )}

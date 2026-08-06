@@ -14,46 +14,16 @@ export async function GET() {
   }
 
   const db = supabaseAdmin();
-  type ChatRow = {
-    id: string;
-    guest_name: string;
-    custom_name: string | null;
-    last_message_at: string;
-    last_read_at: string | null;
-    stripe_payment_method_id: string | null;
-    cpm: boolean;
-    tg_peer?: string | null;
-  };
-  const baseSelect =
-    "id, guest_name, custom_name, last_message_at, last_read_at, stripe_payment_method_id, cpm";
-  let chats: ChatRow[] | null = null;
-  let error: { message: string } | null = null;
-  {
-    const first = await db
-      .from("chats")
-      .select(`${baseSelect}, tg_peer`)
-      .eq("owner_id", ownerId)
-      .eq("cpm", true)
-      .eq("pending", false)
-      .order("last_message_at", { ascending: false })
-      .limit(100);
-    chats = (first.data as ChatRow[] | null) ?? null;
-    error = first.error;
-  }
-
-  // tg_peer column missing (migration not run) — load without it.
-  if (error && /tg_peer/i.test(error.message)) {
-    const second = await db
-      .from("chats")
-      .select(baseSelect)
-      .eq("owner_id", ownerId)
-      .eq("cpm", true)
-      .eq("pending", false)
-      .order("last_message_at", { ascending: false })
-      .limit(100);
-    chats = (second.data as ChatRow[] | null) ?? null;
-    error = second.error;
-  }
+  const { data: chats, error } = await db
+    .from("chats")
+    .select(
+      "id, guest_name, custom_name, last_message_at, last_read_at, stripe_payment_method_id, cpm"
+    )
+    .eq("owner_id", ownerId)
+    .eq("cpm", true)
+    .eq("pending", false)
+    .order("last_message_at", { ascending: false })
+    .limit(100);
 
   if (error) {
     // Column missing until migration runs — return empty rather than 500.
@@ -104,7 +74,6 @@ export async function GET() {
         custom_name: c.custom_name,
         last_message_at: c.last_message_at,
         hasCard: !!c.stripe_payment_method_id,
-        tgPeer: c.tg_peer ?? null,
         unread,
         preview: preview
           ? { content: preview.content, media_type: preview.media_type }
