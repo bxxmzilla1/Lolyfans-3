@@ -39,15 +39,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, active: false });
   }
 
+  const nowIso = new Date().toISOString();
   await db
     .from("cpm_sessions")
-    .update({ last_active_at: new Date().toISOString() })
+    .update({ last_active_at: nowIso })
     .eq("id", session.id);
+  // Keep local copy in sync — minutesOwed bills only through last_active_at.
+  session.last_active_at = nowIso;
 
   const body = await req.json().catch(() => ({}));
   const settle = !!body.settle;
 
-  // Bill when asked (10-min timer / close) or whenever 10+ unpaid minutes piled up.
+  // Bill when asked (10-min timer) or whenever 10+ unpaid active minutes piled up.
   const owed = minutesOwed(session);
   const shouldBill = settle || owed >= CPM_BILL_EVERY_MIN;
   if (shouldBill && owed > 0) {

@@ -157,7 +157,13 @@ export default function CpmChatList() {
             !!c.session &&
             (cpmSessionLive(c.session.lastActiveAt, now) || c.session.live);
           const earned = c.session
-            ? formatCpmDollars(cpmEarnedCents(c.session.startedAt, now))
+            ? formatCpmDollars(
+                cpmEarnedCents(
+                  c.session.startedAt,
+                  now,
+                  live ? null : c.session.lastActiveAt
+                )
+              )
             : null;
           return (
             <Link

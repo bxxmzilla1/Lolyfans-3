@@ -9,16 +9,29 @@ export const CPM_PRICE_CENTS_PER_MIN = 100;
  */
 export const CPM_LIVE_MS = 90_000;
 
-/** Wall-clock minutes since session start (at least 1 while the session exists). */
-export function cpmElapsedMinutes(startedAt: string, now = Date.now()): number {
+/**
+ * Active minutes for a session. Caps at lastActiveAt when provided so the
+ * creator's "$ spent" matches what will actually be charged (no idle time).
+ */
+export function cpmElapsedMinutes(
+  startedAt: string,
+  now = Date.now(),
+  lastActiveAt?: string | null
+): number {
   const started = new Date(startedAt).getTime();
   if (!Number.isFinite(started)) return 1;
-  return Math.max(1, Math.ceil((now - started) / 60_000));
+  const last = lastActiveAt ? new Date(lastActiveAt).getTime() : NaN;
+  const asOf = Number.isFinite(last) ? Math.min(now, last) : now;
+  return Math.max(1, Math.ceil(Math.max(0, asOf - started) / 60_000) || 1);
 }
 
-/** Accrued earnings in cents for the current session (elapsed minutes × $1). */
-export function cpmEarnedCents(startedAt: string, now = Date.now()): number {
-  return cpmElapsedMinutes(startedAt, now) * CPM_PRICE_CENTS_PER_MIN;
+/** Accrued spend in cents for active time only (elapsed minutes × $1). */
+export function cpmEarnedCents(
+  startedAt: string,
+  now = Date.now(),
+  lastActiveAt?: string | null
+): number {
+  return cpmElapsedMinutes(startedAt, now, lastActiveAt) * CPM_PRICE_CENTS_PER_MIN;
 }
 
 /** Fan still in chat — recent meter heartbeat. */

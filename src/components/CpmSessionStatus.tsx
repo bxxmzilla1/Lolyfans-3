@@ -58,7 +58,14 @@ export default function CpmSessionStatus({ chatId }: { chatId: string }) {
   }
 
   const live = cpmSessionLive(session.lastActiveAt, now) || session.live;
-  const earned = formatCpmDollars(cpmEarnedCents(session.startedAt, now));
+  // Live: tick with now (they're heartbeating). Idle settle uses last_active only.
+  const earned = formatCpmDollars(
+    cpmEarnedCents(
+      session.startedAt,
+      now,
+      live ? null : session.lastActiveAt
+    )
+  );
 
   return (
     <span className="inline-flex items-center gap-1.5 text-xs shrink-0">
