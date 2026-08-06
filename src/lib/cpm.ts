@@ -63,6 +63,51 @@ export async function ensureCpmLink(ownerId: string): Promise<string> {
   throw new Error("Could not create Chat per minute link");
 }
 
+/** Landing-page customization saved on the creator's CPM link. */
+export type CpmLinkSettings = {
+  /** Custom bullet points; null → the built-in default list. */
+  benefits: string[] | null;
+  /** "Available for N people only" scarcity counters; null → hidden. */
+  slotsTotal: number | null;
+  slotsLeft: number | null;
+  /** Per-visitor countdown length in minutes; null/0 → no timer. */
+  timerMinutes: number | null;
+};
+
+/**
+ * Read the landing customization for a link code. Returns all-null defaults
+ * when the columns don't exist yet (migration not run) or nothing was saved.
+ */
+export async function cpmLinkSettings(code: string): Promise<CpmLinkSettings> {
+  const empty: CpmLinkSettings = {
+    benefits: null,
+    slotsTotal: null,
+    slotsLeft: null,
+    timerMinutes: null,
+  };
+  if (!code) return empty;
+  const { data, error } = await supabaseAdmin()
+    .from("cpm_links")
+    .select("benefits, slots_total, slots_left, timer_minutes")
+    .eq("code", code)
+    .maybeSingle();
+  if (error || !data) return empty;
+  const benefits = Array.isArray(data.benefits)
+    ? (data.benefits as unknown[])
+        .filter((b): b is string => typeof b === "string" && !!b.trim())
+        .slice(0, 8)
+    : null;
+  return {
+    benefits: benefits && benefits.length ? benefits : null,
+    slotsTotal: typeof data.slots_total === "number" ? data.slots_total : null,
+    slotsLeft: typeof data.slots_left === "number" ? data.slots_left : null,
+    timerMinutes:
+      typeof data.timer_minutes === "number" && data.timer_minutes > 0
+        ? data.timer_minutes
+        : null,
+  };
+}
+
 export async function ownerIdForCpmCode(code: string): Promise<string | null> {
   if (!code) return null;
   const { data } = await supabaseAdmin()

@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { elementsEnabled } from "@/lib/stripeClient";
 import { IconCheck, IconUser, IconVerified } from "./Icons";
 
-const BENEFITS = [
+const DEFAULT_BENEFITS = [
   "Unlimited chatting",
   "Unlimited free photos and video",
   "Chat unfiltered",
@@ -20,27 +20,80 @@ type Intent = {
   chatId: string;
 };
 
+function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const mm = String(m).padStart(2, "0");
+  const ss = String(s).padStart(2, "0");
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
+/**
+ * Per-visitor FOMO countdown. The deadline is created on the first visit and
+ * kept in localStorage, so refreshing the page doesn't reset the clock.
+ */
+function useCountdown(code: string, minutes: number | null): string | null {
+  const [label, setLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!minutes || minutes <= 0) return;
+    const key = `cpm-timer-${code}`;
+    let deadline = Number(localStorage.getItem(key) || 0);
+    if (!deadline || Number.isNaN(deadline) || deadline < Date.now() - 365 * 86_400_000) {
+      deadline = Date.now() + minutes * 60_000;
+      localStorage.setItem(key, String(deadline));
+    }
+    const tick = () => setLabel(formatCountdown(deadline - Date.now()));
+    tick();
+    const t = setInterval(tick, 1000);
+    return () => clearInterval(t);
+  }, [code, minutes]);
+
+  return label;
+}
+
 /**
  * Chat-per-minute paywall (TelegramPay branded). Fans without a saved card
  * see benefits + $1/min and enter their card; returning fans with a card go
- * straight into the chat.
+ * straight into the chat. Bullet points, "N spots only" scarcity counters
+ * and the countdown are customizable from the creator's settings.
  */
 export default function CpmLanding({
   code,
   ownerName,
   verified,
   appOrigin,
+  benefits,
+  slotsTotal,
+  slotsLeft,
+  timerMinutes,
 }: {
   code: string;
   ownerName: string;
   verified: boolean;
   /** Lolyfans origin — after paying we claim the cookie there, then /chat. */
   appOrigin: string;
+  /** Custom bullet points; null → default list. */
+  benefits?: string[] | null;
+  /** "Available for N people only" counters; null → hidden. */
+  slotsTotal?: number | null;
+  slotsLeft?: number | null;
+  /** Per-visitor countdown length in minutes; null → no timer. */
+  timerMinutes?: number | null;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [intent, setIntent] = useState<Intent | null>(null);
   const [avatarFailed, setAvatarFailed] = useState(false);
+
+  const bullets = benefits && benefits.length ? benefits : DEFAULT_BENEFITS;
+  const countdown = useCountdown(code, timerMinutes ?? null);
+  const showSlots = typeof slotsTotal === "number" && slotsTotal > 0;
+  const left = showSlots
+    ? Math.max(0, Math.min(slotsLeft ?? slotsTotal!, slotsTotal!))
+    : 0;
 
   function goToChatAfterPay(chatId: string, paymentIntentId: string) {
     // Must land on the app domain so the guest cookie is set there (not on
@@ -140,6 +193,34 @@ export default function CpmLanding({
           </p>
         </div>
 
+        {/* Scarcity: limited spots + per-visitor countdown */}
+        {(showSlots || countdown) && (
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 space-y-1.5">
+            {showSlots && (
+              <p className="text-sm font-bold text-amber-300 text-center">
+                🔥 This chat is available for {slotsTotal}{" "}
+                {slotsTotal === 1 ? "person" : "people"} only —{" "}
+                {left > 0 ? (
+                  <>
+                    {left} {left === 1 ? "spot" : "spots"} left
+                  </>
+                ) : (
+                  "last chance"
+                )}
+              </p>
+            )}
+            {countdown && (
+              <p className="text-xs font-semibold text-amber-200/90 text-center flex items-center justify-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Offer ends in{" "}
+                <span className="font-mono font-bold text-amber-300 tabular-nums">
+                  {countdown}
+                </span>
+              </p>
+            )}
+          </div>
+        )}
+
         {/* Offer */}
         <div className="rounded-2xl border border-line bg-card2/80 p-4 space-y-3">
           <div className="text-center">
@@ -149,7 +230,7 @@ export default function CpmLanding({
             <p className="text-xs text-muted mt-0.5">Chat per minute</p>
           </div>
           <ul className="space-y-2">
-            {BENEFITS.map((b) => (
+            {bullets.map((b) => (
               <li
                 key={b}
                 className="flex items-start gap-2 text-sm text-fg/90"

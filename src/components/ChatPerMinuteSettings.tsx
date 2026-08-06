@@ -3,8 +3,17 @@
 import { useEffect, useState } from "react";
 import { IconCheck, IconLink, IconStar } from "./Icons";
 
+const DEFAULT_BENEFITS = [
+  "Unlimited chatting",
+  "Unlimited free photos and video",
+  "Chat unfiltered",
+  "Completely private",
+  "This person is ID verified",
+];
+
 /**
- * Settings → Chat per minute: the creator's shareable $1/min chat link.
+ * Settings → Chat per minute: the creator's shareable $1/min chat link and
+ * the landing-page customization (bullet points, scarcity, countdown).
  */
 export default function ChatPerMinuteSettings() {
   const [url, setUrl] = useState("");
@@ -16,14 +25,36 @@ export default function ChatPerMinuteSettings() {
   const [sent, setSent] = useState(false);
   const [sendError, setSendError] = useState("");
 
+  // Landing page customization
+  const [benefitsText, setBenefitsText] = useState(DEFAULT_BENEFITS.join("\n"));
+  const [slotsTotal, setSlotsTotal] = useState("");
+  const [slotsLeft, setSlotsLeft] = useState("");
+  const [timerMinutes, setTimerMinutes] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState("");
+
   useEffect(() => {
     let cancelled = false;
     fetch("/api/cpm/link")
       .then(async (res) => {
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
-        if (res.ok && data.url) setUrl(data.url);
-        else setError(data.error || "Could not load the link");
+        if (res.ok && data.url) {
+          setUrl(data.url);
+          if (Array.isArray(data.benefits) && data.benefits.length) {
+            setBenefitsText((data.benefits as string[]).join("\n"));
+          }
+          if (typeof data.slotsTotal === "number") {
+            setSlotsTotal(String(data.slotsTotal));
+          }
+          if (typeof data.slotsLeft === "number") {
+            setSlotsLeft(String(data.slotsLeft));
+          }
+          if (typeof data.timerMinutes === "number") {
+            setTimerMinutes(String(data.timerMinutes));
+          }
+        } else setError(data.error || "Could not load the link");
       })
       .catch(() => {
         if (!cancelled) setError("Could not load the link");
@@ -35,6 +66,38 @@ export default function ChatPerMinuteSettings() {
       cancelled = true;
     };
   }, []);
+
+  async function saveLanding() {
+    if (saving) return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      const res = await fetch("/api/cpm/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          benefits: benefitsText
+            .split("\n")
+            .map((b) => b.trim())
+            .filter(Boolean),
+          slotsTotal: slotsTotal.trim() ? Number(slotsTotal) : null,
+          slotsLeft: slotsLeft.trim() ? Number(slotsLeft) : null,
+          timerMinutes: timerMinutes.trim() ? Number(timerMinutes) : null,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSaveError(data.error || "Could not save");
+        return;
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      setSaveError("Could not save");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function copy() {
     if (!url) return;
@@ -160,6 +223,104 @@ export default function ChatPerMinuteSettings() {
           )}
         </button>
         {sendError && <p className="text-xs text-red-400">{sendError}</p>}
+      </div>
+
+      {/* Landing page customization: bullets, scarcity counters, countdown */}
+      <div className="rounded-2xl border border-line bg-card2/60 p-4 space-y-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted">
+            Landing page
+          </p>
+          <p className="text-xs text-muted mt-1">
+            Customize what fans see on the payment page.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-fg/80">
+            Bullet points{" "}
+            <span className="text-muted font-normal">(one per line)</span>
+          </label>
+          <textarea
+            value={benefitsText}
+            onChange={(e) => setBenefitsText(e.target.value)}
+            rows={5}
+            className="w-full rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm placeholder:text-muted outline-none focus:border-violet-500/60 resize-y"
+            placeholder={DEFAULT_BENEFITS.join("\n")}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-fg/80">
+              Available for
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={slotsTotal}
+              onChange={(e) => setSlotsTotal(e.target.value)}
+              placeholder="e.g. 5"
+              className="w-full rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm placeholder:text-muted outline-none focus:border-violet-500/60"
+            />
+            <p className="text-[11px] text-muted">
+              &ldquo;Available for 5 people only&rdquo; — empty hides it.
+            </p>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-fg/80">
+              Spots left
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={slotsLeft}
+              onChange={(e) => setSlotsLeft(e.target.value)}
+              placeholder="e.g. 2"
+              className="w-full rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm placeholder:text-muted outline-none focus:border-violet-500/60"
+            />
+            <p className="text-[11px] text-muted">
+              How many are still open right now.
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold text-fg/80">
+            Countdown timer{" "}
+            <span className="text-muted font-normal">(minutes)</span>
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={timerMinutes}
+            onChange={(e) => setTimerMinutes(e.target.value)}
+            placeholder="e.g. 15"
+            className="w-full rounded-xl border border-line bg-card px-3.5 py-2.5 text-sm placeholder:text-muted outline-none focus:border-violet-500/60"
+          />
+          <p className="text-[11px] text-muted">
+            Each visitor sees their own &ldquo;offer ends in&rdquo; countdown of
+            this length. Empty or 0 turns it off.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => void saveLanding()}
+          disabled={saving}
+          className="w-full rounded-xl bg-violet-500 hover:bg-violet-500/90 text-white text-sm font-bold py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {saved ? (
+            <>
+              <IconCheck className="w-4 h-4" /> Saved
+            </>
+          ) : saving ? (
+            "Saving…"
+          ) : (
+            "Save landing page"
+          )}
+        </button>
+        {saveError && <p className="text-xs text-red-400">{saveError}</p>}
       </div>
 
       <ul className="text-sm text-muted space-y-1.5 list-disc pl-5">

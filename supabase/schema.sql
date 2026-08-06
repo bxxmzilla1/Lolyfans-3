@@ -730,6 +730,14 @@ create table if not exists cpm_links (
 create unique index if not exists cpm_links_code_idx on cpm_links (code);
 alter table cpm_links enable row level security;
 
+-- Landing-page customization (all optional, null = default/off):
+-- custom benefit bullet points, "only N spots" scarcity counters, and a
+-- per-visitor countdown timer in minutes.
+alter table cpm_links add column if not exists benefits jsonb;
+alter table cpm_links add column if not exists slots_total int;
+alter table cpm_links add column if not exists slots_left int;
+alter table cpm_links add column if not exists timer_minutes int;
+
 create table if not exists cpm_sessions (
   id uuid primary key default gen_random_uuid(),
   chat_id uuid not null references chats(id) on delete cascade,

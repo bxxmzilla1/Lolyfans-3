@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
-import { appOrigin, ownerIdForCpmCode } from "@/lib/cpm";
+import { appOrigin, cpmLinkSettings, ownerIdForCpmCode } from "@/lib/cpm";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { onPayLinkDomain, payLinkOrigin } from "@/lib/telegramUnlock";
@@ -87,6 +87,7 @@ export default async function CpmPage({
     display_name?: string;
     invite_verified?: boolean;
   };
+  const settings = await cpmLinkSettings(code);
 
   return (
     <CpmLanding
@@ -94,6 +95,10 @@ export default async function CpmPage({
       ownerName={meta.display_name || "Creator"}
       verified={!!meta.invite_verified}
       appOrigin={app}
+      benefits={settings.benefits}
+      slotsTotal={settings.slotsTotal}
+      slotsLeft={settings.slotsLeft}
+      timerMinutes={settings.timerMinutes}
     />
   );
 }
