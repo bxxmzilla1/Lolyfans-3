@@ -4,7 +4,8 @@ import { useEffect, useRef } from "react";
 
 /**
  * Guest-side Chat-per-minute metering. Mounted only on CPM chats:
- *  - Soft heartbeat every 60s (keeps last_active fresh — no charge).
+ *  - Soft heartbeat every 20s (keeps last_active fresh so the creator sees
+ *    Active + earnings — no charge on these ticks).
  *  - Hard settle every 10 minutes (charges accrued minutes in one lump).
  *  - On tab close / navigate away, settle remaining minutes via sendBeacon.
  *
@@ -15,13 +16,16 @@ export default function CpmMeter({ chatId }: { chatId: string }) {
   chatIdRef.current = chatId;
 
   useEffect(() => {
-    const heartbeat = setInterval(() => {
+    const tick = () => {
       void fetch("/api/cpm/tick", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       }).catch(() => {});
-    }, 60_000);
+    };
+    // Immediate heartbeat so the creator's "Active" badge flips on right away.
+    tick();
+    const heartbeat = setInterval(tick, 20_000);
 
     // One lump charge every 10 minutes — never per-minute (bank card blocks).
     const settle = setInterval(() => {

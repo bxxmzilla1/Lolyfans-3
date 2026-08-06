@@ -5,6 +5,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { locationFromIp, fullCountryName } from "@/lib/geo";
 import ChatView from "@/components/ChatView";
 import GuestPresenceStatus from "@/components/GuestPresenceStatus";
+import CpmSessionStatus from "@/components/CpmSessionStatus";
 import OwnerOnlineSwitch from "@/components/OwnerOnlineSwitch";
 import FanWalletStatus from "@/components/FanWalletStatus";
 import { IconBack, IconMapPin } from "@/components/Icons";
@@ -120,7 +121,11 @@ export default async function OwnerChatPage({
               <span className="shrink-0">·</span>
             </>
           )}
-          <GuestPresenceStatus chatId={chatId} ownerId={ownerId} />
+          {chat.cpm ? (
+            <CpmSessionStatus chatId={chatId} />
+          ) : (
+            <GuestPresenceStatus chatId={chatId} ownerId={ownerId} />
+          )}
         </p>
       </div>
       {/* How this fan sees YOU: online (default) or offline — per chat */}

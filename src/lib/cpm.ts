@@ -2,8 +2,12 @@ import "server-only";
 import { randomBytes } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { chargeChatDollars } from "@/lib/payments";
+import {
+  CPM_LIVE_MS,
+  CPM_PRICE_CENTS_PER_MIN,
+} from "@/lib/cpmShared";
 
-export const CPM_PRICE_CENTS_PER_MIN = 100;
+export { CPM_PRICE_CENTS_PER_MIN };
 /**
  * How often an active session is billed while the fan stays in chat. Minutes
  * accrue and are charged in one lump every 10 minutes (or on close) — never
@@ -221,4 +225,22 @@ export async function endCpmSession(session: CpmSession): Promise<void> {
     .update({ status: "ended", ended_at: new Date().toISOString() })
     .eq("id", session.id)
     .eq("status", "active");
+}
+
+/**
+ * Settle sessions whose fan stopped heartbeating (tab crash / lost beacon).
+ * Called from the creator's chat list so stale "active" rows don't linger.
+ */
+export async function endStaleCpmSessions(ownerId: string): Promise<void> {
+  const cutoff = new Date(Date.now() - CPM_LIVE_MS * 2).toISOString();
+  const { data } = await supabaseAdmin()
+    .from("cpm_sessions")
+    .select("*")
+    .eq("owner_id", ownerId)
+    .eq("status", "active")
+    .lt("last_active_at", cutoff)
+    .limit(50);
+  for (const row of data ?? []) {
+    await endCpmSession(row as CpmSession);
+  }
 }

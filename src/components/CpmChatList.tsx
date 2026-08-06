@@ -4,7 +4,19 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { formatTime } from "@/lib/utils";
+import {
+  cpmEarnedCents,
+  cpmSessionLive,
+  formatCpmDollars,
+} from "@/lib/cpmShared";
 import { IconStar, IconTrash } from "./Icons";
+
+type CpmSession = {
+  startedAt: string;
+  lastActiveAt: string;
+  minutesCharged: number;
+  live: boolean;
+};
 
 type CpmChat = {
   id: string;
@@ -14,6 +26,7 @@ type CpmChat = {
   hasCard: boolean;
   unread: number;
   preview: { content: string | null; media_type: string | null } | null;
+  session: CpmSession | null;
 };
 
 function previewLabel(p: CpmChat["preview"]): string {
@@ -27,12 +40,14 @@ function previewLabel(p: CpmChat["preview"]): string {
 
 /**
  * Sidebar section for Chat-per-minute fans — purple rows with a gold star
- * beside the name so they're easy to spot next to Telegram DMs.
+ * beside the name so they're easy to spot next to Telegram DMs. Live
+ * sessions show Active + accruing session earnings.
  */
 export default function CpmChatList() {
   const pathname = usePathname();
   const [chats, setChats] = useState<CpmChat[] | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [now, setNow] = useState(() => Date.now());
   const inflight = useRef(false);
   const lastFp = useRef("");
 
@@ -44,10 +59,36 @@ export default function CpmChatList() {
       const data = await res.json().catch(() => ({}));
       if (res.ok) {
         const next = (data.chats ?? []) as CpmChat[];
-        const fp = JSON.stringify(next);
+        // Fingerprint without wall-clock fields that we tick locally.
+        const fp = JSON.stringify(
+          next.map((c) => ({
+            id: c.id,
+            guest_name: c.guest_name,
+            custom_name: c.custom_name,
+            last_message_at: c.last_message_at,
+            unread: c.unread,
+            preview: c.preview,
+            session: c.session
+              ? {
+                  startedAt: c.session.startedAt,
+                  lastActiveAt: c.session.lastActiveAt,
+                  minutesCharged: c.session.minutesCharged,
+                }
+              : null,
+          }))
+        );
         if (fp !== lastFp.current) {
           lastFp.current = fp;
           setChats(next);
+        } else {
+          // Refresh lastActiveAt / live even when the rest is unchanged.
+          setChats((prev) => {
+            if (!prev) return next;
+            return prev.map((c) => {
+              const n = next.find((x) => x.id === c.id);
+              return n ? { ...c, session: n.session } : c;
+            });
+          });
         }
       }
     } catch {
@@ -61,9 +102,19 @@ export default function CpmChatList() {
     void load();
     const t = setInterval(() => {
       if (document.visibilityState === "visible") void load();
-    }, 4000);
+    }, 3000);
     return () => clearInterval(t);
   }, [load]);
+
+  // Tick earnings every second while any session is live.
+  useEffect(() => {
+    const anyLive = (chats ?? []).some(
+      (c) => c.session && cpmSessionLive(c.session.lastActiveAt)
+    );
+    if (!anyLive) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [chats]);
 
   async function remove(chat: CpmChat) {
     const name = chat.custom_name || chat.guest_name;
@@ -102,6 +153,12 @@ export default function CpmChatList() {
           const when = c.last_message_at
             ? formatTime(c.last_message_at)
             : "";
+          const live =
+            !!c.session &&
+            (cpmSessionLive(c.session.lastActiveAt, now) || c.session.live);
+          const earned = c.session
+            ? formatCpmDollars(cpmEarnedCents(c.session.startedAt, now))
+            : null;
           return (
             <Link
               key={c.id}
@@ -112,8 +169,11 @@ export default function CpmChatList() {
                   : "hover:bg-violet-500/10"
               }`}
             >
-              <div className="w-11 h-11 rounded-full bg-violet-500/20 text-violet-300 flex items-center justify-center text-base font-bold uppercase shrink-0">
+              <div className="relative w-11 h-11 rounded-full bg-violet-500/20 text-violet-300 flex items-center justify-center text-base font-bold uppercase shrink-0">
                 {name.slice(0, 1)}
+                {live && (
+                  <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-emerald-400 ring-2 ring-bg" />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-1.5 min-w-0">
@@ -127,23 +187,31 @@ export default function CpmChatList() {
                   >
                     {name}
                   </p>
-                  {when && (
+                  {live && earned ? (
+                    <span className="text-[11px] font-bold text-amber-300 tabular-nums shrink-0">
+                      {earned}
+                    </span>
+                  ) : when ? (
                     <span className="text-[11px] text-violet-300/70 shrink-0">
                       {when}
                     </span>
-                  )}
+                  ) : null}
                 </div>
                 <p
                   className={`text-[13px] truncate ${
-                    c.unread && !active
-                      ? "text-violet-200 font-medium"
-                      : "text-violet-300/70"
+                    live
+                      ? "text-emerald-400 font-medium"
+                      : c.unread && !active
+                        ? "text-violet-200 font-medium"
+                        : "text-violet-300/70"
                   }`}
                 >
-                  {previewLabel(c.preview)}
+                  {live
+                    ? `Active · ${earned} this session`
+                    : previewLabel(c.preview)}
                 </p>
               </div>
-              {c.unread > 0 && !active && (
+              {c.unread > 0 && !active && !live && (
                 <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-violet-500 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
                   {c.unread > 99 ? "99+" : c.unread}
                 </span>

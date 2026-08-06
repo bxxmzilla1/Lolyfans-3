@@ -3,15 +3,21 @@ import { getOwnerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { previewMediaType } from "@/lib/chatPreview";
 import { stripe, stripeConfigured } from "@/lib/stripe";
+import { endStaleCpmSessions } from "@/lib/cpm";
+import { cpmSessionLive } from "@/lib/cpmShared";
 
 /**
  * Creator sidebar: Chat-per-minute fans only (purple + gold star in the UI).
+ * Includes the live metering session (if any) so the list can show Active + $.
  */
 export async function GET() {
   const ownerId = await getOwnerId();
   if (!ownerId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
+
+  // Settle crashed tabs before we read "active" sessions for the list.
+  await endStaleCpmSessions(ownerId).catch(() => {});
 
   const db = supabaseAdmin();
   const { data: chats, error } = await db
@@ -40,13 +46,28 @@ export async function GET() {
     media_type: string | null;
   };
   const previewById = new Map<string, Preview>();
+  type SessionRow = {
+    chat_id: string;
+    started_at: string;
+    last_active_at: string;
+    minutes_charged: number;
+  };
+  const sessionById = new Map<string, SessionRow>();
   if (ids.length) {
-    const { data: msgs } = await db
-      .from("messages")
-      .select("chat_id, content, media_type, created_at")
-      .in("chat_id", ids)
-      .order("created_at", { ascending: false })
-      .limit(ids.length * 3);
+    const [{ data: msgs }, { data: sessions }] = await Promise.all([
+      db
+        .from("messages")
+        .select("chat_id, content, media_type, created_at")
+        .in("chat_id", ids)
+        .order("created_at", { ascending: false })
+        .limit(ids.length * 3),
+      db
+        .from("cpm_sessions")
+        .select("chat_id, started_at, last_active_at, minutes_charged")
+        .eq("owner_id", ownerId)
+        .eq("status", "active")
+        .in("chat_id", ids),
+    ]);
     for (const m of msgs ?? []) {
       const id = m.chat_id as string;
       if (previewById.has(id)) continue;
@@ -55,6 +76,9 @@ export async function GET() {
         content: (m.content as string | null) ?? null,
         media_type: previewMediaType(m),
       });
+    }
+    for (const s of sessions ?? []) {
+      sessionById.set(s.chat_id as string, s as SessionRow);
     }
   }
 
@@ -68,6 +92,7 @@ export async function GET() {
             ? 1
             : 0
           : 0;
+      const sess = sessionById.get(c.id as string);
       return {
         id: c.id,
         guest_name: c.guest_name,
@@ -77,6 +102,14 @@ export async function GET() {
         unread,
         preview: preview
           ? { content: preview.content, media_type: preview.media_type }
+          : null,
+        session: sess
+          ? {
+              startedAt: sess.started_at,
+              lastActiveAt: sess.last_active_at,
+              minutesCharged: sess.minutes_charged,
+              live: cpmSessionLive(sess.last_active_at),
+            }
           : null,
       };
     }),
