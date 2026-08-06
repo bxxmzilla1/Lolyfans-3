@@ -207,7 +207,7 @@ export default function CpmChatList() {
                   }`}
                 >
                   {live
-                    ? `Active · ${earned} this session`
+                    ? `Active · ${earned} spent`
                     : previewLabel(c.preview)}
                 </p>
               </div>

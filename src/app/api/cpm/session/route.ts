@@ -5,8 +5,8 @@ import { activeCpmSession, endStaleCpmSessions } from "@/lib/cpm";
 import { cpmSessionLive } from "@/lib/cpmShared";
 
 /**
- * Creator: live Chat-per-minute session for one fan — used by the chat
- * header to show Active + session earnings.
+ * Creator-only: live Chat-per-minute session for one fan. Powers Active +
+ * spend amount in the owner inbox — guests cannot call this (owner auth).
  */
 export async function GET(req: NextRequest) {
   const ownerId = await getOwnerId();

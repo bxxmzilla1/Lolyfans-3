@@ -15,9 +15,9 @@ type Session = {
 };
 
 /**
- * Creator chat header: green "Active" + live session earnings while a
- * Chat-per-minute fan is in the chat. Polls every few seconds and ticks
- * the dollar amount locally each second between polls.
+ * Creator-only chat header: green "Active" + how much the fan is spending
+ * this session ($1/min accrued). Never mounted on the guest /chat page —
+ * the session API also requires an owner login.
  */
 export default function CpmSessionStatus({ chatId }: { chatId: string }) {
   const [session, setSession] = useState<Session | null>(null);
@@ -79,7 +79,7 @@ export default function CpmSessionStatus({ chatId }: { chatId: string }) {
         className={`font-bold tabular-nums ${
           live ? "text-amber-300" : "text-muted"
         }`}
-        title="Earnings this session"
+        title="What this fan is spending this session ($1/min)"
       >
         {earned}
       </span>
