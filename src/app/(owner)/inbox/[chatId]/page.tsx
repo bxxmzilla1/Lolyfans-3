@@ -7,6 +7,7 @@ import ChatView from "@/components/ChatView";
 import GuestPresenceStatus from "@/components/GuestPresenceStatus";
 import OwnerOnlineSwitch from "@/components/OwnerOnlineSwitch";
 import FanWalletStatus from "@/components/FanWalletStatus";
+import CpmTelegramDmButton from "@/components/CpmTelegramDmButton";
 import { IconBack, IconMapPin } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
@@ -109,6 +110,13 @@ export default async function OwnerChatPage({
               )}
             </span>
           </FanWalletStatus>
+          {chat.cpm ? (
+            <CpmTelegramDmButton
+              chatId={chatId}
+              name={chat.custom_name || chat.guest_name}
+              initialPeer={chat.tg_peer ?? null}
+            />
+          ) : null}
         </p>
         <p className="text-muted text-xs truncate flex items-center gap-1.5">
           {guestLocation && (
