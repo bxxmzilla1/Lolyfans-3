@@ -5,6 +5,7 @@ import { broadcast } from "@/lib/realtime";
 import { notifyGuestSms, requestOrigin } from "@/lib/smsNotify";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
+import { ensureCpmMetering } from "@/lib/cpm";
 
 type ChatAuth = { role: "owner" | "guest"; chatOwnerId: string };
 
@@ -210,6 +211,11 @@ export async function POST(req: NextRequest) {
   if (auth.role === "owner") {
     const origin = requestOrigin(req.headers);
     after(() => notifyGuestSms(chatId, origin));
+  }
+
+  // Chat-per-minute: a guest message (re)starts metering after idle/offline.
+  if (auth.role === "guest") {
+    after(() => ensureCpmMetering(chatId));
   }
 
   return NextResponse.json({ message });

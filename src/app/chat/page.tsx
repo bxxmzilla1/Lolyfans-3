@@ -12,7 +12,6 @@ import GuestNav from "@/components/GuestNav";
 import GuestPresence from "@/components/GuestPresence";
 import CpmMeter from "@/components/CpmMeter";
 import OwnerEscapeHatch from "@/components/OwnerEscapeHatch";
-import { activeCpmSession, startCpmSession } from "@/lib/cpm";
 
 export const dynamic = "force-dynamic";
 
@@ -96,16 +95,9 @@ export default async function GuestChatPage() {
     />
   );
 
-  // Chat-per-minute: metering starts the moment the chat loads (not on the
-  // first message). Claim already started a session for brand-new pays; this
-  // covers returning fans reopening /chat.
-  if (
-    chat.cpm &&
-    chat.stripe_payment_method_id &&
-    !(await activeCpmSession(chatId))
-  ) {
-    await startCpmSession({ chatId, ownerId: chat.owner_id });
-  }
+  // Chat-per-minute: do NOT start metering on page load. Returning fans are
+  // idle until they send a message or interact with a video; going offline
+  // settles the session. Brand-new pays already have a session from /claim.
 
   return (
     // On mobile the footer menu stays visible, so the chat (and its message

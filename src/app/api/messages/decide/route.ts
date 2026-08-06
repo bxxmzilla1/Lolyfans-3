@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { broadcast } from "@/lib/realtime";
+import { ensureCpmMetering } from "@/lib/cpm";
 
 /**
  * Incoming-media gate: the fan accepts or rejects a creator photo/video that
@@ -62,6 +63,9 @@ export async function POST(req: NextRequest) {
 
   // Other open tabs of the fan (and the creator's view) stay in sync.
   await broadcast(`chat:${message.chat_id}`, "update-message", updated);
+
+  // Accepting/rejecting media counts as interacting — resume CPM metering.
+  after(() => ensureCpmMetering(message.chat_id as string));
 
   return NextResponse.json({ ok: true, decision: fanDecision });
 }

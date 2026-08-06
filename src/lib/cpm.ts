@@ -228,11 +228,12 @@ export async function endCpmSession(session: CpmSession): Promise<void> {
 }
 
 /**
- * Settle sessions whose fan stopped heartbeating (tab crash / lost beacon).
- * Called from the creator's chat list so stale "active" rows don't linger.
+ * Settle sessions whose fan went offline (no heartbeat). Uses the same
+ * window as the creator "Active" badge so the moment they show Idle they
+ * are charged and metering stops.
  */
 export async function endStaleCpmSessions(ownerId: string): Promise<void> {
-  const cutoff = new Date(Date.now() - CPM_LIVE_MS * 2).toISOString();
+  const cutoff = new Date(Date.now() - CPM_LIVE_MS).toISOString();
   const { data } = await supabaseAdmin()
     .from("cpm_sessions")
     .select("*")
@@ -243,4 +244,21 @@ export async function endStaleCpmSessions(ownerId: string): Promise<void> {
   for (const row of data ?? []) {
     await endCpmSession(row as CpmSession);
   }
+}
+
+/**
+ * Resume metering after a fan interaction (send a message, accept/unlock a
+ * video, BlurDrainer tap). No-op if the chat isn't CPM, has no card, or
+ * already has a live session. Opening /chat alone never calls this.
+ */
+export async function ensureCpmMetering(chatId: string): Promise<void> {
+  const db = supabaseAdmin();
+  const { data: chat } = await db
+    .from("chats")
+    .select("id, owner_id, cpm, stripe_payment_method_id")
+    .eq("id", chatId)
+    .maybeSingle();
+  if (!chat?.cpm || !chat.stripe_payment_method_id) return;
+  if (await activeCpmSession(chatId)) return;
+  await startCpmSession({ chatId, ownerId: chat.owner_id as string });
 }

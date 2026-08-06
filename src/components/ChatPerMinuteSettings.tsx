@@ -355,8 +355,9 @@ export default function ChatPerMinuteSettings() {
           metering already running.
         </li>
         <li>
-          Returning fans with a saved card skip the paywall — metering
-          restarts the moment their chat loads.
+          Returning fans with a saved card skip the paywall. Metering only
+          restarts when they send a message or interact with a video — going
+          Idle settles their session and stops charges.
         </li>
       </ul>
     </div>
