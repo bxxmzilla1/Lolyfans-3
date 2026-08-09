@@ -21,10 +21,9 @@ function payLinkHost(): string {
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // The pay-link domain only serves PPV unlock pages (/payment/<code>, /u/<id>)
-  // and Chat-per-minute paywalls (/m/<code>). Anything else bounces to the
-  // main site. API routes aren't matched by this proxy, so those pages' own
-  // API calls keep working on the pay domain.
+  // The pay-link domain only serves PPV unlock pages (/payment/<code>, /u/<id>).
+  // Anything else bounces to the main site. API routes aren't matched by this
+  // proxy, so those pages' own API calls keep working on the pay domain.
   const payHost = payLinkHost();
   if (payHost) {
     const host = normalizeHost(
@@ -35,8 +34,7 @@ export async function proxy(request: NextRequest) {
     if (
       host === payHost &&
       !pathname.startsWith("/payment/") &&
-      !pathname.startsWith("/u/") &&
-      !pathname.startsWith("/m/")
+      !pathname.startsWith("/u/")
     ) {
       return NextResponse.redirect(
         `https://www.lolyfans.com${pathname}${request.nextUrl.search}`
@@ -48,7 +46,6 @@ export async function proxy(request: NextRequest) {
   // entirely so invite links respond as fast as possible.
   if (
     pathname.startsWith("/i/") ||
-    pathname.startsWith("/m/") ||
     pathname.startsWith("/chat") ||
     pathname.startsWith("/p/") ||
     pathname === "/home" ||

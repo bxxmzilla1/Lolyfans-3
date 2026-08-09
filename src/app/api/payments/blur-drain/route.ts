@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
@@ -10,11 +10,6 @@ import {
 import { parseBlurDrainer } from "@/lib/blurDrainer";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { visitorCountryCode } from "@/lib/geo";
-import { ensureCpmMetering } from "@/lib/cpm";
-
-function resumeCpm(chatId: string) {
-  after(() => ensureCpmMetering(chatId));
-}
 
 /** GET: current progress for this fan + message. */
 export async function GET(req: NextRequest) {
@@ -80,7 +75,6 @@ export async function POST(req: NextRequest) {
   const cleared = prog?.layers_cleared ?? 0;
 
   if (cleared >= cfg.layers) {
-    resumeCpm(message.chat_id as string);
     return NextResponse.json({ ok: true, layersCleared: cleared, done: true });
   }
 
@@ -110,7 +104,6 @@ export async function POST(req: NextRequest) {
       layers: cfg.layers,
       paymentIntentId: `free_${si.id}`,
     });
-    resumeCpm(message.chat_id as string);
     return NextResponse.json({
       ok: true,
       layersCleared,
@@ -132,7 +125,6 @@ export async function POST(req: NextRequest) {
         layers: cfg.layers,
         paymentIntentId: `free_${message.id}_${cleared + 1}`,
       });
-      resumeCpm(message.chat_id as string);
       return NextResponse.json({
         ok: true,
         layersCleared,
@@ -191,7 +183,6 @@ export async function POST(req: NextRequest) {
       layers: cfg.layers,
       paymentIntentId: pi.id,
     });
-    resumeCpm(message.chat_id as string);
     return NextResponse.json({
       ok: true,
       layersCleared,
@@ -218,7 +209,6 @@ export async function POST(req: NextRequest) {
       layers: cfg.layers,
       paymentIntentId: result.paymentIntentId,
     });
-    resumeCpm(message.chat_id as string);
     return NextResponse.json({
       ok: true,
       layersCleared,

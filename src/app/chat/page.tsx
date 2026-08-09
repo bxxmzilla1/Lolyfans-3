@@ -10,7 +10,6 @@ import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
 import GuestNav from "@/components/GuestNav";
 import GuestPresence from "@/components/GuestPresence";
-import CpmMeter from "@/components/CpmMeter";
 import OwnerEscapeHatch from "@/components/OwnerEscapeHatch";
 
 export const dynamic = "force-dynamic";
@@ -87,17 +86,10 @@ export default async function GuestChatPage() {
       location={location}
       verified={!!meta.invite_verified}
       initialOnline={!chat.owner_appears_offline}
-      // Voice calls only exist once the creator saved an ElevenLabs voice —
-      // and never on Chat-per-minute chats (text chat only there).
-      callHref={
-        !chat.cpm && (meta.eleven_voice_id || "").trim() ? "/call" : undefined
-      }
+      // Voice calls only exist once the creator saved an ElevenLabs voice.
+      callHref={(meta.eleven_voice_id || "").trim() ? "/call" : undefined}
     />
   );
-
-  // Chat-per-minute: do NOT start metering on page load. Returning fans are
-  // idle until they send a message or interact with a video; going offline
-  // settles the session. Brand-new pays already have a session from /claim.
 
   return (
     // On mobile the footer menu stays visible, so the chat (and its message
@@ -105,7 +97,6 @@ export default async function GuestChatPage() {
     // 42px matches the icon-only footer height (24px icon + 16px padding + border)
     <div className="h-dvh pb-[calc(42px+env(safe-area-inset-bottom))] lg:pb-0 lg:pl-60">
       <GuestPresence chatId={chatId} ownerId={chat.owner_id} />
-      {chat.cpm ? <CpmMeter chatId={chatId} /> : null}
       <OwnerEscapeHatch />
       <ChatView
         chatId={chatId}

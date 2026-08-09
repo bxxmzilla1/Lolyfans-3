@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
@@ -8,8 +8,6 @@ import {
 } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { visitorCountryCode } from "@/lib/geo";
-import { ensureCpmMetering } from "@/lib/cpm";
-
 /**
  * Unlock locked media for dollars via Stripe. One-tap with a saved card, or
  * return a client secret for the embedded card wizard. No token wallet.
@@ -53,7 +51,6 @@ export async function POST(req: NextRequest) {
     .eq("chat_id", message.chat_id)
     .maybeSingle();
   if (existing) {
-    after(() => ensureCpmMetering(message.chat_id as string));
     return NextResponse.json({ ok: true, unlocked: true });
   }
 
@@ -78,7 +75,6 @@ export async function POST(req: NextRequest) {
       chatId: message.chat_id,
       priceCents: price,
     });
-    after(() => ensureCpmMetering(message.chat_id as string));
     return NextResponse.json({ ok: true, unlocked: true });
   }
 
@@ -96,7 +92,6 @@ export async function POST(req: NextRequest) {
       chatId: message.chat_id,
       priceCents: price,
     });
-    after(() => ensureCpmMetering(message.chat_id as string));
     return NextResponse.json({ ok: true, unlocked: true });
   }
 

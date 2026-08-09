@@ -1,5 +1,4 @@
 import TelegramChatList from "@/components/TelegramChatList";
-import CpmChatList from "@/components/CpmChatList";
 import LogoutButton from "@/components/LogoutButton";
 import Logo from "@/components/Logo";
 import { IconChat } from "@/components/Icons";
@@ -19,7 +18,6 @@ export default function InboxPage() {
           <LogoutButton />
         </header>
         <div className="flex-1 overflow-y-auto overscroll-contain touch-pan-y pb-20">
-          <CpmChatList />
           <p className="px-5 pt-2 pb-2 text-[11px] font-semibold uppercase tracking-widest text-muted">
             Telegram
           </p>

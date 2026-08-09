@@ -723,42 +723,10 @@ alter table telegram_unlocks enable row level security;
 create index if not exists telegram_unlocks_owner_idx
   on telegram_unlocks (owner_id, created_at desc);
 
--- ---------------------------------------------------------------------------
--- Chat per minute: one shareable link per creator. Fans verify a card, then
--- chat on Lolyfans at $1/min (billed every 30 minutes or when they leave).
--- ---------------------------------------------------------------------------
-alter table chats add column if not exists cpm boolean not null default false;
-
-create table if not exists cpm_links (
-  owner_id uuid primary key references auth.users(id) on delete cascade,
-  code text not null unique,
-  created_at timestamptz not null default now()
-);
-create unique index if not exists cpm_links_code_idx on cpm_links (code);
-alter table cpm_links enable row level security;
-
--- Landing-page customization (all optional, null = default/off):
--- custom benefit bullet points, "only N spots" scarcity counters, and a
--- per-visitor countdown timer in minutes.
-alter table cpm_links add column if not exists benefits jsonb;
-alter table cpm_links add column if not exists slots_total int;
-alter table cpm_links add column if not exists slots_left int;
-alter table cpm_links add column if not exists timer_minutes int;
-
-create table if not exists cpm_sessions (
-  id uuid primary key default gen_random_uuid(),
-  chat_id uuid not null references chats(id) on delete cascade,
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  status text not null default 'active' check (status in ('active', 'ended')),
-  -- Minutes already charged on the card (starts at 1 when the session opens).
-  minutes_charged int not null default 0,
-  started_at timestamptz not null default now(),
-  last_active_at timestamptz not null default now(),
-  ended_at timestamptz
-);
-create index if not exists cpm_sessions_chat_idx on cpm_sessions (chat_id, status);
-create index if not exists cpm_sessions_owner_idx on cpm_sessions (owner_id, started_at desc);
-alter table cpm_sessions enable row level security;
+-- Chat per minute was removed. Cleanup (run once, optional):
+--   drop table if exists cpm_sessions;
+--   drop table if exists cpm_links;
+--   alter table chats drop column if exists cpm;
 
 -- ---------------------------------------------------------------------------
 -- AI voice calls: fans call the creator's chatbot from the web at $1/minute.

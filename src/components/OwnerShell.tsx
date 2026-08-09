@@ -4,7 +4,6 @@ import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import TelegramChatList from "./TelegramChatList";
-import CpmChatList from "./CpmChatList";
 import VaultPanel from "./VaultPanel";
 import BottomNav from "./BottomNav";
 import SettingsModal from "./SettingsModal";
@@ -48,7 +47,6 @@ export default function OwnerShell({ children }: { children: React.ReactNode }) 
           </span>
         </Link>
         <div className="flex-1 overflow-y-auto overscroll-contain pb-2 touch-pan-y">
-          <CpmChatList />
           <p className="px-5 pt-1 pb-2 text-[11px] font-semibold uppercase tracking-widest text-muted">
             Telegram
           </p>
