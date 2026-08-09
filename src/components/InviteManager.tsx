@@ -31,14 +31,12 @@ export default function InviteManager() {
   const [label, setLabel] = useState("");
   const [countries, setCountries] = useState<string[]>([]);
   const [redirectUrl, setRedirectUrl] = useState("");
-  const [redirectCountries, setRedirectCountries] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Invite | null>(null);
   const [renaming, setRenaming] = useState<InviteWithStats | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [editRedirectUrl, setEditRedirectUrl] = useState("");
-  const [editRedirectCountries, setEditRedirectCountries] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -70,6 +68,7 @@ export default function InviteManager() {
   }, []);
 
   async function create() {
+    if (!redirectUrl.trim()) return;
     setCreating(true);
     const res = await fetch("/api/invites", {
       method: "POST",
@@ -78,7 +77,6 @@ export default function InviteManager() {
         label,
         allowedCountries: countries,
         redirectUrl,
-        redirectCountries,
       }),
     });
     setCreating(false);
@@ -86,7 +84,6 @@ export default function InviteManager() {
       setLabel("");
       setCountries([]);
       setRedirectUrl("");
-      setRedirectCountries([]);
       setShowForm(false);
       load();
     }
@@ -127,13 +124,14 @@ export default function InviteManager() {
     });
   }
 
-  async function applyCountries() {
-    if (applying || selected.size === 0) return;
+  /** Apply the chosen allowed countries to these links (selected or ALL). */
+  async function applyCountries(ids: string[]) {
+    if (applying || ids.length === 0) return;
     setApplying(true);
     await fetch("/api/invites", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [...selected], allowedCountries: bulkCountries }),
+      body: JSON.stringify({ ids, allowedCountries: bulkCountries }),
     });
     setApplying(false);
     setSelectMode(false);
@@ -153,10 +151,10 @@ export default function InviteManager() {
 
   async function saveRename() {
     if (!renaming) return;
+    const newRedirectUrl = editRedirectUrl.trim();
+    if (!newRedirectUrl) return; // the redirect link is mandatory
     const id = renaming.id;
     const newLabel = renameValue.trim();
-    const newRedirectUrl = editRedirectUrl.trim();
-    const newRedirectCountries = editRedirectCountries;
     setRenaming(null);
     await fetch("/api/invites", {
       method: "PATCH",
@@ -165,7 +163,6 @@ export default function InviteManager() {
         id,
         label: newLabel,
         redirectUrl: newRedirectUrl,
-        redirectCountries: newRedirectCountries,
       }),
     });
     load();
@@ -226,39 +223,28 @@ export default function InviteManager() {
             className="w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors"
           />
 
-          <div>
-            <p className="text-sm font-semibold mb-2">
-              Countries allowed to chat with this link
+          <div className="space-y-1.5">
+            <p className="text-sm font-semibold">
+              Redirect link <span className="text-red-400">*</span>
             </p>
-            <CountryPicker selected={countries} onChange={setCountries} />
-          </div>
-
-          <div className="space-y-2 border-t border-line pt-3">
-            <div>
-              <p className="text-sm font-semibold">Country redirect</p>
-              <p className="text-xs text-muted">
-                Visitors from the selected countries are sent to this link
-                instead. Leave empty to turn it off.
-              </p>
-            </div>
+            <p className="text-xs text-muted">
+              Allowed visitors are sent straight to this link.
+            </p>
             <input
               value={redirectUrl}
               onChange={(e) => setRedirectUrl(e.target.value)}
               type="url"
-              placeholder="https://example.com"
+              required
+              placeholder="https://t.me/…"
               className="w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors"
             />
-            {redirectUrl.trim() !== "" && (
-              <div>
-                <p className="text-xs font-semibold mb-2 text-muted">
-                  Redirect visitors from these countries
-                </p>
-                <CountryPicker
-                  selected={redirectCountries}
-                  onChange={setRedirectCountries}
-                />
-              </div>
-            )}
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold mb-2">
+              Countries allowed to use this link
+            </p>
+            <CountryPicker selected={countries} onChange={setCountries} />
           </div>
 
           <div className="flex gap-2">
@@ -270,7 +256,7 @@ export default function InviteManager() {
             </button>
             <button
               onClick={create}
-              disabled={creating}
+              disabled={creating || !redirectUrl.trim()}
               className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-40"
             >
               {creating ? "Creating…" : "Create link"}
@@ -298,29 +284,33 @@ export default function InviteManager() {
               {selected.size === invites.length ? "Clear all" : "Select all"}
             </button>
           </div>
-          {selected.size === 0 ? (
-            <p className="text-xs text-muted">
-              Tap the links below, then choose which countries can use them.
-            </p>
-          ) : (
-            <>
-              <p className="text-sm font-semibold">
-                Countries allowed to chat with the selected links
-              </p>
-              <CountryPicker selected={bulkCountries} onChange={setBulkCountries} />
-              <button
-                onClick={applyCountries}
-                disabled={applying}
-                className="w-full bg-accent text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
-              >
-                {applying
-                  ? "Applying…"
-                  : bulkCountries.length === 0
-                  ? `Allow everyone for ${selected.size} link${selected.size === 1 ? "" : "s"}`
-                  : `Apply to ${selected.size} link${selected.size === 1 ? "" : "s"}`}
-              </button>
-            </>
-          )}
+          <p className="text-sm font-semibold">
+            Countries allowed to use the links{" "}
+            <span className="text-muted font-normal text-xs">
+              (empty = everyone)
+            </span>
+          </p>
+          <CountryPicker selected={bulkCountries} onChange={setBulkCountries} />
+          <div className="flex gap-2">
+            <button
+              onClick={() => applyCountries([...selected])}
+              disabled={applying || selected.size === 0}
+              className="flex-1 bg-card2 border border-line font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
+            >
+              {applying
+                ? "Applying…"
+                : `Apply to selected (${selected.size})`}
+            </button>
+            <button
+              onClick={() => applyCountries(invites.map((i) => i.id))}
+              disabled={applying || invites.length === 0}
+              className="flex-1 bg-accent text-white font-semibold rounded-xl py-2.5 text-sm disabled:opacity-50 active:opacity-80 transition-opacity"
+            >
+              {applying
+                ? "Applying…"
+                : `Apply to ALL ${invites.length} link${invites.length === 1 ? "" : "s"}`}
+            </button>
+          </div>
         </div>
       )}
 
@@ -379,7 +369,6 @@ export default function InviteManager() {
                       setRenaming(invite);
                       setRenameValue(invite.label ?? "");
                       setEditRedirectUrl(invite.redirect_url ?? "");
-                      setEditRedirectCountries(invite.redirect_countries ?? []);
                     }}
                     aria-label="Edit link"
                     title="Edit link"
@@ -391,6 +380,19 @@ export default function InviteManager() {
               </div>
             </div>
             <p className="text-muted text-xs mt-0.5 break-all">/i/{invite.code}</p>
+            {invite.redirect_url ? (
+              <p
+                className="text-xs mt-1 truncate"
+                title={invite.redirect_url}
+              >
+                <span className="text-muted">→ </span>
+                {redirectHost(invite.redirect_url)}
+              </p>
+            ) : (
+              <p className="text-xs mt-1 text-red-400 font-semibold">
+                No redirect link — edit to add one
+              </p>
+            )}
             {invite.allowed_countries && invite.allowed_countries.length > 0 ? (
               <p
                 className="text-xs mt-1.5"
@@ -402,16 +404,6 @@ export default function InviteManager() {
             ) : (
               <p className="text-xs mt-1.5 text-muted">🌍 Everyone</p>
             )}
-            {invite.redirect_url &&
-              invite.redirect_countries &&
-              invite.redirect_countries.length > 0 && (
-                <p className="text-xs mt-1.5" title={invite.redirect_url}>
-                  {invite.redirect_countries.map((c) => countryFlag(c)).join(" ")}{" "}
-                  <span className="text-muted">
-                    redirect to {redirectHost(invite.redirect_url)}
-                  </span>
-                </p>
-              )}
             {invite.stats.joins > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {Object.entries(invite.stats.countries)
@@ -499,32 +491,21 @@ export default function InviteManager() {
               placeholder="Link name (e.g. Twitter bio)"
               className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
             />
-            <div className="space-y-2 border-t border-line pt-3">
-              <div>
-                <p className="text-sm font-semibold">Country redirect</p>
-                <p className="text-xs text-muted">
-                  Visitors from the selected countries are sent to this link
-                  instead. Leave empty to turn it off.
-                </p>
-              </div>
+            <div className="space-y-1.5 border-t border-line pt-3">
+              <p className="text-sm font-semibold">
+                Redirect link <span className="text-red-400">*</span>
+              </p>
+              <p className="text-xs text-muted">
+                Allowed visitors are sent straight to this link.
+              </p>
               <input
                 value={editRedirectUrl}
                 onChange={(e) => setEditRedirectUrl(e.target.value)}
                 type="url"
-                placeholder="https://example.com"
+                required
+                placeholder="https://t.me/…"
                 className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
               />
-              {editRedirectUrl.trim() !== "" && (
-                <div>
-                  <p className="text-xs font-semibold mb-2 text-muted">
-                    Redirect visitors from these countries
-                  </p>
-                  <CountryPicker
-                    selected={editRedirectCountries}
-                    onChange={setEditRedirectCountries}
-                  />
-                </div>
-              )}
             </div>
             <div className="flex gap-2">
               <button
@@ -535,7 +516,8 @@ export default function InviteManager() {
               </button>
               <button
                 onClick={saveRename}
-                className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold"
+                disabled={!editRedirectUrl.trim()}
+                className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-40"
               >
                 Save
               </button>

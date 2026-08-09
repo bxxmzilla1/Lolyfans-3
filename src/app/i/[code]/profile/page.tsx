@@ -6,7 +6,6 @@ import { getGuestChatId } from "@/lib/session";
 import {
   inviteUsable,
   countryAllowed,
-  inviteRedirectFor,
   ipFromHeaders,
   Invite,
 } from "@/lib/invites";
@@ -123,12 +122,10 @@ export default async function InviteProfilePreviewPage({
 
   const usable = inviteUsable(invite);
 
-  // Country redirect: matching visitors leave for the creator's assigned URL
-  // even when they hit the profile preview directly.
-  if (usable.ok) {
-    const redirectTo = inviteRedirectFor(invite, country);
-    if (redirectTo) redirect(redirectTo);
-  }
+  // Invite links are pure redirect links now — anyone landing on this old
+  // profile preview follows the link's mandatory destination instead.
+  const dest = (invite?.redirect_url || "").trim();
+  if (usable.ok && dest) redirect(dest);
 
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;
   // Blocked links show their reason on the invite page itself.

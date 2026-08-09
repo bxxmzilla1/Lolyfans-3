@@ -132,29 +132,29 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json();
   const allowedCountries = countryCodes(body.allowedCountries);
+
+  // Every invite link is a redirect link — a valid destination is mandatory.
   const redirectUrl = normalizeRedirectUrl(body.redirectUrl);
-  const redirectCountries = countryCodes(body.redirectCountries);
-
-  const row = {
-    owner_id: ownerId,
-    code: nanoid(10),
-    label: body.label?.trim() || null,
-    allowed_countries: allowedCountries.length > 0 ? allowedCountries : null,
-    max_uses: body.maxUses ? Number(body.maxUses) : null,
-    expires_at: body.expiresAt || null,
-    redirect_url: redirectUrl,
-    redirect_countries: redirectCountries.length > 0 ? redirectCountries : null,
-  };
-
-  const db = supabaseAdmin();
-  let { data, error } = await db.from("invites").insert(row).select().single();
-
-  // redirect_* columns missing (migration not run): creation still works when
-  // no redirect was requested — otherwise surface the error so it's noticed.
-  if (error && /redirect/i.test(error.message) && !redirectUrl) {
-    const { redirect_url: _u, redirect_countries: _c, ...legacyRow } = row;
-    ({ data, error } = await db.from("invites").insert(legacyRow).select().single());
+  if (!redirectUrl) {
+    return NextResponse.json(
+      { error: "A valid redirect link is required" },
+      { status: 400 }
+    );
   }
+
+  const { data, error } = await supabaseAdmin()
+    .from("invites")
+    .insert({
+      owner_id: ownerId,
+      code: nanoid(10),
+      label: body.label?.trim() || null,
+      allowed_countries: allowedCountries.length > 0 ? allowedCountries : null,
+      max_uses: body.maxUses ? Number(body.maxUses) : null,
+      expires_at: body.expiresAt || null,
+      redirect_url: redirectUrl,
+    })
+    .select()
+    .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ invite: data });
@@ -171,8 +171,7 @@ export async function PATCH(req: NextRequest) {
     active?: boolean;
     label?: string | null;
     allowed_countries?: string[] | null;
-    redirect_url?: string | null;
-    redirect_countries?: string[] | null;
+    redirect_url?: string;
   } = {};
   if (typeof active === "boolean") updates.active = active;
   if (label !== undefined) updates.label = String(label).trim() || null;
@@ -181,11 +180,15 @@ export async function PATCH(req: NextRequest) {
     updates.allowed_countries = codes.length > 0 ? codes : null;
   }
   if (body.redirectUrl !== undefined) {
-    updates.redirect_url = normalizeRedirectUrl(body.redirectUrl);
-  }
-  if (body.redirectCountries !== undefined) {
-    const codes = countryCodes(body.redirectCountries);
-    updates.redirect_countries = codes.length > 0 ? codes : null;
+    // Mandatory: an edit can change the destination but never clear it.
+    const url = normalizeRedirectUrl(body.redirectUrl);
+    if (!url) {
+      return NextResponse.json(
+        { error: "A valid redirect link is required" },
+        { status: 400 }
+      );
+    }
+    updates.redirect_url = url;
   }
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
