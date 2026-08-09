@@ -492,6 +492,11 @@ create index if not exists post_comments_post_idx on post_comments (post_id, cre
 -- stats keep working either way.
 alter table invites add column if not exists skip_landing boolean not null default false;
 
+-- Country redirect: visitors from these countries are sent to redirect_url
+-- instead of the normal invite flow. Null/empty = no redirect.
+alter table invites add column if not exists redirect_url text;
+alter table invites add column if not exists redirect_countries text[];
+
 -- Unlock price of a locked media message, in cents. 0 = manual lock only
 -- (owner blur toggle). A positive price makes it pay-to-unlock via Stripe.
 alter table messages add column if not exists price_cents int not null default 0;

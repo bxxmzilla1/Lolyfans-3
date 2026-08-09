@@ -15,17 +15,30 @@ type InviteWithStats = Invite & {
 // while the fresh data loads in the background.
 let invitesCache: InviteWithStats[] | null = null;
 
+/** Short display form of a redirect URL (hostname, or raw text if unparsable). */
+function redirectHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
 export default function InviteManager() {
   const [invites, setInvites] = useState<InviteWithStats[]>(invitesCache ?? []);
   const [loading, setLoading] = useState(invitesCache === null);
   const [showForm, setShowForm] = useState(false);
   const [label, setLabel] = useState("");
   const [countries, setCountries] = useState<string[]>([]);
+  const [redirectUrl, setRedirectUrl] = useState("");
+  const [redirectCountries, setRedirectCountries] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Invite | null>(null);
   const [renaming, setRenaming] = useState<InviteWithStats | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [editRedirectUrl, setEditRedirectUrl] = useState("");
+  const [editRedirectCountries, setEditRedirectCountries] = useState<string[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -61,12 +74,19 @@ export default function InviteManager() {
     const res = await fetch("/api/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ label, allowedCountries: countries }),
+      body: JSON.stringify({
+        label,
+        allowedCountries: countries,
+        redirectUrl,
+        redirectCountries,
+      }),
     });
     setCreating(false);
     if (res.ok) {
       setLabel("");
       setCountries([]);
+      setRedirectUrl("");
+      setRedirectCountries([]);
       setShowForm(false);
       load();
     }
@@ -135,11 +155,18 @@ export default function InviteManager() {
     if (!renaming) return;
     const id = renaming.id;
     const newLabel = renameValue.trim();
+    const newRedirectUrl = editRedirectUrl.trim();
+    const newRedirectCountries = editRedirectCountries;
     setRenaming(null);
     await fetch("/api/invites", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, label: newLabel }),
+      body: JSON.stringify({
+        id,
+        label: newLabel,
+        redirectUrl: newRedirectUrl,
+        redirectCountries: newRedirectCountries,
+      }),
     });
     load();
   }
@@ -204,6 +231,34 @@ export default function InviteManager() {
               Countries allowed to chat with this link
             </p>
             <CountryPicker selected={countries} onChange={setCountries} />
+          </div>
+
+          <div className="space-y-2 border-t border-line pt-3">
+            <div>
+              <p className="text-sm font-semibold">Country redirect</p>
+              <p className="text-xs text-muted">
+                Visitors from the selected countries are sent to this link
+                instead. Leave empty to turn it off.
+              </p>
+            </div>
+            <input
+              value={redirectUrl}
+              onChange={(e) => setRedirectUrl(e.target.value)}
+              type="url"
+              placeholder="https://example.com"
+              className="w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors"
+            />
+            {redirectUrl.trim() !== "" && (
+              <div>
+                <p className="text-xs font-semibold mb-2 text-muted">
+                  Redirect visitors from these countries
+                </p>
+                <CountryPicker
+                  selected={redirectCountries}
+                  onChange={setRedirectCountries}
+                />
+              </div>
+            )}
           </div>
 
           <div className="flex gap-2">
@@ -323,9 +378,11 @@ export default function InviteManager() {
                     onClick={() => {
                       setRenaming(invite);
                       setRenameValue(invite.label ?? "");
+                      setEditRedirectUrl(invite.redirect_url ?? "");
+                      setEditRedirectCountries(invite.redirect_countries ?? []);
                     }}
-                    aria-label="Rename link"
-                    title="Rename link"
+                    aria-label="Edit link"
+                    title="Edit link"
                     className="w-6 h-6 rounded-lg bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center"
                   >
                     <IconEdit className="w-3 h-3" />
@@ -345,6 +402,16 @@ export default function InviteManager() {
             ) : (
               <p className="text-xs mt-1.5 text-muted">🌍 Everyone</p>
             )}
+            {invite.redirect_url &&
+              invite.redirect_countries &&
+              invite.redirect_countries.length > 0 && (
+                <p className="text-xs mt-1.5" title={invite.redirect_url}>
+                  {invite.redirect_countries.map((c) => countryFlag(c)).join(" ")}{" "}
+                  <span className="text-muted">
+                    redirect to {redirectHost(invite.redirect_url)}
+                  </span>
+                </p>
+              )}
             {invite.stats.joins > 0 && (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {Object.entries(invite.stats.countries)
@@ -413,14 +480,14 @@ export default function InviteManager() {
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full max-w-xs bg-card border border-line rounded-2xl p-4 space-y-3 fade-up"
+            className="w-full max-w-sm bg-card border border-line rounded-2xl p-4 space-y-3 fade-up max-h-[85dvh] overflow-y-auto"
           >
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl ig-gradient glow-accent flex items-center justify-center shrink-0">
                 <IconEdit className="w-4.5 h-4.5 text-white" />
               </div>
               <div className="min-w-0">
-                <p className="font-bold">Rename link</p>
+                <p className="font-bold">Edit link</p>
                 <p className="text-muted text-xs truncate">/i/{renaming.code}</p>
               </div>
             </div>
@@ -432,6 +499,33 @@ export default function InviteManager() {
               placeholder="Link name (e.g. Twitter bio)"
               className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
             />
+            <div className="space-y-2 border-t border-line pt-3">
+              <div>
+                <p className="text-sm font-semibold">Country redirect</p>
+                <p className="text-xs text-muted">
+                  Visitors from the selected countries are sent to this link
+                  instead. Leave empty to turn it off.
+                </p>
+              </div>
+              <input
+                value={editRedirectUrl}
+                onChange={(e) => setEditRedirectUrl(e.target.value)}
+                type="url"
+                placeholder="https://example.com"
+                className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+              />
+              {editRedirectUrl.trim() !== "" && (
+                <div>
+                  <p className="text-xs font-semibold mb-2 text-muted">
+                    Redirect visitors from these countries
+                  </p>
+                  <CountryPicker
+                    selected={editRedirectCountries}
+                    onChange={setEditRedirectCountries}
+                  />
+                </div>
+              )}
+            </div>
             <div className="flex gap-2">
               <button
                 onClick={() => setRenaming(null)}

@@ -1,6 +1,18 @@
-import type { GuestChatRow } from "@/components/GuestChatList";
 import type { FeedPost } from "@/components/PostFeed";
 import type { SubPlan } from "@/lib/subscriptionPlan";
+
+// The chat rows the guest bootstrap returns (the old guest chat list UI is
+// gone; the shell still uses these for unread badges and presence).
+export type GuestChatRow = {
+  id: string;
+  ownerId: string;
+  ownerName: string;
+  ownerAvatar: string | null;
+  verified: boolean;
+  preview: string;
+  lastMessageAt: string;
+  unread: number;
+};
 
 export type GuestBootstrap = {
   profile: { name: string; avatarPath: string | null };

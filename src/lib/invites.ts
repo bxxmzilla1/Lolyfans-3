@@ -11,6 +11,9 @@ export type Invite = {
   active: boolean;
   expires_at: string | null;
   created_at: string;
+  /** Visitors from redirect_countries are sent here instead of the invite flow. */
+  redirect_url?: string | null;
+  redirect_countries?: string[] | null;
 };
 
 /** Country of the visitor, from Vercel's geo header. Null when unknown (e.g. localhost). */
@@ -41,4 +44,19 @@ export function countryAllowed(allowed: string[] | null, country: string | null)
   // Unknown country (local dev / missing header): allow, Vercel always sets it in production.
   if (!country) return true;
   return allowed.map((c) => c.toUpperCase()).includes(country);
+}
+
+/**
+ * Where to send this visitor instead of the invite flow, or null for the
+ * normal flow. Only fires when the creator set BOTH a redirect URL and the
+ * countries it applies to, and the visitor is from one of those countries.
+ */
+export function inviteRedirectFor(
+  invite: Invite | null | undefined,
+  country: string | null
+): string | null {
+  const url = invite?.redirect_url?.trim();
+  const list = invite?.redirect_countries;
+  if (!url || !list || list.length === 0 || !country) return null;
+  return list.map((c) => c.toUpperCase()).includes(country) ? url : null;
 }

@@ -2,7 +2,10 @@
 
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { INBOX_CACHE_KEY } from "./ChatList";
+
+// Key the old inbox list cached under — still cleared on logout so a stale
+// chat list never leaks to the next account on this device.
+const INBOX_CACHE_KEY = "loly_inbox_v1";
 
 export default function LogoutButton() {
   const router = useRouter();

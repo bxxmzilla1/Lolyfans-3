@@ -3,7 +3,13 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
-import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
+import {
+  inviteUsable,
+  countryAllowed,
+  inviteRedirectFor,
+  ipFromHeaders,
+  Invite,
+} from "@/lib/invites";
 import { recordInviteEvent } from "@/lib/inviteEvents";
 import { ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
@@ -116,6 +122,14 @@ export default async function InviteProfilePreviewPage({
   }
 
   const usable = inviteUsable(invite);
+
+  // Country redirect: matching visitors leave for the creator's assigned URL
+  // even when they hit the profile preview directly.
+  if (usable.ok) {
+    const redirectTo = inviteRedirectFor(invite, country);
+    if (redirectTo) redirect(redirectTo);
+  }
+
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;
   // Blocked links show their reason on the invite page itself.
   if (!usable.ok || !allowed) redirect(`/i/${code}`);

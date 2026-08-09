@@ -3,7 +3,13 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
-import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
+import {
+  inviteUsable,
+  countryAllowed,
+  inviteRedirectFor,
+  ipFromHeaders,
+  Invite,
+} from "@/lib/invites";
 import { recordInviteEvent } from "@/lib/inviteEvents";
 import { resumeHrefForChatId } from "@/lib/guestResume";
 
@@ -86,6 +92,14 @@ export default async function InvitePage({
   }
 
   const usable = inviteUsable(invite);
+
+  // Country redirect: visitors from the creator's selected countries leave
+  // for the assigned URL instead (the click above is still counted).
+  if (usable.ok) {
+    const redirectTo = inviteRedirectFor(invite, country);
+    if (redirectTo) redirect(redirectTo);
+  }
+
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;
 
   const blockedReason = !usable.ok

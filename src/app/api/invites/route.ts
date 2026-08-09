@@ -105,29 +105,56 @@ async function legacyStats(ownerId: string): Promise<Record<string, Stats>> {
   return stats;
 }
 
+/** Uppercase ISO-2 codes only; anything else is dropped. */
+function countryCodes(raw: unknown): string[] {
+  return Array.isArray(raw)
+    ? raw
+        .map((c) => String(c).trim().toUpperCase())
+        .filter((c) => /^[A-Z]{2}$/.test(c))
+    : [];
+}
+
+/** Bare domains get https://; invalid input becomes null. */
+function normalizeRedirectUrl(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  const withProto = /^https?:\/\//i.test(s) ? s : `https://${s}`;
+  try {
+    return new URL(withProto).toString();
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(req: NextRequest) {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const body = await req.json();
-  const allowedCountries: string[] = Array.isArray(body.allowedCountries)
-    ? body.allowedCountries
-        .map((c: string) => String(c).trim().toUpperCase())
-        .filter((c: string) => /^[A-Z]{2}$/.test(c))
-    : [];
+  const allowedCountries = countryCodes(body.allowedCountries);
+  const redirectUrl = normalizeRedirectUrl(body.redirectUrl);
+  const redirectCountries = countryCodes(body.redirectCountries);
 
-  const { data, error } = await supabaseAdmin()
-    .from("invites")
-    .insert({
-      owner_id: ownerId,
-      code: nanoid(10),
-      label: body.label?.trim() || null,
-      allowed_countries: allowedCountries.length > 0 ? allowedCountries : null,
-      max_uses: body.maxUses ? Number(body.maxUses) : null,
-      expires_at: body.expiresAt || null,
-    })
-    .select()
-    .single();
+  const row = {
+    owner_id: ownerId,
+    code: nanoid(10),
+    label: body.label?.trim() || null,
+    allowed_countries: allowedCountries.length > 0 ? allowedCountries : null,
+    max_uses: body.maxUses ? Number(body.maxUses) : null,
+    expires_at: body.expiresAt || null,
+    redirect_url: redirectUrl,
+    redirect_countries: redirectCountries.length > 0 ? redirectCountries : null,
+  };
+
+  const db = supabaseAdmin();
+  let { data, error } = await db.from("invites").insert(row).select().single();
+
+  // redirect_* columns missing (migration not run): creation still works when
+  // no redirect was requested — otherwise surface the error so it's noticed.
+  if (error && /redirect/i.test(error.message) && !redirectUrl) {
+    const { redirect_url: _u, redirect_countries: _c, ...legacyRow } = row;
+    ({ data, error } = await db.from("invites").insert(legacyRow).select().single());
+  }
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ invite: data });
@@ -144,16 +171,21 @@ export async function PATCH(req: NextRequest) {
     active?: boolean;
     label?: string | null;
     allowed_countries?: string[] | null;
+    redirect_url?: string | null;
+    redirect_countries?: string[] | null;
   } = {};
   if (typeof active === "boolean") updates.active = active;
   if (label !== undefined) updates.label = String(label).trim() || null;
   if (body.allowedCountries !== undefined) {
-    const codes: string[] = Array.isArray(body.allowedCountries)
-      ? body.allowedCountries
-          .map((c: string) => String(c).trim().toUpperCase())
-          .filter((c: string) => /^[A-Z]{2}$/.test(c))
-      : [];
+    const codes = countryCodes(body.allowedCountries);
     updates.allowed_countries = codes.length > 0 ? codes : null;
+  }
+  if (body.redirectUrl !== undefined) {
+    updates.redirect_url = normalizeRedirectUrl(body.redirectUrl);
+  }
+  if (body.redirectCountries !== undefined) {
+    const codes = countryCodes(body.redirectCountries);
+    updates.redirect_countries = codes.length > 0 ? codes : null;
   }
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
