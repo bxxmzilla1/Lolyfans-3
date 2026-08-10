@@ -32,19 +32,17 @@ export default function JoinForm({
   const router = useRouter();
 
   async function afterJoined() {
-    if (ownerId) {
-      try {
-        const res = await fetch(`/api/payments/subscribe/link?ownerId=${ownerId}`);
-        const data = await res.json().catch(() => ({}));
-        if (res.ok && typeof data.link === "string" && data.link) {
-          setOpening(true);
-          window.location.href = data.link;
-          return;
-        }
-      } catch {}
-    }
+    try {
+      const res = await fetch("/api/payments/subscribe/link");
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && typeof data.link === "string" && data.link) {
+        setOpening(true);
+        window.location.href = data.link;
+        return;
+      }
+    } catch {}
     setOpening(true);
-    router.push("/home");
+    router.push("/");
     router.refresh();
   }
 

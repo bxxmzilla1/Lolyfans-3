@@ -729,6 +729,15 @@ create index if not exists telegram_unlocks_owner_idx
 --   drop table if exists cpm_links;
 --   alter table chats drop column if exists cpm;
 
+-- Site-wide settings (e.g. main Telegram channel for lolyfans.com redirects).
+-- Invite links keep their own redirect_url and never read from here.
+create table if not exists site_settings (
+  key text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
+alter table site_settings enable row level security;
+
 -- ---------------------------------------------------------------------------
 -- AI voice calls: fans call the creator's chatbot from the web at $1/minute.
 -- Each thing the fan says is a "turn"; the connected chatbot (Orion) answers

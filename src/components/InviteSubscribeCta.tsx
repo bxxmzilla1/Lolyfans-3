@@ -6,17 +6,17 @@ import { IconEye, IconEyeOff } from "./Icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-/** Fetch the creator's Telegram channel link and send the fan there. */
-export async function goToChannel(ownerId: string) {
+/** Fetch the site-wide main Telegram channel and send the fan there. */
+export async function goToChannel(_ownerId?: string) {
   try {
-    const res = await fetch(`/api/payments/subscribe/link?ownerId=${ownerId}`);
+    const res = await fetch("/api/payments/subscribe/link");
     const data = await res.json().catch(() => ({}));
     if (res.ok && typeof data.link === "string" && data.link) {
       window.location.href = data.link;
       return;
     }
   } catch {}
-  window.location.href = "/home";
+  window.location.href = "/";
 }
 
 /**

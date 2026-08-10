@@ -1,4 +1,8 @@
-/** Fan Profile tab — content is rendered by the persistent GuestShell layout. */
-export default function GuestProfilePage() {
-  return null;
+import { redirectFansToMainChannel } from "@/lib/fanRedirect";
+
+export const dynamic = "force-dynamic";
+
+/** In-app fan profile removed — everyone goes to the main Telegram channel. */
+export default async function FanProfilePage() {
+  await redirectFansToMainChannel();
 }

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { getMainTelegramLink } from "@/lib/mainChannel";
 import { subPlanFromMetadata, type SubPlan } from "@/lib/subscriptionPlan";
 
 export const ACTIVE_SUB_STATUSES = ["trialing", "active", "past_due", "canceling"];
@@ -53,18 +54,19 @@ export async function inviteCodeForChat(chatId: string): Promise<string | null> 
 }
 
 /**
- * Where a returning guest should land. Channel subscriptions are gone — every
- * signed-up fan is allowed into the Home feed.
+ * Where a returning guest should land — the site-wide main Telegram channel.
+ * Invite links never use this; they redirect via their own redirect_url.
  */
 export async function guestAccessDestination(
   _chatId: string,
   _ownerId: string
 ): Promise<{ allowed: boolean; href: string }> {
-  return { allowed: true, href: "/home" };
+  const link = await getMainTelegramLink();
+  return { allowed: true, href: link || "/" };
 }
 
 /**
- * Resolve access for a chat id (loads owner_id). Used by /chat and fan layout.
+ * Resolve access for a chat id (loads owner_id). Used by leftover fan routes.
  */
 export async function guestChatAccessDestination(
   chatId: string
@@ -75,5 +77,10 @@ export async function guestChatAccessDestination(
     .eq("id", chatId)
     .maybeSingle();
   if (!chat) return { allowed: false, href: "/api/guest/gone", ownerId: null };
-  return { allowed: true, href: "/home", ownerId: chat.owner_id as string };
+  const link = await getMainTelegramLink();
+  return {
+    allowed: true,
+    href: link || "/",
+    ownerId: chat.owner_id as string,
+  };
 }
