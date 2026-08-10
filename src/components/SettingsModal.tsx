@@ -10,7 +10,6 @@ import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
 import TelegramSettings from "./TelegramSettings";
-import AdminCodeDialog, { getCachedAdminCode } from "./AdminCodeDialog";
 import Portal from "./Portal";
 import {
   IconGrid,
@@ -291,17 +290,7 @@ function ProfileSection() {
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
   const [section, setSection] = useState<Section>("profile");
-  // Which admin-gated section the user is trying to open (null = no prompt)
-  const [askAdminFor, setAskAdminFor] = useState<Section | null>(null);
   const router = useRouter();
-
-  function openGated(target: Section) {
-    if (getCachedAdminCode()) {
-      setSection(target);
-    } else {
-      setAskAdminFor(target);
-    }
-  }
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -392,7 +381,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconSend className="w-3.5 h-3.5" /> Telegram
         </button>
         <button
-          onClick={() => openGated("links")}
+          onClick={() => setSection("links")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "links"
               ? "bg-accent text-white"
@@ -402,7 +391,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconLink className="w-3.5 h-3.5" /> Invite links
         </button>
         <button
-          onClick={() => openGated("apikey")}
+          onClick={() => setSection("apikey")}
           className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
             section === "apikey"
               ? "bg-accent text-white"
@@ -412,21 +401,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <IconKey className="w-3.5 h-3.5" /> API Key
         </button>
       </div>
-
-      {askAdminFor && (
-        <AdminCodeDialog
-          message={
-            askAdminFor === "apikey"
-              ? "Enter the admin code to manage your API key."
-              : "Enter the admin code to open invite links."
-          }
-          onVerified={() => {
-            setSection(askAdminFor);
-            setAskAdminFor(null);
-          }}
-          onCancel={() => setAskAdminFor(null)}
-        />
-      )}
 
       <div className="flex-1 overflow-y-auto p-5 lg:p-8">
         <div
