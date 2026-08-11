@@ -179,26 +179,23 @@ export async function botSendMedia(opts: {
 }
 
 /**
- * Stars invoice for a PPV unlock (currency XTR). No start_parameter — that
- * way forwarded copies of the message keep a working Pay button, which is
- * the whole point: the creator forwards this bubble to fans.
+ * Stars payment link for a PPV unlock (currency XTR). Anyone who opens the
+ * link gets the payment sheet — it works from forwarded messages too, which
+ * is how creators sell: blurred media bubble + this link in the caption.
  */
-export async function botSendStarsInvoice(opts: {
+export async function botCreateStarsInvoiceLink(opts: {
   token: string;
-  chatId: number;
   unlockId: string;
   title: string;
   description: string;
   stars: number;
-  photoUrl?: string;
-}): Promise<void> {
-  await botApi(opts.token, "sendInvoice", {
-    chat_id: opts.chatId,
+}): Promise<string> {
+  return botApi<string>(opts.token, "createInvoiceLink", {
     title: opts.title.slice(0, 32),
     description: opts.description.slice(0, 255),
     payload: opts.unlockId.slice(0, 128),
     currency: "XTR",
     prices: [{ label: opts.title.slice(0, 32), amount: opts.stars }],
-    ...(opts.photoUrl ? { photo_url: opts.photoUrl } : {}),
   });
 }
+

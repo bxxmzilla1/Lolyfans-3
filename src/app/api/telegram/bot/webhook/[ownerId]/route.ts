@@ -4,11 +4,11 @@ import {
   appOrigin,
   BOT_ACTIVATION_CODE,
   botApi,
+  botCreateStarsInvoiceLink,
   botForOwner,
   botGetFileUrl,
   botSendByFileId,
   botSendMedia,
-  botSendStarsInvoice,
   botSendText,
   escHtml,
 } from "@/lib/telegramBot";
@@ -426,19 +426,32 @@ async function finalizePpv(opts: {
 
   const kind = unlock.media_type === "video" ? "video" : "photo";
   try {
-    await botSendStarsInvoice({
+    // Payment sheet texts only — the chat bubble itself shows no invoice UI.
+    const payLink = await botCreateStarsInvoiceLink({
       token,
-      chatId,
       unlockId: unlock.id,
-      title: `Unlock this ${kind} 🔓`,
-      description:
-        unlock.caption || `Pay ${opts.price} Stars to unlock this ${kind}.`,
+      title: `Unlock this ${kind}`,
+      description: unlock.caption || `${opts.price} Stars`,
       stars: opts.price,
-      // Blurred still — never the clear file before payment.
-      ...(unlock.media_path
-        ? { photoUrl: `${appOrigin()}/api/stars/teaser/${unlock.id}` }
-        : {}),
     });
+
+    const linkCaption = `<a href="${payLink}">⭐ Unlock for ${opts.price} Stars</a>`;
+    if (unlock.media_path) {
+      // Full-size blurred media bubble with just the tappable pay link as
+      // caption. Captions and links survive forwarding, so this whole
+      // bubble is what the creator forwards to fans.
+      await botApi(token, "sendPhoto", {
+        chat_id: chatId,
+        photo: `${appOrigin()}/api/stars/teaser/${unlock.id}`,
+        caption: unlock.caption
+          ? `${escHtml(unlock.caption)}\n${linkCaption}`
+          : linkCaption,
+        parse_mode: "HTML",
+      });
+    } else {
+      // No teaser copy (file too big to download) — link-only message.
+      await botSendText(token, chatId, linkCaption);
+    }
     await botSendText(
       token,
       chatId,
@@ -449,7 +462,7 @@ async function finalizePpv(opts: {
     await botSendText(
       token,
       chatId,
-      "Could not create the invoice — try again."
+      "Could not create the PPV — try again."
     );
   }
 }
