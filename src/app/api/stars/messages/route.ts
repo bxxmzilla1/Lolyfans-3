@@ -3,10 +3,8 @@ import { getOwnerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
 import {
-  appOrigin,
   botForOwner,
   botSendMedia,
-  botSendStarsInvoice,
   notifyUnreadIfAway,
 } from "@/lib/telegramBot";
 
@@ -188,20 +186,10 @@ export async function POST(req: NextRequest) {
     console.error("[stars unread notify]", e);
   }
 
-  try {
-    if (priceStars > 0 && unlockId) {
-      await botSendStarsInvoice({
-        token: bot.bot_token,
-        chatId: Number(chat.tg_user_id),
-        unlockId,
-        title: `${priceStars} Stars unlock`,
-        description: content || "Unlock this photo/video",
-        stars: priceStars,
-        // Blurred still (works for photos and video frames) — never the
-        // clear file before payment.
-        photoUrl: `${appOrigin()}/api/stars/teaser/${unlockId}`,
-      });
-    } else {
+  // PPVs stay in the Mini App only (fan pays via the locked bubble there) —
+  // no invoice in the bot chat. Free media still goes out through the bot.
+  if (priceStars === 0) {
+    try {
       await botSendMedia({
         token: bot.bot_token,
         chatId: Number(chat.tg_user_id),
@@ -209,9 +197,9 @@ export async function POST(req: NextRequest) {
         mediaType,
         caption: content || undefined,
       });
+    } catch (e) {
+      console.error("[stars send media]", e);
     }
-  } catch (e) {
-    console.error("[stars send media]", e);
   }
 
   await broadcast(`stars-chat:${chatId}`, "new-message", { message: row });

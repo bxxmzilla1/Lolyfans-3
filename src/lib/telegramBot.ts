@@ -280,8 +280,8 @@ export async function notifyUnreadIfAway(opts: {
 
   const text =
     opts.kind === "ppv"
-      ? `"<b>${escHtml(name)}</b>" sent you something special 💗😻`
-      : `"<b>${escHtml(name)}</b>" sent you a message ❤️`;
+      ? `<b>${escHtml(name)}</b> sent you something special 💗😻`
+      : `<b>${escHtml(name)}</b> sent you a message ❤️`;
 
   await botSendText(opts.token, opts.tgUserId, text, replyMarkup);
   return true;
