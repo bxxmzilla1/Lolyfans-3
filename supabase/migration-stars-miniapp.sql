@@ -63,3 +63,6 @@ create table if not exists stars_unlocks (
 create index if not exists stars_unlocks_owner_idx
   on stars_unlocks (owner_id, created_at desc);
 alter table stars_unlocks enable row level security;
+
+-- Fan Mini App presence (heartbeat). Safe to re-run.
+alter table stars_chats add column if not exists fan_last_seen_at timestamptz;

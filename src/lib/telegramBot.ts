@@ -205,13 +205,84 @@ export async function ensureStarsChat(opts: {
 export async function botSendText(
   token: string,
   chatId: number,
-  text: string
+  text: string,
+  replyMarkup?: Record<string, unknown>
 ): Promise<void> {
   await botApi(token, "sendMessage", {
     chat_id: chatId,
     text,
     parse_mode: "HTML",
+    ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
   });
+}
+
+/** How long after the last Mini App heartbeat we still treat the fan as "in app". */
+export const FAN_IN_APP_MS = 90_000;
+
+export function fanIsInMiniApp(lastSeenAt: string | null | undefined): boolean {
+  if (!lastSeenAt) return false;
+  const t = new Date(lastSeenAt).getTime();
+  if (!Number.isFinite(t)) return false;
+  return Date.now() - t < FAN_IN_APP_MS;
+}
+
+function escHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * If the fan left the Mini App, ping them in the bot chat that they have an
+ * unread message from the creator. Skips when a recent heartbeat says they're
+ * still inside the Mini App.
+ */
+export async function notifyUnreadIfAway(opts: {
+  token: string;
+  ownerId: string;
+  chatId: string;
+  tgUserId: number;
+  botUsername?: string | null;
+}): Promise<boolean> {
+  const db = supabaseAdmin();
+  let lastSeen: string | null = null;
+  {
+    const { data: chat, error } = await db
+      .from("stars_chats")
+      .select("fan_last_seen_at")
+      .eq("id", opts.chatId)
+      .maybeSingle();
+    // Column missing before migration → always notify (safe default).
+    if (!error) lastSeen = (chat?.fan_last_seen_at as string | null) ?? null;
+  }
+
+  if (fanIsInMiniApp(lastSeen)) {
+    return false;
+  }
+
+  const { data: ownerUser } = await db.auth.admin.getUserById(opts.ownerId);
+  const meta = (ownerUser?.user?.user_metadata ?? {}) as {
+    display_name?: string;
+  };
+  const name = (meta.display_name || "the creator").trim() || "the creator";
+
+  const miniAppUrl = `${appOrigin()}/tg-app/${opts.ownerId}`;
+  const replyMarkup = {
+    inline_keyboard: [
+      [
+        {
+          text: "Open chat",
+          web_app: { url: miniAppUrl },
+        },
+      ],
+    ],
+  };
+
+  await botSendText(
+    opts.token,
+    opts.tgUserId,
+    `💬 You have an unread message from <b>${escHtml(name)}</b>.\nTap below to open the chat.`,
+    replyMarkup
+  );
+  return true;
 }
 
 export async function botSendMedia(opts: {

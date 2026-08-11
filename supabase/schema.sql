@@ -748,6 +748,9 @@ create table if not exists stars_chats (
   first_name text,
   last_name text,
   last_message_at timestamptz not null default now(),
+  -- Updated while the fan has the Mini App open (heartbeat). Used to skip
+  -- bot "unread message" pings when they're already looking at the chat.
+  fan_last_seen_at timestamptz,
   created_at timestamptz not null default now(),
   unique (owner_id, tg_user_id)
 );

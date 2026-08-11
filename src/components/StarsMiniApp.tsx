@@ -116,6 +116,31 @@ export default function StarsMiniApp({ ownerId }: { ownerId: string }) {
     return () => clearInterval(t);
   }, [initData, loadMessages]);
 
+  // Heartbeat: while this tab is open, creators won't bot-notify "unread".
+  // When the fan leaves (closes Mini App), heartbeats stop and the next
+  // creator message triggers a Telegram push from the bot.
+  useEffect(() => {
+    if (!initData) return;
+    const ping = () => {
+      void fetch("/api/stars/app/ping", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ownerId, initData }),
+        keepalive: true,
+      }).catch(() => {});
+    };
+    ping();
+    const t = setInterval(ping, 20_000);
+    const onVis = () => {
+      if (document.visibilityState === "visible") ping();
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener("visibilitychange", onVis);
+    };
+  }, [initData, ownerId]);
+
   async function send() {
     if (!text.trim() || sending || !initData) return;
     setSending(true);

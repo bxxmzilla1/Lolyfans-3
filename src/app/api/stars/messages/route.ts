@@ -6,7 +6,7 @@ import {
   botForOwner,
   botSendMedia,
   botSendStarsInvoice,
-  botSendText,
+  notifyUnreadIfAway,
 } from "@/lib/telegramBot";
 import { mediaUrl } from "@/lib/utils";
 
@@ -97,10 +97,18 @@ export async function POST(req: NextRequest) {
       .update({ last_message_at: new Date().toISOString() })
       .eq("id", chatId);
 
+    // Fan left the Mini App → bot push: "unread message from {creator name}".
+    // If they're still in the app, the in-app poll shows the message — no ping.
     try {
-      await botSendText(bot.bot_token, Number(chat.tg_user_id), content);
+      await notifyUnreadIfAway({
+        token: bot.bot_token,
+        ownerId,
+        chatId,
+        tgUserId: Number(chat.tg_user_id),
+        botUsername: bot.bot_username,
+      });
     } catch (e) {
-      console.error("[stars send text]", e);
+      console.error("[stars unread notify]", e);
     }
 
     await broadcast(`stars-chat:${chatId}`, "new-message", { message: row });
@@ -165,16 +173,21 @@ export async function POST(req: NextRequest) {
     .update({ last_message_at: new Date().toISOString() })
     .eq("id", chatId);
 
-  // Notify fan in Telegram with invoice (Stars) or clear media hint.
+  // Away from Mini App → unread ping with creator name. Then invoice / media.
+  try {
+    await notifyUnreadIfAway({
+      token: bot.bot_token,
+      ownerId,
+      chatId,
+      tgUserId: Number(chat.tg_user_id),
+      botUsername: bot.bot_username,
+    });
+  } catch (e) {
+    console.error("[stars unread notify]", e);
+  }
+
   try {
     if (priceStars > 0 && unlockId) {
-      await botSendText(
-        bot.bot_token,
-        Number(chat.tg_user_id),
-        content
-          ? `${content}\n\n🔒 Locked media — ${priceStars} Stars to unlock.`
-          : `🔒 Locked media — ${priceStars} Stars to unlock. Open the Mini App or pay the invoice below.`
-      );
       await botSendStarsInvoice({
         token: bot.bot_token,
         chatId: Number(chat.tg_user_id),
