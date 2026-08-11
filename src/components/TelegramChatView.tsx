@@ -257,19 +257,29 @@ export default function TelegramChatView({
       if (res.ok) {
         setText("");
         setReplyTo(null);
-        setMessages((prev) => [
-          ...(prev ?? []),
-          {
-            id: Date.now(),
-            text: body,
-            out: true,
-            date: Math.floor(Date.now() / 1000),
-            hasMedia: false,
-            mediaKind: null,
-            receipt: "sent",
-            replyToId,
-          },
-        ]);
+        setMessages((prev) => {
+          // A poll may have already delivered the real message — don't stack
+          // an optimistic copy on top (it shows as a double bubble).
+          const last = prev?.[prev.length - 1];
+          if (last?.out && last.text === body) return prev ?? [];
+          return [
+            ...(prev ?? []),
+            {
+              id: Date.now(),
+              text: body,
+              out: true,
+              date: Math.floor(Date.now() / 1000),
+              hasMedia: false,
+              mediaKind: null,
+              receipt: "sent",
+              replyToId,
+            },
+          ];
+        });
+        // Local state no longer matches the last server payload — drop the
+        // fingerprint so the next load always replaces the list (removing
+        // the optimistic bubble once the real message arrives).
+        lastPayloadRef.current = "";
         // Refresh soon so real ids + receipts sync from Telegram.
         setTimeout(() => void load(), 1500);
       } else {

@@ -153,7 +153,11 @@ export default function StarsMiniApp({ ownerId }: { ownerId: string }) {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.message) {
-        setMessages((m) => [...m, data.message]);
+        // The 2.5s poll may have already delivered this row — appending it
+        // again would show the message twice until the next poll.
+        setMessages((m) =>
+          m.some((x) => x.id === data.message.id) ? m : [...m, data.message]
+        );
         setText("");
       } else {
         setError(data.error || "Could not send");

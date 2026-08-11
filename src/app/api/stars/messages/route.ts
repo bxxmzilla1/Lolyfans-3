@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
       .update({ last_message_at: new Date().toISOString() })
       .eq("id", chatId);
 
-    // Fan left the Mini App → bot push: "unread message from {creator name}".
+    // Fan left the Mini App → bot push: "{creator} sent you a message ❤️".
     // If they're still in the app, the in-app poll shows the message — no ping.
     try {
       await notifyUnreadIfAway({
@@ -106,6 +106,7 @@ export async function POST(req: NextRequest) {
         chatId,
         tgUserId: Number(chat.tg_user_id),
         botUsername: bot.bot_username,
+        kind: "message",
       });
     } catch (e) {
       console.error("[stars unread notify]", e);
@@ -173,7 +174,7 @@ export async function POST(req: NextRequest) {
     .update({ last_message_at: new Date().toISOString() })
     .eq("id", chatId);
 
-  // Away from Mini App → unread ping with creator name. Then invoice / media.
+  // Away from Mini App → PPVs get the teaser wording, free media the plain one.
   try {
     await notifyUnreadIfAway({
       token: bot.bot_token,
@@ -181,6 +182,7 @@ export async function POST(req: NextRequest) {
       chatId,
       tgUserId: Number(chat.tg_user_id),
       botUsername: bot.bot_username,
+      kind: priceStars > 0 ? "ppv" : "message",
     });
   } catch (e) {
     console.error("[stars unread notify]", e);

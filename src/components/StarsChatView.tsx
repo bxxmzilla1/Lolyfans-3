@@ -56,6 +56,12 @@ export default function StarsChatView({
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // A poll racing the send response can deliver the same row first — skip
+  // the append then, or the message renders twice until the next poll.
+  function appendMessage(msg: Msg) {
+    setMessages((m) => (m.some((x) => x.id === msg.id) ? m : [...m, msg]));
+  }
+
   async function sendText() {
     if (!text.trim() || sending) return;
     setSending(true);
@@ -72,7 +78,7 @@ export default function StarsChatView({
         return;
       }
       setText("");
-      if (data.message) setMessages((m) => [...m, data.message]);
+      if (data.message) appendMessage(data.message);
     } finally {
       setSending(false);
     }
@@ -242,7 +248,7 @@ export default function StarsChatView({
           initial={ppvPick}
           onClose={() => setPpvPick(null)}
           onSent={(msg) => {
-            setMessages((m) => [...m, msg]);
+            appendMessage(msg);
             setPpvPick(null);
           }}
         />

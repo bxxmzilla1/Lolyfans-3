@@ -241,6 +241,8 @@ export async function notifyUnreadIfAway(opts: {
   chatId: string;
   tgUserId: number;
   botUsername?: string | null;
+  /** "ppv" → teaser wording; anything else → plain message wording. */
+  kind?: "message" | "ppv";
 }): Promise<boolean> {
   const db = supabaseAdmin();
   let lastSeen: string | null = null;
@@ -276,12 +278,12 @@ export async function notifyUnreadIfAway(opts: {
     ],
   };
 
-  await botSendText(
-    opts.token,
-    opts.tgUserId,
-    `💬 You have an unread message from <b>${escHtml(name)}</b>.\nTap below to open the chat.`,
-    replyMarkup
-  );
+  const text =
+    opts.kind === "ppv"
+      ? `"<b>${escHtml(name)}</b>" sent you something special 💗😻`
+      : `"<b>${escHtml(name)}</b>" sent you a message ❤️`;
+
+  await botSendText(opts.token, opts.tgUserId, text, replyMarkup);
   return true;
 }
 
