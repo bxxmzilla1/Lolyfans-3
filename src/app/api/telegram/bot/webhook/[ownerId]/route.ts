@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
-  appOrigin,
   BOT_ACTIVATION_CODE,
   botApi,
-  botCreateStarsInvoiceLink,
   botForOwner,
   botGetFileUrl,
   botSendByFileId,
   botSendMedia,
+  botSendPpvBubble,
   botSendText,
   escHtml,
 } from "@/lib/telegramBot";
+import { mediaUrl } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -180,7 +180,16 @@ async function handleSuccessfulPayment(
       });
     }
   } catch (e) {
+    // Telegram refuses big URL uploads (~20MB) — hand over a direct link
+    // instead so the creator can still grab and forward the file.
     console.error("[ppv deliver to creator]", e);
+    if (unlock.media_path) {
+      await botSendText(
+        token,
+        creatorTgId,
+        `The file is too big for Telegram to attach — <a href="${mediaUrl(unlock.media_path)}">download the unlocked ${unlock.media_type === "video" ? "video" : "photo"} here</a>.`
+      ).catch(() => {});
+    }
   }
 
   // 2) Who paid — so the creator knows exactly who to forward it to.
@@ -424,39 +433,16 @@ async function finalizePpv(opts: {
     .update({ price_stars: opts.price, status: "pending" })
     .eq("id", unlock.id);
 
-  const kind = unlock.media_type === "video" ? "video" : "photo";
   try {
-    // Payment sheet texts only — the chat bubble itself shows no invoice UI.
-    const payLink = await botCreateStarsInvoiceLink({
-      token,
-      unlockId: unlock.id,
-      title: `Unlock this ${kind}`,
-      description: unlock.caption || `${opts.price} Stars`,
-      stars: opts.price,
-    });
-
-    const linkCaption = `<a href="${payLink}">⭐ Unlock for ${opts.price} Stars</a>`;
-    if (unlock.media_path) {
-      // Full-size blurred media bubble with just the tappable pay link as
-      // caption. Captions and links survive forwarding, so this whole
-      // bubble is what the creator forwards to fans.
-      await botApi(token, "sendPhoto", {
-        chat_id: chatId,
-        photo: `${appOrigin()}/api/stars/teaser/${unlock.id}`,
-        caption: unlock.caption
-          ? `${escHtml(unlock.caption)}\n${linkCaption}`
-          : linkCaption,
-        parse_mode: "HTML",
-      });
-    } else {
-      // No teaser copy (file too big to download) — link-only message.
-      await botSendText(token, chatId, linkCaption);
-    }
-    await botSendText(
+    await botSendPpvBubble({
       token,
       chatId,
-      "☝️ Forward this PPV to any fan. When they pay, I'll send you the unlocked media here with their name."
-    );
+      unlockId: unlock.id,
+      mediaType: unlock.media_type === "video" ? "video" : "image",
+      mediaPath: unlock.media_path,
+      caption: unlock.caption,
+      stars: opts.price,
+    });
   } catch (e) {
     console.error("[ppv invoice]", e);
     await botSendText(

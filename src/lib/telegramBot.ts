@@ -1,5 +1,5 @@
 import "server-only";
-import { randomBytes } from "crypto";
+import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { mediaUrl } from "@/lib/utils";
 
@@ -93,10 +93,70 @@ export async function setBotWebhook(
     allowed_updates: ["message", "pre_checkout_query"],
     drop_pending_updates: false,
   });
-  // The Mini App menu button is gone — reset to the default commands menu.
+  // Menu button opens the creator's vault Mini App (make PPVs from there).
   await botApi(token, "setChatMenuButton", {
-    menu_button: { type: "default" },
+    menu_button: {
+      type: "web_app",
+      text: "Vault",
+      web_app: { url: `${appOrigin()}/tg-app/${ownerId}` },
+    },
   }).catch(() => {});
+}
+
+/** Verify Telegram WebApp initData (HMAC-SHA-256 with bot token). */
+export function verifyWebAppInitData(
+  initData: string,
+  botToken: string
+): Record<string, string> | null {
+  try {
+    const params = new URLSearchParams(initData);
+    const hash = params.get("hash");
+    if (!hash) return null;
+    params.delete("hash");
+    const entries = [...params.entries()].sort(([a], [b]) =>
+      a.localeCompare(b)
+    );
+    const dataCheck = entries.map(([k, v]) => `${k}=${v}`).join("\n");
+    const secretKey = createHmac("sha256", "WebAppData")
+      .update(botToken)
+      .digest();
+    const computed = createHmac("sha256", secretKey)
+      .update(dataCheck)
+      .digest("hex");
+    const a = Buffer.from(computed, "hex");
+    const b = Buffer.from(hash, "hex");
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+
+    const authDate = Number(params.get("auth_date") || 0);
+    // Reject initData older than 24h.
+    if (!authDate || Date.now() / 1000 - authDate > 86_400) return null;
+
+    const out: Record<string, string> = {};
+    for (const [k, v] of params.entries()) out[k] = v;
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+export function parseWebAppUser(initData: Record<string, string>): {
+  id: number;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+} | null {
+  try {
+    const user = JSON.parse(initData.user || "null") as {
+      id: number;
+      username?: string;
+      first_name?: string;
+      last_name?: string;
+    } | null;
+    if (!user?.id) return null;
+    return user;
+  } catch {
+    return null;
+  }
 }
 
 export async function botSendText(
@@ -176,6 +236,50 @@ export async function botSendMedia(opts: {
       caption: opts.caption || undefined,
     });
   }
+}
+
+/**
+ * The forwardable PPV bubble: full-size blurred teaser photo whose caption
+ * is a tappable Stars pay link (captions + links survive forwarding).
+ * Falls back to a link-only text message when there's no teaser copy.
+ */
+export async function botSendPpvBubble(opts: {
+  token: string;
+  chatId: number;
+  unlockId: string;
+  mediaType: "image" | "video";
+  mediaPath: string | null;
+  caption: string | null;
+  stars: number;
+}): Promise<void> {
+  const kind = opts.mediaType === "video" ? "video" : "photo";
+  // Payment sheet texts only — the chat bubble itself shows no invoice UI.
+  const payLink = await botCreateStarsInvoiceLink({
+    token: opts.token,
+    unlockId: opts.unlockId,
+    title: `Unlock this ${kind}`,
+    description: opts.caption || `${opts.stars} Stars`,
+    stars: opts.stars,
+  });
+
+  const linkCaption = `<a href="${payLink}">⭐ Unlock for ${opts.stars} Stars</a>`;
+  if (opts.mediaPath) {
+    await botApi(opts.token, "sendPhoto", {
+      chat_id: opts.chatId,
+      photo: `${appOrigin()}/api/stars/teaser/${opts.unlockId}`,
+      caption: opts.caption
+        ? `${escHtml(opts.caption)}\n${linkCaption}`
+        : linkCaption,
+      parse_mode: "HTML",
+    });
+  } else {
+    await botSendText(opts.token, opts.chatId, linkCaption);
+  }
+  await botSendText(
+    opts.token,
+    opts.chatId,
+    "☝️ Forward this PPV to any fan. When they pay, I'll send you the unlocked media here with their name."
+  );
 }
 
 /**

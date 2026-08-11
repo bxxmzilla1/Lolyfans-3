@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOwnerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
+  appOrigin,
   newWebhookSecret,
   setBotWebhook,
   validateBotToken,
@@ -23,6 +24,7 @@ export async function GET() {
     botUsername: data?.bot_username ?? null,
     botId: data?.bot_id ?? null,
     botLink: data?.bot_username ? `https://t.me/${data.bot_username}` : null,
+    miniAppUrl: data ? `${appOrigin()}/tg-app/${ownerId}` : null,
   });
 }
 
@@ -64,6 +66,7 @@ export async function PUT(req: NextRequest) {
       ok: true,
       botUsername: me.username,
       botLink: `https://t.me/${me.username}`,
+      miniAppUrl: `${appOrigin()}/tg-app/${ownerId}`,
     });
   } catch (e) {
     return NextResponse.json(

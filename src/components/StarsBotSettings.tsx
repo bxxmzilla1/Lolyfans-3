@@ -80,10 +80,12 @@ export default function StarsBotSettings() {
           Stars PPV bot
         </p>
         <p className="text-xs text-muted mt-0.5">
-          Connect a bot from @BotFather. DM it a photo or video and it turns
-          it into a PPV invoice you can forward to any Telegram user. They
-          pay with <span className="text-fg font-semibold">Telegram Stars</span>{" "}
-          — the bot then sends you the unlocked media and who to forward it
+          Connect a bot from @BotFather. Its <b className="text-fg">Vault</b>{" "}
+          menu button opens a Mini App where you sign in with your Lolyfans
+          account, pick a vault photo or video, and set a price in{" "}
+          <span className="text-fg font-semibold">Telegram Stars</span> — the
+          blurred PPV lands in your bot chat ready to forward. When a fan
+          pays, the bot sends you the unlocked media and who to forward it
           to. Earnings go to your bot&apos;s Stars balance.
         </p>
       </div>
@@ -108,17 +110,21 @@ export default function StarsBotSettings() {
           )}
           <ol className="text-xs text-muted list-decimal pl-4 space-y-1">
             <li>
-              Open the bot on Telegram and send the activation code{" "}
-              <b className="text-fg">242124</b> (first time only)
+              Open the bot on Telegram — tap the <b className="text-fg">Vault</b>{" "}
+              menu button and sign in with your Lolyfans account
             </li>
             <li>
-              Send a photo or video — put the Stars price in the caption
-              (e.g. 50), or reply with it when asked
+              Pick a photo or video from your vault and enter the Stars
+              price — the blurred PPV appears in the bot chat
             </li>
-            <li>Forward the invoice the bot returns to any fan</li>
+            <li>Forward that PPV bubble to any fan</li>
             <li>
               After they pay, the bot sends you the unlocked media + their
               name — forward it to them
+            </li>
+            <li>
+              You can also DM media straight to the bot (first time it asks
+              for the activation code <b className="text-fg">242124</b>)
             </li>
           </ol>
           <button
