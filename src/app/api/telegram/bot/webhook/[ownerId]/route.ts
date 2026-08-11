@@ -10,6 +10,7 @@ import {
   botSendPpvBubble,
   botSendText,
   escHtml,
+  getPpvLinkText,
 } from "@/lib/telegramBot";
 import { mediaUrl } from "@/lib/utils";
 
@@ -300,7 +301,7 @@ async function handlePrivateMessage(
       );
       return;
     }
-    await finalizePpv({ db, token, chatId, unlock, price });
+    await finalizePpv({ db, token, ownerId, chatId, unlock, price });
     return;
   }
 
@@ -396,7 +397,14 @@ async function createPpvDraft(opts: {
   }
 
   if (priceFromCaption) {
-    await finalizePpv({ db, token, chatId, unlock, price: priceFromCaption });
+    await finalizePpv({
+      db,
+      token,
+      ownerId,
+      chatId,
+      unlock,
+      price: priceFromCaption,
+    });
     return;
   }
 
@@ -418,6 +426,7 @@ async function createPpvDraft(opts: {
 async function finalizePpv(opts: {
   db: ReturnType<typeof supabaseAdmin>;
   token: string;
+  ownerId: string;
   chatId: number;
   unlock: {
     id: string;
@@ -442,6 +451,7 @@ async function finalizePpv(opts: {
       mediaPath: unlock.media_path,
       caption: unlock.caption,
       stars: opts.price,
+      linkText: await getPpvLinkText(opts.ownerId),
     });
   } catch (e) {
     console.error("[ppv invoice]", e);

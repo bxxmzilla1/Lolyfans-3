@@ -4,9 +4,24 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   botForOwner,
   botSendPpvBubble,
+  DEFAULT_PPV_LINK_TEXT,
+  getPpvLinkText,
   parseWebAppUser,
+  savePpvLinkText,
   verifyWebAppInitData,
 } from "@/lib/telegramBot";
+
+/** Saved pay-link text — prefills the input in the vault Mini App. */
+export async function GET() {
+  const ownerId = await getOwnerId();
+  if (!ownerId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  return NextResponse.json({
+    linkText: await getPpvLinkText(ownerId),
+    defaultText: DEFAULT_PPV_LINK_TEXT,
+  });
+}
 
 /**
  * Vault Mini App → PPV: the signed-in creator picks a vault item and a
@@ -33,6 +48,7 @@ export async function POST(req: NextRequest) {
   const mediaType = body.mediaType === "video" ? "video" : "image";
   const priceStars = Math.round(Number(body.priceStars) || 0);
   const caption = String(body.caption || "").trim().slice(0, 300);
+  const linkText = String(body.linkText || "").trim().slice(0, 120);
 
   if (!mediaPath) {
     return NextResponse.json({ error: "Pick a vault item" }, { status: 400 });
@@ -85,6 +101,11 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Remember the custom pay-link text for future PPVs (DM flow included).
+  if (linkText) {
+    await savePpvLinkText(ownerId, linkText).catch(() => {});
+  }
+
   try {
     await botSendPpvBubble({
       token: bot.bot_token,
@@ -94,6 +115,7 @@ export async function POST(req: NextRequest) {
       mediaPath,
       caption: caption || null,
       stars: priceStars,
+      linkText: linkText || (await getPpvLinkText(ownerId)),
     });
   } catch (e) {
     return NextResponse.json(

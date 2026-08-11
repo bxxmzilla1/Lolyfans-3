@@ -176,9 +176,20 @@ function PriceSheet({
 }) {
   const [stars, setStars] = useState("50");
   const [caption, setCaption] = useState("");
+  const [linkText, setLinkText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const priceStars = Math.round(Number(stars)) || 0;
+
+  // Prefill the pay-link text with what was saved from the last PPV.
+  useEffect(() => {
+    fetch("/api/stars/ppv")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.linkText) setLinkText(data.linkText);
+      })
+      .catch(() => {});
+  }, []);
 
   async function send() {
     if (busy || priceStars < 1) return;
@@ -199,6 +210,7 @@ function PriceSheet({
           mediaType: item.media_type,
           priceStars,
           caption: caption.trim(),
+          linkText: linkText.trim(),
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -227,10 +239,11 @@ function PriceSheet({
         <div className="p-4 space-y-3 overflow-y-auto">
           <div className="rounded-xl overflow-hidden border border-line">
             {item.media_type === "video" ? (
+              // Playable preview — tap to watch before pricing it.
               <video
                 src={`${mediaUrl(item.media_path)}#t=0.001`}
-                className="w-full max-h-48 object-cover"
-                muted
+                className="w-full max-h-64 object-contain bg-black"
+                controls
                 playsInline
                 preload="metadata"
               />
@@ -254,6 +267,21 @@ function PriceSheet({
               onChange={(e) => setStars(e.target.value)}
               className="w-full rounded-xl border border-line bg-card2 px-3.5 py-2.5 text-sm outline-none focus:border-amber-500"
             />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold">
+              Pay link text (shown bold under the blurred media)
+            </label>
+            <input
+              value={linkText}
+              onChange={(e) => setLinkText(e.target.value)}
+              maxLength={120}
+              placeholder="⭐ Unlock for {price} Stars"
+              className="w-full rounded-xl border border-line bg-card2 px-3.5 py-2.5 text-sm outline-none focus:border-amber-500"
+            />
+            <p className="text-[11px] text-muted">
+              {"{price}"} becomes the Stars amount. Saved for future PPVs.
+            </p>
           </div>
           <div className="space-y-1.5">
             <label className="text-xs font-semibold">Caption (optional)</label>

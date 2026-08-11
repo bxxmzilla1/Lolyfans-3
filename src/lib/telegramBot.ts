@@ -2,8 +2,6 @@ import "server-only";
 import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { mediaUrl } from "@/lib/utils";
-import { STARS_TEASER_WIDTH, STARS_TEASER_HEIGHT } from "@/lib/telegram";
-
 /** Private code the creator must send to the bot before it makes PPVs. */
 export const BOT_ACTIVATION_CODE = "242124";
 
@@ -239,12 +237,49 @@ export async function botSendMedia(opts: {
   }
 }
 
+/** Default caption-link text — "{price}" becomes the Stars amount. */
+export const DEFAULT_PPV_LINK_TEXT = "⭐ Unlock for {price} Stars";
+
+const PPV_LINK_TEXT_KEY = (ownerId: string) => `ppv_link_text:${ownerId}`;
+
+/** The creator's saved pay-link text (or the default). */
+export async function getPpvLinkText(ownerId: string): Promise<string> {
+  try {
+    const { data } = await supabaseAdmin()
+      .from("site_settings")
+      .select("value")
+      .eq("key", PPV_LINK_TEXT_KEY(ownerId))
+      .maybeSingle();
+    const text = (data?.value || "").trim();
+    if (text) return text;
+  } catch {
+    // site_settings missing — fall through to the default.
+  }
+  return DEFAULT_PPV_LINK_TEXT;
+}
+
+export async function savePpvLinkText(
+  ownerId: string,
+  raw: string
+): Promise<void> {
+  const text = raw.trim().slice(0, 120);
+  if (!text) return;
+  await supabaseAdmin()
+    .from("site_settings")
+    .upsert(
+      {
+        key: PPV_LINK_TEXT_KEY(ownerId),
+        value: text,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "key" }
+    );
+}
+
 /**
- * The forwardable PPV bubble: a Stars invoice (native "Pay ⭐ N" button —
- * the only button Telegram keeps on forwarded messages) with the blurred
- * teaser as its photo. Title/description are invisible word-joiners so the
- * bubble shows just the image and the pay button; if Telegram ever rejects
- * those, we retry once with minimal visible texts.
+ * The forwardable PPV bubble: full-size blurred teaser photo whose caption
+ * is a bold tappable Stars pay link (captions + links survive forwarding).
+ * Falls back to a link-only text message when there's no teaser copy.
  */
 export async function botSendPpvBubble(opts: {
   token: string;
@@ -254,40 +289,60 @@ export async function botSendPpvBubble(opts: {
   mediaPath: string | null;
   caption: string | null;
   stars: number;
+  /** Custom pay-link text; "{price}" is replaced with the Stars amount. */
+  linkText?: string | null;
 }): Promise<void> {
-  const send = (title: string, description: string) =>
-    botApi(opts.token, "sendInvoice", {
+  const kind = opts.mediaType === "video" ? "video" : "photo";
+  // Payment sheet texts only — the chat bubble itself shows no invoice UI.
+  const payLink = await botCreateStarsInvoiceLink({
+    token: opts.token,
+    unlockId: opts.unlockId,
+    title: `Unlock this ${kind}`,
+    description: opts.caption || `${opts.stars} Stars`,
+    stars: opts.stars,
+  });
+
+  const template = (opts.linkText || "").trim() || DEFAULT_PPV_LINK_TEXT;
+  const label = escHtml(template).replaceAll("{price}", String(opts.stars));
+  const linkCaption = `<a href="${payLink}"><b>${label}</b></a>`;
+
+  if (opts.mediaPath) {
+    await botApi(opts.token, "sendPhoto", {
       chat_id: opts.chatId,
-      title: title.slice(0, 32),
-      description: description.slice(0, 255),
-      payload: opts.unlockId.slice(0, 128),
-      currency: "XTR",
-      prices: [{ label: `${opts.stars} Stars`, amount: opts.stars }],
-      ...(opts.mediaPath
-        ? {
-            photo_url: `${appOrigin()}/api/stars/teaser/${opts.unlockId}`,
-            // Known teaser canvas — without these hints Telegram lays the
-            // invoice photo out as a small thumbnail.
-            photo_width: STARS_TEASER_WIDTH,
-            photo_height: STARS_TEASER_HEIGHT,
-          }
-        : {}),
+      photo: `${appOrigin()}/api/stars/teaser/${opts.unlockId}`,
+      caption: opts.caption
+        ? `${escHtml(opts.caption)}\n${linkCaption}`
+        : linkCaption,
+      parse_mode: "HTML",
     });
-
-  // Telegram always reserves the invoice's title/description area — fully
-  // invisible text just leaves an awkward blank block under the photo, so
-  // show a compact price line there instead.
-  const invisible = "\u2060"; // word joiner — renders as nothing
-  try {
-    await send(`⭐ ${opts.stars} Stars`, opts.caption || invisible);
-  } catch {
-    await send(`⭐ ${opts.stars} Stars`, opts.caption || "🔓");
+  } else {
+    await botSendText(opts.token, opts.chatId, linkCaption);
   }
-
   await botSendText(
     opts.token,
     opts.chatId,
     "☝️ Forward this PPV to any fan. When they pay, I'll send you the unlocked media here with their name."
   );
+}
+
+/**
+ * Stars payment link for a PPV unlock (currency XTR). Anyone who opens the
+ * link gets the payment sheet — it works from forwarded messages too, which
+ * is how creators sell: blurred media bubble + this link in the caption.
+ */
+export async function botCreateStarsInvoiceLink(opts: {
+  token: string;
+  unlockId: string;
+  title: string;
+  description: string;
+  stars: number;
+}): Promise<string> {
+  return botApi<string>(opts.token, "createInvoiceLink", {
+    title: opts.title.slice(0, 32),
+    description: opts.description.slice(0, 255),
+    payload: opts.unlockId.slice(0, 128),
+    currency: "XTR",
+    prices: [{ label: opts.title.slice(0, 32), amount: opts.stars }],
+  });
 }
 
