@@ -239,9 +239,11 @@ export async function botSendMedia(opts: {
 }
 
 /**
- * The forwardable PPV bubble: full-size blurred teaser photo whose caption
- * is a tappable Stars pay link (captions + links survive forwarding).
- * Falls back to a link-only text message when there's no teaser copy.
+ * The forwardable PPV bubble: a Stars invoice (native "Pay ⭐ N" button —
+ * the only button Telegram keeps on forwarded messages) with the blurred
+ * teaser as its photo. Title/description are invisible word-joiners so the
+ * bubble shows just the image and the pay button; if Telegram ever rejects
+ * those, we retry once with minimal visible texts.
  */
 export async function botSendPpvBubble(opts: {
   token: string;
@@ -252,54 +254,30 @@ export async function botSendPpvBubble(opts: {
   caption: string | null;
   stars: number;
 }): Promise<void> {
-  const kind = opts.mediaType === "video" ? "video" : "photo";
-  // Payment sheet texts only — the chat bubble itself shows no invoice UI.
-  const payLink = await botCreateStarsInvoiceLink({
-    token: opts.token,
-    unlockId: opts.unlockId,
-    title: `Unlock this ${kind}`,
-    description: opts.caption || `${opts.stars} Stars`,
-    stars: opts.stars,
-  });
-
-  const linkCaption = `<a href="${payLink}">⭐ Unlock for ${opts.stars} Stars</a>`;
-  if (opts.mediaPath) {
-    await botApi(opts.token, "sendPhoto", {
+  const send = (title: string, description: string) =>
+    botApi(opts.token, "sendInvoice", {
       chat_id: opts.chatId,
-      photo: `${appOrigin()}/api/stars/teaser/${opts.unlockId}`,
-      caption: opts.caption
-        ? `${escHtml(opts.caption)}\n${linkCaption}`
-        : linkCaption,
-      parse_mode: "HTML",
+      title: title.slice(0, 32),
+      description: description.slice(0, 255),
+      payload: opts.unlockId.slice(0, 128),
+      currency: "XTR",
+      prices: [{ label: `${opts.stars} Stars`, amount: opts.stars }],
+      ...(opts.mediaPath
+        ? { photo_url: `${appOrigin()}/api/stars/teaser/${opts.unlockId}` }
+        : {}),
     });
-  } else {
-    await botSendText(opts.token, opts.chatId, linkCaption);
+
+  const invisible = "\u2060"; // word joiner — renders as nothing
+  try {
+    await send(invisible, opts.caption || invisible);
+  } catch {
+    await send(`${opts.stars} ⭐`, opts.caption || "🔓");
   }
+
   await botSendText(
     opts.token,
     opts.chatId,
     "☝️ Forward this PPV to any fan. When they pay, I'll send you the unlocked media here with their name."
   );
-}
-
-/**
- * Stars payment link for a PPV unlock (currency XTR). Anyone who opens the
- * link gets the payment sheet — it works from forwarded messages too, which
- * is how creators sell: blurred media bubble + this link in the caption.
- */
-export async function botCreateStarsInvoiceLink(opts: {
-  token: string;
-  unlockId: string;
-  title: string;
-  description: string;
-  stars: number;
-}): Promise<string> {
-  return botApi<string>(opts.token, "createInvoiceLink", {
-    title: opts.title.slice(0, 32),
-    description: opts.description.slice(0, 255),
-    payload: opts.unlockId.slice(0, 128),
-    currency: "XTR",
-    prices: [{ label: opts.title.slice(0, 32), amount: opts.stars }],
-  });
 }
 
