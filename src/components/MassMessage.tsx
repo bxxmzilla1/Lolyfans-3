@@ -554,27 +554,19 @@ export function VaultPicker({
                 onClick={() => onPick(item)}
                 className="relative aspect-square bg-card2 overflow-hidden rounded-md group"
               >
-                {item.media_type === "image" ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={thumbUrl(item.media_path, 320)}
-                    alt=""
-                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    loading="lazy"
-                  />
-                ) : (
-                  <>
-                    <video
-                      src={`${mediaUrl(item.media_path)}#t=0.001`}
-                      className="w-full h-full object-cover"
-                      muted
-                      playsInline
-                      preload="metadata"
-                    />
-                    <span className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center">
-                      <IconPlay className="w-3.5 h-3.5 text-white translate-x-px" />
-                    </span>
-                  </>
+                {/* Thumbnails only — videos get a server frame-grab; the
+                    real file loads after picking. Keeps big vaults fast. */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={thumbUrl(item.media_path, 320)}
+                  alt=""
+                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                  loading="lazy"
+                />
+                {item.media_type === "video" && (
+                  <span className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center">
+                    <IconPlay className="w-3.5 h-3.5 text-white translate-x-px" />
+                  </span>
                 )}
               </button>
             ))}

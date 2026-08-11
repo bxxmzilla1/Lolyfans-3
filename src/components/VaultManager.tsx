@@ -72,16 +72,6 @@ function downloadMedia(item: Item) {
   a.remove();
 }
 
-function formatDuration(seconds: number): string {
-  const total = Math.round(seconds);
-  const h = Math.floor(total / 3600);
-  const m = Math.floor((total % 3600) / 60);
-  const s = total % 60;
-  return h > 0
-    ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
-    : `${m}:${String(s).padStart(2, "0")}`;
-}
-
 export default function VaultManager() {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [total, setTotal] = useState(0);
@@ -95,8 +85,6 @@ export default function VaultManager() {
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  // Video lengths read from each thumbnail's metadata, keyed by item id
-  const [durations, setDurations] = useState<Record<string, number>>({});
   const [newAlbumOpen, setNewAlbumOpen] = useState(false);
   const [newAlbumName, setNewAlbumName] = useState("");
   const [renameOpen, setRenameOpen] = useState(false);
@@ -990,40 +978,19 @@ export default function VaultManager() {
                   : ""
               }`}
             >
-              {item.media_type === "image" ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={thumbUrl(item.media_path, 320)}
-                  alt=""
-                  className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                  loading="lazy"
-                />
-              ) : (
-                <>
-                  <video
-                    src={`${mediaUrl(item.media_path)}#t=0.001`}
-                    className="w-full h-full object-cover"
-                    muted
-                    playsInline
-                    preload="metadata"
-                    onLoadedMetadata={(e) => {
-                      const { duration } = e.currentTarget;
-                      if (Number.isFinite(duration)) {
-                        setDurations((prev) =>
-                          prev[item.id] === duration ? prev : { ...prev, [item.id]: duration }
-                        );
-                      }
-                    }}
-                  />
-                  <span className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center">
-                    <IconPlay className="w-3.5 h-3.5 text-white translate-x-px" />
-                  </span>
-                  {durations[item.id] !== undefined && (
-                    <span className="absolute bottom-1 right-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-white tabular-nums">
-                      {formatDuration(durations[item.id])}
-                    </span>
-                  )}
-                </>
+              {/* Grid shows lightweight thumbnails only (videos get a server
+                  frame-grab) — the real file loads when the tile is opened. */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={thumbUrl(item.media_path, 320)}
+                alt=""
+                className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                loading="lazy"
+              />
+              {item.media_type === "video" && (
+                <span className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center">
+                  <IconPlay className="w-3.5 h-3.5 text-white translate-x-px" />
+                </span>
               )}
               {/* Send-status outline — drawn on top of the thumbnail so it
                   can't hide behind the media. */}

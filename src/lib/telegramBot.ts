@@ -274,11 +274,14 @@ export async function botSendPpvBubble(opts: {
         : {}),
     });
 
+  // Telegram always reserves the invoice's title/description area — fully
+  // invisible text just leaves an awkward blank block under the photo, so
+  // show a compact price line there instead.
   const invisible = "\u2060"; // word joiner — renders as nothing
   try {
-    await send(invisible, opts.caption || invisible);
+    await send(`⭐ ${opts.stars} Stars`, opts.caption || invisible);
   } catch {
-    await send(`${opts.stars} ⭐`, opts.caption || "🔓");
+    await send(`⭐ ${opts.stars} Stars`, opts.caption || "🔓");
   }
 
   await botSendText(

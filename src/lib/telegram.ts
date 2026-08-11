@@ -1203,6 +1203,22 @@ async function overlayBadgeOnClip(
   }
 }
 
+/** One clear (unblurred) frame from a video — used for grid thumbnails.
+ *  `input` is a local file path or an https URL. */
+export async function videoFrameFromInput(input: string): Promise<Buffer> {
+  const fs = await import("fs/promises");
+  const os = await import("os");
+  const path = await import("path");
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "vid-thumb-"));
+  try {
+    const outFile = path.join(dir, "out.jpg");
+    await runFfmpeg(["-y", "-i", input, "-frames:v", "1", outFile]);
+    return await fs.readFile(outFile);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true }).catch(() => {});
+  }
+}
+
 /** Fallback teaser: one frame from the video, blurred like an image teaser.
  *  `input` is a local file path or an https URL. */
 async function blurredFrameFromInput(input: string): Promise<Buffer> {
