@@ -21,15 +21,21 @@ type Msg = {
 
 export default function SendStarsPpv({
   chatId,
+  initial,
   onClose,
   onSent,
 }: {
   chatId: string;
+  /** Pre-picked media (e.g. dragged from the vault) — skips the picker. */
+  initial?: Pick<VaultItem, "media_path" | "media_type"> | null;
   onClose: () => void;
   onSent: (msg: Msg) => void;
 }) {
-  const [pick, setPick] = useState<VaultItem | null>(null);
-  const [picking, setPicking] = useState(true);
+  const [pick, setPick] = useState<Pick<
+    VaultItem,
+    "media_path" | "media_type"
+  > | null>(initial ?? null);
+  const [picking, setPicking] = useState(!initial);
   const [stars, setStars] = useState("50");
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);

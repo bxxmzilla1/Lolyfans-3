@@ -30,7 +30,11 @@ export default function StarsChatView({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
-  const [ppvOpen, setPpvOpen] = useState(false);
+  const [ppvPick, setPpvPick] = useState<{
+    media_path: string;
+    media_type: "image" | "video";
+  } | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const load = useCallback(async () => {
@@ -74,8 +78,49 @@ export default function StarsChatView({
     }
   }
 
+  function onDragOver(e: React.DragEvent) {
+    if (e.dataTransfer.types.includes("application/x-lolyfans-vault")) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+      setDragOver(true);
+    }
+  }
+
+  function onDragLeave(e: React.DragEvent) {
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+    setDragOver(false);
+  }
+
+  function onDrop(e: React.DragEvent) {
+    setDragOver(false);
+    const raw = e.dataTransfer.getData("application/x-lolyfans-vault");
+    if (!raw) return;
+    e.preventDefault();
+    try {
+      const data = JSON.parse(raw) as { path?: string; type?: string };
+      if (data.path && (data.type === "image" || data.type === "video")) {
+        setPpvPick({ media_path: data.path, media_type: data.type });
+      }
+    } catch {
+      // ignore malformed drag payloads
+    }
+  }
+
   return (
-    <div className="h-full flex flex-col">
+    <div
+      className="h-full flex flex-col relative"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
+      {dragOver && (
+        <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center bg-amber-500/15 border-2 border-dashed border-amber-500 m-2 rounded-2xl">
+          <p className="bg-card border border-line rounded-xl px-4 py-2 text-sm font-semibold shadow-lg flex items-center gap-1.5">
+            <IconStar className="w-4 h-4 text-amber-400" />
+            Drop to send as Stars PPV
+          </p>
+        </div>
+      )}
       <header className="border-b border-line px-3 py-2.5 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
         <Link href="/inbox" className="lg:hidden text-fg p-1" aria-label="Back">
           <IconBack className="w-5 h-5" />
@@ -169,13 +214,9 @@ export default function StarsChatView({
       )}
 
       <div className="shrink-0 border-t border-line p-3 space-y-2 bg-card/40">
-        <button
-          type="button"
-          onClick={() => setPpvOpen(true)}
-          className="w-full rounded-xl border border-amber-500/40 bg-amber-500/10 text-amber-200 text-xs font-bold py-2 flex items-center justify-center gap-1.5"
-        >
-          <IconStar className="w-3.5 h-3.5" /> Send PPV for Stars
-        </button>
+        <p className="text-[11px] text-muted text-center">
+          Drag a photo or video from the vault to send it as a Stars PPV
+        </p>
         <div className="flex gap-2">
           <input
             value={text}
@@ -195,13 +236,14 @@ export default function StarsChatView({
         </div>
       </div>
 
-      {ppvOpen && (
+      {ppvPick && (
         <SendStarsPpv
           chatId={chatId}
-          onClose={() => setPpvOpen(false)}
+          initial={ppvPick}
+          onClose={() => setPpvPick(null)}
           onSent={(msg) => {
             setMessages((m) => [...m, msg]);
-            setPpvOpen(false);
+            setPpvPick(null);
           }}
         />
       )}
