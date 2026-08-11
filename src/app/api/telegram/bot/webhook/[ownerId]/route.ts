@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { broadcast } from "@/lib/realtime";
 import {
+  appOrigin,
+  BOT_ACTIVATION_CODE,
   botApi,
   botForOwner,
+  botGetFileUrl,
+  botSendByFileId,
   botSendMedia,
+  botSendStarsInvoice,
   botSendText,
-  ensureStarsChat,
+  escHtml,
 } from "@/lib/telegramBot";
 
 export const runtime = "nodejs";
@@ -14,6 +18,7 @@ export const maxDuration = 60;
 
 type TgUser = {
   id: number;
+  is_bot?: boolean;
   username?: string;
   first_name?: string;
   last_name?: string;
@@ -26,6 +31,9 @@ type TgUpdate = {
     from?: TgUser;
     chat: { id: number; type: string };
     text?: string;
+    caption?: string;
+    photo?: { file_id: string; file_size?: number }[];
+    video?: { file_id: string; file_size?: number; mime_type?: string };
     successful_payment?: {
       currency: string;
       total_amount: number;
@@ -43,8 +51,13 @@ type TgUpdate = {
 };
 
 /**
- * Telegram Bot webhook: fan messages, Stars pre-checkout, and successful
- * Stars payments that unlock Mini App PPVs.
+ * PPV-maker bot webhook. The creator DMs the bot:
+ *   1. First use: bot asks for the private activation code.
+ *   2. Send a photo/video (+ optional caption) → bot asks the Stars price
+ *      (or reads it from a numeric caption) and replies with a forwardable
+ *      Stars invoice.
+ *   3. Creator forwards the invoice to any fan. When the fan pays, the bot
+ *      sends the creator the unlocked media plus who to forward it to.
  */
 export async function POST(
   req: NextRequest,
@@ -70,8 +83,12 @@ export async function POST(
         update.message.from!,
         update.message.successful_payment
       );
-    } else if (update.message?.from && update.message.chat.type === "private") {
-      await handleFanMessage(ownerId, bot.bot_token, update.message);
+    } else if (
+      update.message?.from &&
+      !update.message.from.is_bot &&
+      update.message.chat.type === "private"
+    ) {
+      await handlePrivateMessage(ownerId, bot.bot_token, update.message);
     }
   } catch (e) {
     console.error("[bot webhook]", e);
@@ -113,13 +130,12 @@ async function handlePreCheckout(
   });
 }
 
+/** After payment: hand the creator the unlocked media + who paid. */
 async function handleSuccessfulPayment(
   ownerId: string,
   token: string,
-  from: TgUser,
-  payment: NonNullable<
-    NonNullable<TgUpdate["message"]>["successful_payment"]
-  >
+  payer: TgUser,
+  payment: NonNullable<NonNullable<TgUpdate["message"]>["successful_payment"]>
 ) {
   const unlockId = payment.invoice_payload;
   const db = supabaseAdmin();
@@ -129,9 +145,7 @@ async function handleSuccessfulPayment(
     .eq("id", unlockId)
     .eq("owner_id", ownerId)
     .maybeSingle();
-  if (!unlock || unlock.status === "paid" || unlock.status === "delivered") {
-    return;
-  }
+  if (!unlock || unlock.status !== "pending") return;
 
   await db
     .from("stars_unlocks")
@@ -143,113 +157,299 @@ async function handleSuccessfulPayment(
     .eq("id", unlockId)
     .eq("status", "pending");
 
-  if (unlock.message_id) {
-    await db
-      .from("stars_messages")
-      .update({ locked: false, status: "paid" })
-      .eq("id", unlock.message_id);
-  }
+  const creatorTgId = Number(unlock.creator_tg_id);
+  if (!creatorTgId) return;
 
-  const { data: chat } = await db
-    .from("stars_chats")
-    .select("tg_user_id")
-    .eq("id", unlock.chat_id)
-    .maybeSingle();
-
-  const tgUserId = chat?.tg_user_id ?? from.id;
+  // 1) The unlocked media itself — the creator forwards this bubble.
   try {
-    await botSendMedia({
-      token,
-      chatId: Number(tgUserId),
-      mediaPath: unlock.media_path,
-      mediaType: unlock.media_type === "video" ? "video" : "image",
-      caption: "Unlocked — enjoy!",
-    });
-    await db
-      .from("stars_unlocks")
-      .update({
-        status: "delivered",
-        delivered_at: new Date().toISOString(),
-      })
-      .eq("id", unlockId);
+    if (unlock.tg_file_id) {
+      await botSendByFileId({
+        token,
+        chatId: creatorTgId,
+        fileId: unlock.tg_file_id,
+        mediaType: unlock.media_type === "video" ? "video" : "image",
+        caption: unlock.caption || undefined,
+      });
+    } else if (unlock.media_path) {
+      await botSendMedia({
+        token,
+        chatId: creatorTgId,
+        mediaPath: unlock.media_path,
+        mediaType: unlock.media_type === "video" ? "video" : "image",
+        caption: unlock.caption || undefined,
+      });
+    }
   } catch (e) {
-    console.error("[stars deliver]", e);
+    console.error("[ppv deliver to creator]", e);
   }
 
-  await broadcast(`stars:${ownerId}`, "unlock-paid", {
-    unlockId,
-    chatId: unlock.chat_id,
-  });
-  await broadcast(`stars-chat:${unlock.chat_id}`, "unlock-paid", {
-    unlockId,
-    messageId: unlock.message_id,
-  });
+  // 2) Who paid — so the creator knows exactly who to forward it to.
+  const payerName = [payer.first_name, payer.last_name]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const mention = payer.username
+    ? `@${escHtml(payer.username)}`
+    : `<a href="tg://user?id=${payer.id}">${escHtml(payerName || "this user")}</a>`;
+  await botSendText(
+    token,
+    creatorTgId,
+    `💰 <b>${escHtml(payerName || "Someone")}</b> (${mention}) just paid <b>${unlock.price_stars} Stars</b> for this PPV.\n\n☝️ Forward the unlocked media above to them.`
+  ).catch((e) => console.error("[ppv payer notice]", e));
+
+  await db
+    .from("stars_unlocks")
+    .update({ status: "delivered", delivered_at: new Date().toISOString() })
+    .eq("id", unlockId);
 }
 
-async function handleFanMessage(
+type Operator = {
+  owner_id: string;
+  tg_user_id: number;
+  pending_unlock_id: string | null;
+};
+
+async function handlePrivateMessage(
   ownerId: string,
   token: string,
   message: NonNullable<TgUpdate["message"]>
 ) {
   const from = message.from!;
+  const chatId = message.chat.id;
   const text = (message.text || "").trim();
+  const db = supabaseAdmin();
 
-  // /start — welcome + Mini App hint
-  if (text.startsWith("/start")) {
-    const bot = await botForOwner(ownerId);
-    const uname = bot?.bot_username;
-    await botSendText(
-      token,
-      from.id,
-      uname
-        ? `Welcome! Tap <b>Open chat</b> below the composer, or open the Mini App:\nhttps://t.me/${uname}?startapp=chat\n\nYou can chat here and unlock PPVs with Telegram Stars.`
-        : "Welcome! Open the Mini App from the menu to chat and unlock PPVs with Stars."
-    );
-  }
+  const { data: operator } = await db
+    .from("bot_operators")
+    .select("owner_id, tg_user_id, pending_unlock_id")
+    .eq("owner_id", ownerId)
+    .eq("tg_user_id", from.id)
+    .maybeSingle();
 
-  if (!text || text.startsWith("/")) {
-    // Still ensure the chat exists for /start so creator sees them.
-    if (text.startsWith("/start")) {
-      await ensureStarsChat({
-        ownerId,
-        tgUserId: from.id,
-        username: from.username,
-        firstName: from.first_name,
-        lastName: from.last_name,
-      });
+  // ---- Not activated yet: only the private code gets you in. ----
+  if (!operator) {
+    if (text === BOT_ACTIVATION_CODE) {
+      await db.from("bot_operators").upsert(
+        {
+          owner_id: ownerId,
+          tg_user_id: from.id,
+          username: from.username ?? null,
+          first_name: from.first_name ?? null,
+        },
+        { onConflict: "owner_id,tg_user_id" }
+      );
+      await botSendText(
+        token,
+        chatId,
+        "✅ Activated.\n\nSend me a photo or video and I'll turn it into a Stars PPV you can forward to anyone. Tip: put the price in the caption (e.g. <b>50</b>) to skip a step."
+      );
+    } else {
+      await botSendText(
+        token,
+        chatId,
+        "🔒 This bot is private. Send the activation code to continue."
+      );
     }
     return;
   }
 
-  const chat = await ensureStarsChat({
-    ownerId,
-    tgUserId: from.id,
-    username: from.username,
-    firstName: from.first_name,
-    lastName: from.last_name,
-  });
+  // ---- Activated: media → new PPV ----
+  const media = pickMedia(message);
+  if (media) {
+    await createPpvDraft({
+      db,
+      token,
+      ownerId,
+      operator: operator as Operator,
+      chatId,
+      creatorTgId: from.id,
+      media,
+      caption: (message.caption || "").trim(),
+    });
+    return;
+  }
 
-  const { data: row } = await supabaseAdmin()
-    .from("stars_messages")
+  // ---- Activated: number while a draft waits for its price ----
+  const price = parsePrice(text);
+  if (operator.pending_unlock_id && price) {
+    const { data: unlock } = await db
+      .from("stars_unlocks")
+      .select("*")
+      .eq("id", operator.pending_unlock_id)
+      .eq("owner_id", ownerId)
+      .maybeSingle();
+    await db
+      .from("bot_operators")
+      .update({ pending_unlock_id: null })
+      .eq("owner_id", ownerId)
+      .eq("tg_user_id", from.id);
+    if (!unlock || unlock.status !== "draft") {
+      await botSendText(
+        token,
+        chatId,
+        "That PPV is gone — send the photo or video again."
+      );
+      return;
+    }
+    await finalizePpv({ db, token, chatId, unlock, price });
+    return;
+  }
+
+  // ---- Anything else: short help ----
+  await botSendText(
+    token,
+    chatId,
+    operator.pending_unlock_id
+      ? "Reply with the price in Stars for the media you just sent (e.g. <b>50</b>)."
+      : "Send me a photo or video and I'll turn it into a Stars PPV you can forward. Put the price in the caption (e.g. <b>50</b>) to skip a step."
+  );
+}
+
+function pickMedia(message: NonNullable<TgUpdate["message"]>): {
+  fileId: string;
+  mediaType: "image" | "video";
+} | null {
+  if (message.video?.file_id) {
+    return { fileId: message.video.file_id, mediaType: "video" };
+  }
+  const photo = message.photo?.[message.photo.length - 1];
+  if (photo?.file_id) {
+    return { fileId: photo.file_id, mediaType: "image" };
+  }
+  return null;
+}
+
+function parsePrice(text: string): number | null {
+  if (!/^\d{1,6}$/.test(text)) return null;
+  const n = Number(text);
+  return n >= 1 ? n : null;
+}
+
+async function createPpvDraft(opts: {
+  db: ReturnType<typeof supabaseAdmin>;
+  token: string;
+  ownerId: string;
+  operator: Operator;
+  chatId: number;
+  creatorTgId: number;
+  media: { fileId: string; mediaType: "image" | "video" };
+  caption: string;
+}) {
+  const { db, token, ownerId, chatId, media } = opts;
+
+  // Caption that's just a number is the price, not a caption.
+  const priceFromCaption = parsePrice(opts.caption);
+  const caption = priceFromCaption ? "" : opts.caption;
+
+  const { data: unlock, error } = await db
+    .from("stars_unlocks")
     .insert({
-      chat_id: chat.id,
       owner_id: ownerId,
-      sender: "fan",
-      content: text.slice(0, 4000),
+      creator_tg_id: opts.creatorTgId,
+      tg_file_id: media.fileId,
+      media_type: media.mediaType,
+      caption: caption || null,
+      price_stars: 0,
+      status: "draft",
     })
     .select("*")
     .single();
+  if (error || !unlock) {
+    await botSendText(token, chatId, "Something went wrong — try again.");
+    return;
+  }
 
-  await supabaseAdmin()
-    .from("stars_chats")
-    .update({ last_message_at: new Date().toISOString() })
-    .eq("id", chat.id);
+  // Copy the file into storage so the invoice can show a blurred teaser.
+  // Bots can't download files >20MB — then the invoice just has no photo.
+  try {
+    const fileUrl = await botGetFileUrl(token, media.fileId);
+    const res = await fetch(fileUrl);
+    if (res.ok) {
+      const buf = Buffer.from(await res.arrayBuffer());
+      const ext = media.mediaType === "video" ? "mp4" : "jpg";
+      const path = `botppv/${ownerId}/${unlock.id}.${ext}`;
+      const { error: upErr } = await db.storage
+        .from("media")
+        .upload(path, buf, {
+          contentType: media.mediaType === "video" ? "video/mp4" : "image/jpeg",
+          upsert: true,
+        });
+      if (!upErr) {
+        await db
+          .from("stars_unlocks")
+          .update({ media_path: path })
+          .eq("id", unlock.id);
+        unlock.media_path = path;
+      }
+    }
+  } catch (e) {
+    console.error("[ppv teaser copy]", e);
+  }
 
-  if (row) {
-    await broadcast(`stars:${ownerId}`, "new-message", {
-      chatId: chat.id,
-      message: row,
+  if (priceFromCaption) {
+    await finalizePpv({ db, token, chatId, unlock, price: priceFromCaption });
+    return;
+  }
+
+  await db.from("bot_operators").upsert(
+    {
+      owner_id: ownerId,
+      tg_user_id: opts.operator.tg_user_id,
+      pending_unlock_id: unlock.id,
+    },
+    { onConflict: "owner_id,tg_user_id" }
+  );
+  await botSendText(
+    token,
+    chatId,
+    "Got it. How many <b>Stars</b> should this PPV cost? Reply with a number (e.g. <b>50</b>)."
+  );
+}
+
+async function finalizePpv(opts: {
+  db: ReturnType<typeof supabaseAdmin>;
+  token: string;
+  chatId: number;
+  unlock: {
+    id: string;
+    media_path: string | null;
+    media_type: string;
+    caption: string | null;
+  };
+  price: number;
+}) {
+  const { db, token, chatId, unlock } = opts;
+  await db
+    .from("stars_unlocks")
+    .update({ price_stars: opts.price, status: "pending" })
+    .eq("id", unlock.id);
+
+  const kind = unlock.media_type === "video" ? "video" : "photo";
+  try {
+    await botSendStarsInvoice({
+      token,
+      chatId,
+      unlockId: unlock.id,
+      title: `Unlock this ${kind} 🔓`,
+      description:
+        unlock.caption || `Pay ${opts.price} Stars to unlock this ${kind}.`,
+      stars: opts.price,
+      // Blurred still — never the clear file before payment.
+      ...(unlock.media_path
+        ? { photoUrl: `${appOrigin()}/api/stars/teaser/${unlock.id}` }
+        : {}),
     });
-    await broadcast(`stars-chat:${chat.id}`, "new-message", { message: row });
+    await botSendText(
+      token,
+      chatId,
+      "☝️ Forward this PPV to any fan. When they pay, I'll send you the unlocked media here with their name."
+    );
+  } catch (e) {
+    console.error("[ppv invoice]", e);
+    await botSendText(
+      token,
+      chatId,
+      "Could not create the invoice — try again."
+    );
   }
 }

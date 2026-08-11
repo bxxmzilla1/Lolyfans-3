@@ -46,7 +46,6 @@ export async function proxy(request: NextRequest) {
   // entirely so invite links respond as fast as possible.
   if (
     pathname.startsWith("/i/") ||
-    pathname.startsWith("/tg-app/") ||
     pathname.startsWith("/chat") ||
     pathname.startsWith("/p/") ||
     pathname === "/home" ||

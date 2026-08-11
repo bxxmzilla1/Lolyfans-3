@@ -4,8 +4,8 @@ import { buildBlurredStill } from "@/lib/telegram";
 
 /**
  * Public blurred still of a Stars PPV — never the clear file. Keyed by the
- * unguessable unlock uuid so locked bubbles (Mini App + creator inbox) and
- * Stars invoices show a real preview instead of an empty placeholder.
+ * unguessable unlock uuid; used as the photo on forwardable Stars invoices
+ * so fans see a real (blurred) preview instead of a bare invoice.
  */
 export async function GET(
   _req: Request,

@@ -725,9 +725,10 @@ create index if not exists telegram_unlocks_owner_idx
   on telegram_unlocks (owner_id, created_at desc);
 
 -- ---------------------------------------------------------------------------
--- Telegram Mini App + Stars: bot per creator, in-app chat, Stars PPV unlocks.
--- Fans open the Mini App from the bot; creators chat and send PPVs from
--- Lolyfans. Earnings land as Telegram Stars on the bot (not Stripe).
+-- Telegram Stars PPV bot: the creator DMs their bot, activates it with the
+-- private code, sends a photo/video + Stars price, and gets a forwardable
+-- invoice. After a fan pays, the bot hands the creator the unlocked media
+-- plus who to forward it to. Earnings land as Telegram Stars on the bot.
 -- ---------------------------------------------------------------------------
 create table if not exists telegram_bots (
   owner_id uuid primary key references auth.users(id) on delete cascade,
@@ -740,52 +741,33 @@ create table if not exists telegram_bots (
 );
 alter table telegram_bots enable row level security;
 
-create table if not exists stars_chats (
-  id uuid primary key default gen_random_uuid(),
+-- Telegram users who unlocked the bot with the private activation code.
+create table if not exists bot_operators (
   owner_id uuid not null references auth.users(id) on delete cascade,
   tg_user_id bigint not null,
   username text,
   first_name text,
-  last_name text,
-  last_message_at timestamptz not null default now(),
-  -- Updated while the fan has the Mini App open (heartbeat). Used to skip
-  -- bot "unread message" pings when they're already looking at the chat.
-  fan_last_seen_at timestamptz,
-  created_at timestamptz not null default now(),
-  unique (owner_id, tg_user_id)
+  -- Unlock waiting for a price reply ("How many Stars?").
+  pending_unlock_id uuid,
+  activated_at timestamptz not null default now(),
+  primary key (owner_id, tg_user_id)
 );
-create index if not exists stars_chats_owner_idx
-  on stars_chats (owner_id, last_message_at desc);
-alter table stars_chats enable row level security;
-
-create table if not exists stars_messages (
-  id uuid primary key default gen_random_uuid(),
-  chat_id uuid not null references stars_chats(id) on delete cascade,
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  sender text not null check (sender in ('owner', 'fan')),
-  content text,
-  media_path text,
-  media_type text, -- image | video
-  locked boolean not null default false,
-  price_stars int not null default 0,
-  unlock_id uuid,
-  status text not null default 'visible', -- visible | pending_pay | paid
-  created_at timestamptz not null default now()
-);
-create index if not exists stars_messages_chat_idx
-  on stars_messages (chat_id, created_at asc);
-alter table stars_messages enable row level security;
+alter table bot_operators enable row level security;
 
 create table if not exists stars_unlocks (
   id uuid primary key default gen_random_uuid(),
   owner_id uuid not null references auth.users(id) on delete cascade,
-  chat_id uuid not null references stars_chats(id) on delete cascade,
-  message_id uuid references stars_messages(id) on delete set null,
-  media_path text not null,
+  -- Creator's Telegram id — where the paid/unlocked copy is sent back.
+  creator_tg_id bigint,
+  -- Telegram file id of the original upload (best-quality resend).
+  tg_file_id text,
+  -- Copy in Supabase storage — used for the blurred invoice teaser.
+  media_path text,
   media_type text not null,
-  price_stars int not null,
-  status text not null default 'pending'
-    check (status in ('pending', 'paid', 'delivered', 'refunded')),
+  caption text,
+  price_stars int not null default 0,
+  status text not null default 'draft'
+    check (status in ('draft', 'pending', 'paid', 'delivered', 'refunded')),
   telegram_payment_charge_id text,
   paid_at timestamptz,
   delivered_at timestamptz,

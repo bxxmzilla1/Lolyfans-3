@@ -78,7 +78,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                 : "bg-card2 border border-line text-muted hover:text-fg"
             }`}
           >
-            <IconStar className="w-3.5 h-3.5" /> Stars Mini App
+            <IconStar className="w-3.5 h-3.5" /> Stars PPV bot
           </button>
           <button
             onClick={() => setSection("share")}

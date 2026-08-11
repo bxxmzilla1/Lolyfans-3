@@ -34,7 +34,7 @@ function kindLabel(kind: Dialog["kind"]) {
 
 /**
  * Creator inbox: Telegram channels from the connected account. Normal DMs
- * and groups are hidden — fan chat happens in the Stars Mini App instead.
+ * and groups are hidden — PPVs are sold through the Stars bot instead.
  */
 export default function TelegramChatList() {
   const pathname = usePathname();

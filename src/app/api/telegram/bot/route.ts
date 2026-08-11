@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { getOwnerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
-  appOrigin,
   newWebhookSecret,
   setBotWebhook,
   validateBotToken,
@@ -23,14 +22,11 @@ export async function GET() {
     connected: !!data,
     botUsername: data?.bot_username ?? null,
     botId: data?.bot_id ?? null,
-    miniAppUrl: data ? `${appOrigin()}/tg-app/${ownerId}` : null,
-    deepLink: data?.bot_username
-      ? `https://t.me/${data.bot_username}?startapp=chat`
-      : null,
+    botLink: data?.bot_username ? `https://t.me/${data.bot_username}` : null,
   });
 }
 
-/** PUT: save bot token, set webhook + Mini App menu button. */
+/** PUT: save bot token and set the PPV webhook. */
 export async function PUT(req: NextRequest) {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -67,8 +63,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({
       ok: true,
       botUsername: me.username,
-      miniAppUrl: `${appOrigin()}/tg-app/${ownerId}`,
-      deepLink: `https://t.me/${me.username}?startapp=chat`,
+      botLink: `https://t.me/${me.username}`,
     });
   } catch (e) {
     return NextResponse.json(

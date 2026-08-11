@@ -5,15 +5,16 @@ import ConfirmDialog from "./ConfirmDialog";
 import { IconCheck, IconStar } from "./Icons";
 
 /**
- * Settings → Stars Mini App: connect a BotFather bot so fans can chat and
- * pay PPVs with Telegram Stars inside the Mini App.
+ * Settings → Stars PPV bot: connect a BotFather bot. You DM it a photo or
+ * video, set a Stars price, and it replies with a forwardable invoice.
+ * When a fan pays, the bot hands you the unlocked media + who to forward
+ * it to.
  */
 export default function StarsBotSettings() {
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState("");
   const [botUsername, setBotUsername] = useState<string | null>(null);
-  const [miniAppUrl, setMiniAppUrl] = useState<string | null>(null);
-  const [deepLink, setDeepLink] = useState<string | null>(null);
+  const [botLink, setBotLink] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
@@ -24,8 +25,7 @@ export default function StarsBotSettings() {
     if (res?.ok) {
       const data = await res.json();
       setBotUsername(data.botUsername ?? null);
-      setMiniAppUrl(data.miniAppUrl ?? null);
-      setDeepLink(data.deepLink ?? null);
+      setBotLink(data.botLink ?? null);
     }
     setLoading(false);
   }
@@ -51,8 +51,7 @@ export default function StarsBotSettings() {
       }
       setToken("");
       setBotUsername(data.botUsername ?? null);
-      setMiniAppUrl(data.miniAppUrl ?? null);
-      setDeepLink(data.deepLink ?? null);
+      setBotLink(data.botLink ?? null);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
@@ -65,8 +64,7 @@ export default function StarsBotSettings() {
     setBusy(true);
     await fetch("/api/telegram/bot", { method: "DELETE" });
     setBotUsername(null);
-    setMiniAppUrl(null);
-    setDeepLink(null);
+    setBotLink(null);
     setBusy(false);
   }
 
@@ -79,13 +77,14 @@ export default function StarsBotSettings() {
       <div>
         <p className="text-sm font-semibold flex items-center gap-2">
           <IconStar className="w-4 h-4 text-amber-400" />
-          Stars Mini App
+          Stars PPV bot
         </p>
         <p className="text-xs text-muted mt-0.5">
-          Connect a bot from @BotFather. Fans open your Mini App inside
-          Telegram to chat with you and unlock PPVs with{" "}
-          <span className="text-fg font-semibold">Telegram Stars</span> — no
-          Stripe. Earnings go to your bot&apos;s Stars balance.
+          Connect a bot from @BotFather. DM it a photo or video and it turns
+          it into a PPV invoice you can forward to any Telegram user. They
+          pay with <span className="text-fg font-semibold">Telegram Stars</span>{" "}
+          — the bot then sends you the unlocked media and who to forward it
+          to. Earnings go to your bot&apos;s Stars balance.
         </p>
       </div>
 
@@ -94,28 +93,33 @@ export default function StarsBotSettings() {
           <p className="text-sm font-semibold text-amber-200">
             Connected · @{botUsername}
           </p>
-          {deepLink && (
+          {botLink && (
             <div className="space-y-1">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-muted">
-                Share with fans
+                Your bot
               </p>
               <input
                 readOnly
-                value={deepLink}
+                value={botLink}
                 className="w-full bg-card border border-line rounded-xl px-3 py-2 text-sm"
                 onFocus={(e) => e.target.select()}
               />
             </div>
           )}
-          {miniAppUrl && (
-            <p className="text-[11px] text-muted break-all">
-              Mini App URL (also set as the bot menu button): {miniAppUrl}
-            </p>
-          )}
           <ol className="text-xs text-muted list-decimal pl-4 space-y-1">
-            <li>In @BotFather → your bot → Bot Settings → configure Menu Button if needed</li>
-            <li>Share the t.me link above — fans tap Open chat / Mini App</li>
-            <li>Reply and send Stars PPVs from the Stars section in your inbox</li>
+            <li>
+              Open the bot on Telegram and send the activation code{" "}
+              <b className="text-fg">242124</b> (first time only)
+            </li>
+            <li>
+              Send a photo or video — put the Stars price in the caption
+              (e.g. 50), or reply with it when asked
+            </li>
+            <li>Forward the invoice the bot returns to any fan</li>
+            <li>
+              After they pay, the bot sends you the unlocked media + their
+              name — forward it to them
+            </li>
           </ol>
           <button
             type="button"
@@ -139,7 +143,7 @@ export default function StarsBotSettings() {
           />
           <p className="text-[11px] text-muted">
             Create a bot with @BotFather → /newbot, then paste the token here.
-            We set the webhook and Mini App menu automatically.
+            We set up the webhook automatically.
           </p>
           {error && <p className="text-sm text-red-400">{error}</p>}
           <button
@@ -164,7 +168,7 @@ export default function StarsBotSettings() {
       {confirmOff && (
         <ConfirmDialog
           title="Disconnect Stars bot?"
-          message="Fans won't be able to open the Mini App or pay with Stars until you connect a bot again."
+          message="The bot will stop making PPVs and taking Stars payments until you connect one again."
           onConfirm={() => void disconnect()}
           onCancel={() => setConfirmOff(false)}
         />
