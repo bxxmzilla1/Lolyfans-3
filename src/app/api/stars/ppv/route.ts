@@ -52,15 +52,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // The vault item must belong to the signed-in creator.
+  // The vault item must belong to the signed-in creator. (limit(1), not
+  // maybeSingle — the same file registered twice must not error out.)
   const db = supabaseAdmin();
-  const { data: item } = await db
+  const { data: items } = await db
     .from("vault_items")
     .select("id")
     .eq("owner_id", ownerId)
     .eq("media_path", mediaPath)
-    .maybeSingle();
-  if (!item) {
+    .limit(1);
+  if (!items?.length) {
     return NextResponse.json({ error: "Not in your vault" }, { status: 404 });
   }
 
