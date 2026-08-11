@@ -8,24 +8,27 @@ import ApiKeyManager from "./ApiKeyManager";
 import SubscriptionSettings from "./SubscriptionSettings";
 import TelegramSettings from "./TelegramSettings";
 import ShareLinkSettings from "./ShareLinkSettings";
+import StarsBotSettings from "./StarsBotSettings";
 import Portal from "./Portal";
 import {
   IconKey,
   IconLink,
   IconLogout,
   IconSend,
+  IconStar,
   IconTip,
 } from "./Icons";
 
 type Section =
   | "share"
+  | "stars"
   | "subscriptions"
   | "telegram"
   | "links"
   | "apikey";
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
-  const [section, setSection] = useState<Section>("share");
+  const [section, setSection] = useState<Section>("stars");
   const router = useRouter();
 
   useEffect(() => {
@@ -67,6 +70,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </header>
 
         <div className="shrink-0 flex gap-1.5 px-5 pt-4 pb-2 border-b border-line bg-card/40 overflow-x-auto scrollbar-none [&>button]:shrink-0">
+          <button
+            onClick={() => setSection("stars")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+              section === "stars"
+                ? "bg-amber-500 text-black"
+                : "bg-card2 border border-line text-muted hover:text-fg"
+            }`}
+          >
+            <IconStar className="w-3.5 h-3.5" /> Stars Mini App
+          </button>
           <button
             onClick={() => setSection("share")}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
@@ -125,12 +138,15 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             className={`mx-auto w-full ${
               section === "subscriptions" ||
               section === "telegram" ||
-              section === "share"
+              section === "share" ||
+              section === "stars"
                 ? "max-w-2xl"
                 : "max-w-6xl"
             }`}
           >
-            {section === "share" ? (
+            {section === "stars" ? (
+              <StarsBotSettings />
+            ) : section === "share" ? (
               <ShareLinkSettings />
             ) : section === "subscriptions" ? (
               <SubscriptionSettings />
