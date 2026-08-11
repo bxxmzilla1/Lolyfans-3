@@ -14,6 +14,7 @@ type Msg = {
   price_stars: number;
   status: string;
   media_locked?: boolean;
+  unlock_id: string | null;
   created_at: string;
 };
 
@@ -247,15 +248,30 @@ export default function StarsMiniApp({ ownerId }: { ownerId: string }) {
                     type="button"
                     onClick={() => void unlock(m)}
                     disabled={payingId === m.id}
-                    className="flex flex-col items-center gap-2 py-4 px-6 min-w-[160px]"
+                    className="relative overflow-hidden rounded-xl flex flex-col items-center justify-center gap-2 py-4 px-6 min-w-[160px] min-h-[140px]"
                   >
-                    <span className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center">
+                    {m.unlock_id && (
+                      // Blurred still of the actual photo/video — never clear.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/stars/teaser/${m.unlock_id}`}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover"
+                        draggable={false}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display =
+                            "none";
+                        }}
+                      />
+                    )}
+                    <span className="absolute inset-0 bg-black/40" />
+                    <span className="relative w-12 h-12 rounded-full bg-black/50 flex items-center justify-center">
                       <IconLock className="w-6 h-6 text-amber-400" />
                     </span>
-                    <span className="font-bold text-amber-300">
+                    <span className="relative font-bold text-amber-300 drop-shadow">
                       {m.price_stars} Stars
                     </span>
-                    <span className="text-xs text-white/60">
+                    <span className="relative text-xs text-white/80 drop-shadow">
                       {payingId === m.id ? "Opening…" : "Tap to unlock"}
                     </span>
                   </button>

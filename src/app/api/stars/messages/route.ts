@@ -3,12 +3,12 @@ import { getOwnerId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
 import {
+  appOrigin,
   botForOwner,
   botSendMedia,
   botSendStarsInvoice,
   notifyUnreadIfAway,
 } from "@/lib/telegramBot";
-import { mediaUrl } from "@/lib/utils";
 
 /** Creator or fan (via initData handled elsewhere): list messages for a stars chat. */
 export async function GET(req: NextRequest) {
@@ -195,8 +195,9 @@ export async function POST(req: NextRequest) {
         title: `${priceStars} Stars unlock`,
         description: content || "Unlock this photo/video",
         stars: priceStars,
-        photoUrl:
-          mediaType === "image" ? mediaUrl(mediaPath) : undefined,
+        // Blurred still (works for photos and video frames) — never the
+        // clear file before payment.
+        photoUrl: `${appOrigin()}/api/stars/teaser/${unlockId}`,
       });
     } else {
       await botSendMedia({

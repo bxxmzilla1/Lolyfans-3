@@ -15,6 +15,7 @@ type Msg = {
   locked: boolean;
   price_stars: number;
   status: string;
+  unlock_id: string | null;
   created_at: string;
 };
 
@@ -134,8 +135,23 @@ export default function StarsChatView({
                   />
                 )}
                 {m.media_path && m.locked && (
-                  <div className="w-40 h-28 rounded-xl bg-black/40 flex items-center justify-center mb-1">
-                    <IconLock className="w-8 h-8 text-amber-400" />
+                  <div className="relative w-40 h-28 rounded-xl overflow-hidden bg-black/40 flex items-center justify-center mb-1">
+                    {m.unlock_id && (
+                      // Same blurred still the fan sees while it's locked.
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/api/stars/teaser/${m.unlock_id}`}
+                        alt=""
+                        className="absolute inset-0 w-full h-full object-cover"
+                        draggable={false}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display =
+                            "none";
+                        }}
+                      />
+                    )}
+                    <span className="absolute inset-0 bg-black/30" />
+                    <IconLock className="relative w-8 h-8 text-amber-400 drop-shadow" />
                   </div>
                 )}
                 {m.content && (

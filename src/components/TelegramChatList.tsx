@@ -33,8 +33,8 @@ function kindLabel(kind: Dialog["kind"]) {
 }
 
 /**
- * Creator inbox: Telegram DMs, groups and channels from the connected
- * account — so sending PPVs and replies is one tap into the right chat.
+ * Creator inbox: Telegram channels from the connected account. Normal DMs
+ * and groups are hidden — fan chat happens in the Stars Mini App instead.
  */
 export default function TelegramChatList() {
   const pathname = usePathname();
@@ -115,6 +115,7 @@ export default function TelegramChatList() {
 
   const q = search.trim().toLowerCase();
   const filtered = (dialogs ?? [])
+    .filter((d) => d.kind === "channel")
     .filter((d) => {
       if (!q) return true;
       return (
@@ -182,7 +183,7 @@ export default function TelegramChatList() {
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search Telegram…"
+            placeholder="Search channels…"
             className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
           />
         </div>
@@ -191,7 +192,7 @@ export default function TelegramChatList() {
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
           <p className="px-5 py-10 text-center text-sm text-muted">
-            {q ? "No chats match your search" : "No Telegram chats yet"}
+            {q ? "No channels match your search" : "No Telegram channels yet"}
           </p>
         ) : (
           filtered.map((d) => {

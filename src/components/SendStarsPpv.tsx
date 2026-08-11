@@ -15,6 +15,7 @@ type Msg = {
   locked: boolean;
   price_stars: number;
   status: string;
+  unlock_id: string | null;
   created_at: string;
 };
 

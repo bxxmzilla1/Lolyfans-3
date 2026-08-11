@@ -2,13 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
 import {
+  appOrigin,
   botForOwner,
   botCreateStarsInvoiceLink,
   ensureStarsChat,
   parseWebAppUser,
   verifyWebAppInitData,
 } from "@/lib/telegramBot";
-import { mediaUrl } from "@/lib/utils";
 
 async function fanFromInit(
   ownerId: string,
@@ -142,10 +142,8 @@ export async function PUT(req: NextRequest) {
       title: `${unlock.price_stars} Stars unlock`,
       description: "Unlock this photo/video",
       stars: unlock.price_stars,
-      photoUrl:
-        unlock.media_type === "image"
-          ? mediaUrl(unlock.media_path)
-          : undefined,
+      // Blurred still — the invoice must never show the clear file.
+      photoUrl: `${appOrigin()}/api/stars/teaser/${unlock.id}`,
     });
     return NextResponse.json({ invoiceLink: link });
   } catch (e) {
