@@ -2,6 +2,7 @@ import "server-only";
 import { createHmac, timingSafeEqual, randomBytes } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { mediaUrl } from "@/lib/utils";
+import { STARS_TEASER_WIDTH, STARS_TEASER_HEIGHT } from "@/lib/telegram";
 
 /** Private code the creator must send to the bot before it makes PPVs. */
 export const BOT_ACTIVATION_CODE = "242124";
@@ -263,7 +264,13 @@ export async function botSendPpvBubble(opts: {
       currency: "XTR",
       prices: [{ label: `${opts.stars} Stars`, amount: opts.stars }],
       ...(opts.mediaPath
-        ? { photo_url: `${appOrigin()}/api/stars/teaser/${opts.unlockId}` }
+        ? {
+            photo_url: `${appOrigin()}/api/stars/teaser/${opts.unlockId}`,
+            // Known teaser canvas — without these hints Telegram lays the
+            // invoice photo out as a small thumbnail.
+            photo_width: STARS_TEASER_WIDTH,
+            photo_height: STARS_TEASER_HEIGHT,
+          }
         : {}),
     });
 

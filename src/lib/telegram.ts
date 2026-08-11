@@ -861,6 +861,29 @@ export async function buildBlurredStill(
   return still;
 }
 
+/** Fixed canvas for Stars PPV teasers — sent as invoice photo dimensions so
+ *  Telegram renders the bubble photo large instead of a small thumbnail. */
+export const STARS_TEASER_WIDTH = 720;
+export const STARS_TEASER_HEIGHT = 900;
+
+/**
+ * Blurred still for a Stars PPV invoice, cover-cropped to a fixed portrait
+ * canvas. Upscaling is invisible on a heavily blurred image, and the known
+ * dimensions let sendInvoice pass photo_width/photo_height.
+ */
+export async function buildStarsTeaser(
+  mediaPath: string,
+  mediaType: "image" | "video"
+): Promise<Buffer> {
+  const still = await buildBlurredStill(mediaPath, mediaType);
+  const sharp = (await import("sharp")).default;
+  return sharp(still)
+    .resize(STARS_TEASER_WIDTH, STARS_TEASER_HEIGHT, { fit: "cover" })
+    .blur(10)
+    .jpeg({ quality: 70 })
+    .toBuffer();
+}
+
 /** Send a plain text reply into a Telegram dialog. */
 export async function tgSendText(opts: {
   session: string;

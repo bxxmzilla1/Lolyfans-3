@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { buildBlurredStill } from "@/lib/telegram";
+import { buildStarsTeaser } from "@/lib/telegram";
 
 /**
  * Public blurred still of a Stars PPV — never the clear file. Keyed by the
@@ -22,7 +22,7 @@ export async function GET(
   }
 
   try {
-    const jpeg = await buildBlurredStill(
+    const jpeg = await buildStarsTeaser(
       unlock.media_path,
       unlock.media_type === "video" ? "video" : "image"
     );
