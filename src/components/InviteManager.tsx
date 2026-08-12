@@ -5,7 +5,7 @@ import type { Invite } from "@/lib/invites";
 import CountryPicker, { countryFlag, countryName } from "./CountryPicker";
 import ConfirmDialog from "./ConfirmDialog";
 import Portal from "./Portal";
-import { IconCheck, IconEdit, IconRefresh } from "./Icons";
+import { IconCheck, IconEdit, IconMapPin, IconRefresh } from "./Icons";
 
 type InviteWithStats = Invite & {
   stats: { joins: number; clicks: number; countries: Record<string, number> };
@@ -22,6 +22,152 @@ function redirectHost(url: string): string {
   } catch {
     return url;
   }
+}
+
+type Visit = {
+  ip: string;
+  country: string | null;
+  city: string | null;
+  region: string | null;
+  org: string | null;
+  created_at: string;
+  last_seen_at: string | null;
+};
+
+function visitTime(iso: string): string {
+  return new Date(iso).toLocaleString([], {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+/** Geo-located visitors of one link (ipinfo) in a popup. */
+function VisitorsModal({
+  invite,
+  onClose,
+}: {
+  invite: InviteWithStats;
+  onClose: () => void;
+}) {
+  const [visits, setVisits] = useState<Visit[] | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/invites/visits?id=${encodeURIComponent(invite.id)}`)
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        if (res.ok) setVisits(data.visits ?? []);
+        else setError(data.error || "Could not load visitors");
+      })
+      .catch(() => {
+        if (!cancelled) setError("Could not load visitors");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [invite.id]);
+
+  return (
+    <Portal>
+      <div
+        className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+        onClick={onClose}
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="w-full max-w-md bg-card border border-line rounded-2xl fade-up max-h-[85dvh] flex flex-col overflow-hidden"
+        >
+          <header className="px-4 py-3 border-b border-line flex items-center justify-between gap-2 shrink-0">
+            <div className="min-w-0 flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl ig-gradient glow-accent flex items-center justify-center shrink-0">
+                <IconMapPin className="w-4.5 h-4.5 text-white" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-bold truncate">
+                  Visitors — {invite.label || "Invite link"}
+                </p>
+                <p className="text-muted text-xs truncate">
+                  /i/{invite.code}
+                  {visits ? ` · ${visits.length} unique IP${visits.length === 1 ? "" : "s"}` : ""}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="w-8 h-8 rounded-lg bg-card2 border border-line text-muted hover:text-fg flex items-center justify-center shrink-0"
+            >
+              ✕
+            </button>
+          </header>
+
+          <div className="flex-1 overflow-y-auto p-3">
+            {error ? (
+              <p className="py-10 text-center text-sm text-red-400">{error}</p>
+            ) : visits === null ? (
+              <div className="space-y-2 py-2">
+                {[0, 1, 2, 3].map((i) => (
+                  <div
+                    key={i}
+                    className="h-14 rounded-xl bg-card2 animate-pulse"
+                  />
+                ))}
+              </div>
+            ) : visits.length === 0 ? (
+              <p className="py-10 text-center text-sm text-muted">
+                No visitors yet — locations show up here after the next
+                clicks.
+              </p>
+            ) : (
+              <ul className="space-y-1.5">
+                {visits.map((v) => {
+                  const place = [v.city, v.region]
+                    .filter(Boolean)
+                    .join(", ");
+                  return (
+                    <li
+                      key={v.ip}
+                      className="rounded-xl bg-card2 border border-line px-3 py-2.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-base shrink-0">
+                          {v.country ? countryFlag(v.country) : "🌐"}
+                        </span>
+                        <p className="text-sm font-semibold truncate flex-1">
+                          {place ||
+                            (v.country
+                              ? countryName(v.country)
+                              : "Unknown location")}
+                        </p>
+                        <span className="text-[11px] text-muted shrink-0">
+                          {visitTime(v.last_seen_at || v.created_at)}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2 mt-0.5 pl-7">
+                        <p className="text-xs text-muted truncate flex-1">
+                          {v.country ? `${countryName(v.country)} · ` : ""}
+                          <span className="font-mono">{v.ip}</span>
+                        </p>
+                      </div>
+                      {v.org && (
+                        <p className="text-[11px] text-muted/80 truncate mt-0.5 pl-7">
+                          {v.org}
+                        </p>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+        </div>
+      </div>
+    </Portal>
+  );
 }
 
 export default function InviteManager() {
@@ -45,6 +191,8 @@ export default function InviteManager() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkCountries, setBulkCountries] = useState<string[]>([]);
   const [applying, setApplying] = useState(false);
+  // Geo-located visitors popup
+  const [visitorsFor, setVisitorsFor] = useState<InviteWithStats | null>(null);
 
   async function load() {
     const res = await fetch("/api/invites").catch(() => null);
@@ -429,6 +577,15 @@ export default function InviteManager() {
                   {copied === invite.id ? "Copied!" : "Copy link"}
                 </button>
                 <button
+                  onClick={() => setVisitorsFor(invite)}
+                  title="Visitor locations"
+                  aria-label="Visitor locations"
+                  className="px-3 bg-card2 border border-line rounded-lg py-2 text-xs font-semibold flex items-center gap-1.5 text-muted hover:text-fg transition-colors"
+                >
+                  <IconMapPin className="w-3.5 h-3.5" />
+                  Visitors
+                </button>
+                <button
                   onClick={() => toggleActive(invite)}
                   className="flex-1 bg-card2 border border-line rounded-lg py-2 text-xs font-semibold"
                 >
@@ -461,6 +618,13 @@ export default function InviteManager() {
           message="Delete this invite link? Existing chats stay."
           onConfirm={() => remove(deleting)}
           onCancel={() => setDeleting(null)}
+        />
+      )}
+
+      {visitorsFor && (
+        <VisitorsModal
+          invite={visitorsFor}
+          onClose={() => setVisitorsFor(null)}
         />
       )}
 

@@ -7,6 +7,7 @@ import {
   Invite,
 } from "@/lib/invites";
 import { recordInviteEvent } from "@/lib/inviteEvents";
+import { lookupIp } from "@/lib/ipinfo";
 
 export const dynamic = "force-dynamic";
 
@@ -32,30 +33,46 @@ export async function GET(
   const country = req.headers.get("x-vercel-ip-country")?.toUpperCase() || null;
   const visitorIp = ipFromHeaders(req.headers);
 
-  // Count this visit as a link click (unique per IP; revisits are no-ops),
-  // plus a timestamped row for the full log. Runs after the response is sent
-  // so it never delays the redirect.
+  // Count this visit as a link click (unique per IP), geo-locate it through
+  // ipinfo for the Visitors popup, plus a timestamped row for the full log.
+  // Runs after the response is sent so it never delays the redirect.
   if (invite && visitorIp) {
     after(async () => {
-      const { error } = await db
-        .from("invite_visits")
-        .upsert(
-          { invite_id: invite.id, ip: visitorIp, country },
-          { onConflict: "invite_id,ip", ignoreDuplicates: true }
-        );
-      if (error && /country/i.test(error.message)) {
+      const geo = await lookupIp(visitorIp);
+      const { error } = await db.from("invite_visits").upsert(
+        {
+          invite_id: invite.id,
+          ip: visitorIp,
+          country: geo?.country || country,
+          city: geo?.city ?? null,
+          region: geo?.region ?? null,
+          org: geo?.org ?? null,
+          last_seen_at: new Date().toISOString(),
+        },
+        { onConflict: "invite_id,ip" }
+      );
+      if (error) {
+        // Geo columns missing before the migration — keep the click count.
         await db
           .from("invite_visits")
           .upsert(
-            { invite_id: invite.id, ip: visitorIp },
+            { invite_id: invite.id, ip: visitorIp, country },
             { onConflict: "invite_id,ip", ignoreDuplicates: true }
-          );
+          )
+          .then(async (r) => {
+            if (r.error) {
+              await db.from("invite_visits").upsert(
+                { invite_id: invite.id, ip: visitorIp },
+                { onConflict: "invite_id,ip", ignoreDuplicates: true }
+              );
+            }
+          });
       }
       await recordInviteEvent({
         inviteId: invite.id,
         kind: "click",
         ip: visitorIp,
-        country,
+        country: geo?.country || country,
       });
     });
   }

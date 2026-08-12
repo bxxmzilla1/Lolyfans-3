@@ -33,6 +33,12 @@ alter table invite_visits enable row level security;
 -- before this column existed (those count as allowed).
 alter table invite_visits add column if not exists country text;
 
+-- Visitor geolocation from ipinfo.io — shown in the per-link Visitors popup.
+alter table invite_visits add column if not exists city text;
+alter table invite_visits add column if not exists region text;
+alter table invite_visits add column if not exists org text;
+alter table invite_visits add column if not exists last_seen_at timestamptz;
+
 -- One chat per guest that joined through an invite
 create table if not exists chats (
   id uuid primary key default gen_random_uuid(),
