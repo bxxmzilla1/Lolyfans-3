@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { IconChart, IconKey, IconRefresh } from "./Icons";
 
 type Row = {
@@ -12,13 +12,11 @@ type Row = {
   revenue: number;
 };
 
-type Range = "today" | "7d" | "30d" | "month";
+type Range = "today" | "month";
 type GroupBy = "date" | "placement" | "country";
 
 const RANGES: { id: Range; label: string }[] = [
   { id: "today", label: "Today" },
-  { id: "7d", label: "7 days" },
-  { id: "30d", label: "30 days" },
   { id: "month", label: "This month" },
 ];
 
@@ -36,16 +34,10 @@ function rangeDates(range: Range): { start: string; finish: string } {
   const now = new Date();
   const finish = isoDay(now);
   if (range === "today") return { start: finish, finish };
-  if (range === "month") {
-    return {
-      start: isoDay(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
-      finish,
-    };
-  }
-  const days = range === "7d" ? 6 : 29;
-  const start = new Date(now);
-  start.setUTCDate(start.getUTCDate() - days);
-  return { start: isoDay(start), finish };
+  return {
+    start: isoDay(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))),
+    finish,
+  };
 }
 
 const money = (n: number) =>
@@ -59,11 +51,12 @@ const compact = (n: number) => n.toLocaleString("en-US");
  */
 export default function AdsterraDashboard() {
   const [configured, setConfigured] = useState<boolean | null>(null);
-  const [range, setRange] = useState<Range>("7d");
+  const [range, setRange] = useState<Range>("today");
   const [groupBy, setGroupBy] = useState<GroupBy>("date");
   const [rows, setRows] = useState<Row[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     fetch("/api/adsterra/token")
@@ -72,30 +65,54 @@ export default function AdsterraDashboard() {
       .catch(() => setConfigured(false));
   }, []);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    const { start, finish } = rangeDates(range);
-    const res = await fetch(
-      `/api/adsterra/stats?start_date=${start}&finish_date=${finish}&group_by=${groupBy}`
-    ).catch(() => null);
-    const data = await res?.json().catch(() => null);
-    setLoading(false);
-    if (!res?.ok) {
-      setError(data?.error || "Could not load stats");
-      setRows([]);
-      return;
-    }
-    const sorted = [...(data.rows as Row[])].sort((a, b) =>
-      groupBy === "date"
-        ? a.label.localeCompare(b.label)
-        : b.revenue - a.revenue
-    );
-    setRows(sorted);
-  }, [range, groupBy]);
+  // silent = background auto-refresh: no spinner, and a failed poll (rate
+  // limit, blip) never wipes the stats already on screen.
+  const load = useCallback(
+    async (silent = false) => {
+      if (inFlightRef.current) return;
+      inFlightRef.current = true;
+      if (!silent) {
+        setLoading(true);
+        setError("");
+      }
+      const { start, finish } = rangeDates(range);
+      const res = await fetch(
+        `/api/adsterra/stats?start_date=${start}&finish_date=${finish}&group_by=${groupBy}`
+      ).catch(() => null);
+      const data = await res?.json().catch(() => null);
+      inFlightRef.current = false;
+      if (!silent) setLoading(false);
+      if (!res?.ok) {
+        if (!silent) {
+          setError(data?.error || "Could not load stats");
+          setRows([]);
+        }
+        return;
+      }
+      const sorted = [...(data.rows as Row[])].sort((a, b) =>
+        groupBy === "date"
+          ? a.label.localeCompare(b.label)
+          : b.revenue - a.revenue
+      );
+      setError("");
+      setRows(sorted);
+    },
+    [range, groupBy]
+  );
 
   useEffect(() => {
     if (configured) void load();
+  }, [configured, load]);
+
+  // Live dashboard: refresh every second in the background (skipped while a
+  // request is still running or the tab is hidden).
+  useEffect(() => {
+    if (!configured) return;
+    const timer = setInterval(() => {
+      if (document.hidden) return;
+      void load(true);
+    }, 1000);
+    return () => clearInterval(timer);
   }, [configured, load]);
 
   const totals = useMemo(() => {
@@ -139,7 +156,7 @@ export default function AdsterraDashboard() {
             </div>
             <div className="min-w-0">
               <h1 className="font-bold text-lg leading-tight">Earnings</h1>
-              <p className="text-muted text-xs">Adsterra · updates hourly</p>
+              <p className="text-muted text-xs">Adsterra · live, refreshes every second</p>
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
