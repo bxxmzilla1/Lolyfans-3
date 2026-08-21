@@ -8,9 +8,12 @@ import { mediaUrl } from "@/lib/utils";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import Logo from "@/components/Logo";
 import {
+  AdsterraBanner300x250,
   AdsterraBanner468,
+  AdsterraLeaderboard,
   AdsterraNativeBanner,
   AdsterraScripts,
+  AdsterraSideRails,
 } from "@/components/AdsterraAds";
 
 export const dynamic = "force-dynamic";
@@ -75,14 +78,17 @@ export default async function Home() {
       </header>
 
       <div className="mx-auto max-w-lg lg:max-w-2xl lg:px-8 pb-10">
-        {/* Adsterra: 468x60 banner above the feed. */}
+        {/* Adsterra: leaderboard (728x90 desktop / 320x50 mobile) and the
+            468x60 banner above the feed. */}
+        <AdsterraLeaderboard />
         <AdsterraBanner468 />
 
         <div className="lg:bg-card lg:border lg:border-line lg:rounded-2xl lg:overflow-hidden">
           <PostFeed posts={feedPosts} canInteract={false} />
         </div>
 
-        {/* Adsterra: native banner below the feed. */}
+        {/* Adsterra: 300x250 rectangle + native banner below the feed. */}
+        <AdsterraBanner300x250 />
         <AdsterraNativeBanner />
 
         <p className="text-center text-xs text-muted pt-4">
@@ -92,6 +98,9 @@ export default async function Home() {
           </Link>
         </p>
       </div>
+
+      {/* Adsterra: skyscraper rails on wide screens. */}
+      <AdsterraSideRails />
     </main>
   );
 }

@@ -11,9 +11,12 @@ import FollowButton from "@/components/FollowButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
 import {
+  AdsterraBanner300x250,
   AdsterraBanner468,
+  AdsterraLeaderboard,
   AdsterraNativeBanner,
   AdsterraScripts,
+  AdsterraSideRails,
 } from "@/components/AdsterraAds";
 import { IconHeart, IconMapPin, IconVerified } from "@/components/Icons";
 
@@ -167,16 +170,22 @@ export default async function CreatorProfilePage({
             )}
           </div>
 
-          {/* Adsterra: 468x60 banner between the identity block and the feed. */}
+          {/* Adsterra: leaderboard (728x90 desktop / 320x50 mobile) and the
+              468x60 banner between the identity block and the feed. */}
+          <AdsterraLeaderboard />
           <AdsterraBanner468 />
         </section>
 
         <div className="border-t border-line">
           <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
 
-          {/* Adsterra: native banner below the feed. */}
+          {/* Adsterra: 300x250 rectangle + native banner below the feed. */}
+          <AdsterraBanner300x250 />
           <AdsterraNativeBanner />
         </div>
+
+        {/* Adsterra: skyscraper rails on wide screens. */}
+        <AdsterraSideRails />
     </GuestPage>
   );
 }
