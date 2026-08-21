@@ -428,16 +428,6 @@ textarea {
   box-shadow: 0 0 8px rgba(0, 175, 240, 0.7);
 }
 
-/* Press-and-hold progress fill for the ad-gate unlock/tap gestures */
-@keyframes lf-hold-fill {
-  from {
-    width: 0%;
-  }
-  to {
-    width: 100%;
-  }
-}
-
 /* Fullscreen video fills the screen */
 .video-wrap:fullscreen {
   display: flex;

@@ -63,8 +63,6 @@ export type AdGate = {
   segmentSecs: number;
   /** Ad clicks required for each next part. */
   segmentClicks: number;
-  /** Adsterra ad URL opened on each click (e.g. a Direct Link). */
-  link: string | null;
 };
 
 export type OwnerProfile = {
@@ -98,13 +96,7 @@ function parseAdGate(meta: Record<string, unknown>): AdGate | null {
   // (clicks = 0 means the first part plays free but later parts still charge).
   const segmentGate = segmentSecs > 0 && segmentClicks > 0;
   if (clicks < 1 && !segmentGate) return null;
-  const link = String(meta.ad_gate_link ?? "").trim();
-  return {
-    clicks,
-    segmentSecs,
-    segmentClicks,
-    link: /^https?:\/\//i.test(link) ? link : null,
-  };
+  return { clicks, segmentSecs, segmentClicks };
 }
 
 /** Display profiles (name, picture, checkmark) for a set of creators. */
