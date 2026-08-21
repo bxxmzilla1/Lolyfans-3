@@ -169,12 +169,12 @@ export default function AdSettings() {
           />
           <span>
             <span className="block text-xs font-semibold">
-              Open an ad when the video is tapped
+              Open an ad when the video is pressed and held
             </span>
             <span className="block text-[11px] text-muted mt-0.5">
-              Any tap on a playing video opens your ad link in a new tab in
-              the background — the video keeps playing and the visitor stays
-              on your page. Needs the ad link below.
+              Pressing and holding a playing video for 1 second opens your ad
+              link in a new tab in the background — the video keeps playing
+              and the visitor stays on your page. Needs the ad link below.
             </span>
           </span>
         </label>
@@ -231,10 +231,14 @@ export default function AdSettings() {
           ) : null}
           {tapAd && (
             <p>
-              Every tap on a playing video opens your ad link in a background
-              tab.
+              Pressing and holding a playing video for 1 second opens your ad
+              link in a background tab.
             </p>
           )}
+          <p>
+            All ad actions require a 1-second press-and-hold, so every counted
+            click is deliberate.
+          </p>
         </div>
       )}
     </div>

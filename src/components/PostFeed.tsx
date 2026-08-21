@@ -211,6 +211,47 @@ function CommentsSheet({
  * reload it before the visitor comes back — without persistence that reload
  * would wipe their clicks and re-lock the video they just paid for.
  */
+/** How long the visitor must press and hold before an ad action fires. */
+const HOLD_MS = 1000;
+
+/**
+ * Press-and-hold gesture: the action fires when the pointer is released
+ * after being held for HOLD_MS. Firing on release keeps window.open inside
+ * a real user gesture (popup blockers allow it) and filters out accidental
+ * taps, so every opened ad is a deliberate click.
+ */
+function useHold(action: () => void) {
+  const [holding, setHolding] = useState(false);
+  const startRef = useRef(0);
+
+  function down(e: React.PointerEvent) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    startRef.current = Date.now();
+    setHolding(true);
+  }
+  function up() {
+    const done = startRef.current > 0 && Date.now() - startRef.current >= HOLD_MS;
+    startRef.current = 0;
+    setHolding(false);
+    if (done) action();
+  }
+  function cancel() {
+    startRef.current = 0;
+    setHolding(false);
+  }
+
+  return {
+    holding,
+    props: {
+      onPointerDown: down,
+      onPointerUp: up,
+      onPointerLeave: cancel,
+      onPointerCancel: cancel,
+      onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+    },
+  };
+}
+
 function FeedVideo({
   id,
   url,
@@ -358,10 +399,10 @@ function FeedVideo({
     if (gate.link) window.open(gate.link, "_blank", "noopener");
   }
 
-  // Ad Settings → "ad on tap": tapping the playing video opens the ad in a
-  // new tab and immediately pulls focus back, so it lands in the background
-  // and the video keeps playing. Best-effort — some mobile browsers always
-  // foreground new tabs. Throttled so accidental double-taps fire once.
+  // Ad Settings → "ad on tap": press-and-holding the playing video opens the
+  // ad in a new tab and immediately pulls focus back, so it lands in the
+  // background and the video keeps playing. Best-effort — some mobile
+  // browsers always foreground new tabs. Throttled against double-fires.
   function onVideoTap() {
     if (!gate?.tapAd || locked) return;
     const now = Date.now();
@@ -375,6 +416,11 @@ function FeedVideo({
       } catch {}
     }
   }
+
+  // Both ad actions require a deliberate 1-second press-and-hold.
+  const unlockHold = useHold(adClick);
+  const tapHold = useHold(onVideoTap);
+  const tapHoldActive = !!gate?.tapAd && !locked;
 
   function onTimeUpdate() {
     const v = videoRef.current;
@@ -420,11 +466,31 @@ function FeedVideo({
         disablePictureInPicture
         controlsList="nodownload nofullscreen noremoteplayback"
         onTimeUpdate={onTimeUpdate}
-        onClick={onVideoTap}
+        {...(tapHoldActive ? tapHold.props : {})}
+        style={
+          tapHoldActive
+            ? { WebkitTouchCallout: "none", userSelect: "none" }
+            : undefined
+        }
         className={`relative w-full h-auto max-h-[70vh] object-contain ${
           gated && locked ? "blur-xl" : ""
         }`}
       />
+
+      {/* Hold-progress pill while the visitor presses a playing video */}
+      {tapHoldActive && tapHold.holding && (
+        <div className="absolute inset-x-0 bottom-16 z-10 flex justify-center pointer-events-none">
+          <div className="px-4 py-2 rounded-full bg-black/70 backdrop-blur-sm text-white text-xs font-semibold w-44 text-center">
+            Keep holding…
+            <div className="h-1 mt-1.5 rounded-full bg-white/25 overflow-hidden">
+              <div
+                className="h-full bg-white rounded-full"
+                style={{ animation: `lf-hold-fill ${HOLD_MS}ms linear forwards` }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
 
       {gated && locked && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/55 p-4 text-center">
@@ -433,22 +499,35 @@ function FeedVideo({
           </span>
           <p className="text-white text-sm font-semibold drop-shadow">
             {round === 0
-              ? "Click the ad to unlock this video"
-              : "Click the ad to keep watching"}
+              ? "Open the ad to unlock this video"
+              : "Open the ad to keep watching"}
           </p>
           <button
             type="button"
-            onClick={adClick}
-            className="px-7 py-3 rounded-full bg-accent text-white text-sm font-bold active:opacity-80 transition-opacity"
+            {...unlockHold.props}
+            className="relative overflow-hidden px-7 py-3 rounded-full bg-accent text-white text-sm font-bold select-none touch-none"
+            style={{ WebkitTouchCallout: "none" }}
           >
-            Open ad{required > 1 ? ` · ${clicksDone}/${required}` : ""}
+            {unlockHold.holding && (
+              <span
+                aria-hidden
+                className="absolute inset-y-0 left-0 bg-white/35"
+                style={{ animation: `lf-hold-fill ${HOLD_MS}ms linear forwards` }}
+              />
+            )}
+            <span className="relative">
+              {unlockHold.holding ? "Keep holding…" : "Hold to open ad"}
+              {required > 1 ? ` · ${clicksDone}/${required}` : ""}
+            </span>
           </button>
-          {required > 1 && (
-            <p className="text-white/75 text-[11px]">
-              {required - clicksDone} click
-              {required - clicksDone === 1 ? "" : "s"} left to unlock
-            </p>
-          )}
+          <p className="text-white/75 text-[11px]">
+            Press and hold for 1 second
+            {required > 1
+              ? ` — ${required - clicksDone} click${
+                  required - clicksDone === 1 ? "" : "s"
+                } left to unlock`
+              : ""}
+          </p>
         </div>
       )}
 
