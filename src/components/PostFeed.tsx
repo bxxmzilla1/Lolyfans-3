@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Portal from "./Portal";
@@ -203,8 +203,21 @@ function CommentsSheet({
  * click opens the creator's Adsterra link and counts toward the unlock. An
  * unlock grants `segmentSecs` of playback time (0 = the whole video); when
  * the time runs out, the overlay comes back asking for the next clicks.
+ *
+ * Progress (clicks + remaining watch time) is saved in localStorage per post:
+ * opening the ad backgrounds this page, and mobile browsers often discard and
+ * reload it before the visitor comes back — without persistence that reload
+ * would wipe their clicks and re-lock the video they just paid for.
  */
-function FeedVideo({ url, gate }: { url: string; gate?: FeedAdGate | null }) {
+function FeedVideo({
+  id,
+  url,
+  gate,
+}: {
+  id: string;
+  url: string;
+  gate?: FeedAdGate | null;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
   const gated = !!gate && gate.clicks > 0;
@@ -214,9 +227,60 @@ function FeedVideo({ url, gate }: { url: string; gate?: FeedAdGate | null }) {
   // Playback-time budget left from the last unlock (seconds).
   const budgetRef = useRef(0);
   const lastTimeRef = useRef(0);
+  const lastPersistRef = useRef(0);
+  const storeKey = `lf-adgate:${id}`;
 
   const required =
     !gate || round === 0 ? gate?.clicks ?? 0 : gate.segmentClicks || gate.clicks;
+
+  // Unlock progress survives the page being reloaded after an ad visit.
+  // Infinity (whole video unlocked) is stored as -1; entries expire after 6h.
+  const persist = useCallback(
+    (state: { round: number; clicksDone: number; budget: number }) => {
+      try {
+        localStorage.setItem(
+          storeKey,
+          JSON.stringify({
+            round: state.round,
+            clicksDone: state.clicksDone,
+            budget: Number.isFinite(state.budget) ? state.budget : -1,
+            ts: Date.now(),
+          })
+        );
+      } catch {}
+    },
+    [storeKey]
+  );
+
+  useEffect(() => {
+    if (!gated) return;
+    try {
+      const raw = localStorage.getItem(storeKey);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as {
+        round?: number;
+        clicksDone?: number;
+        budget?: number;
+        ts?: number;
+      };
+      if (!saved.ts || Date.now() - saved.ts > 6 * 3600_000) {
+        localStorage.removeItem(storeKey);
+        return;
+      }
+      const savedRound = Math.max(0, Math.floor(Number(saved.round) || 0));
+      const savedClicks = Math.max(0, Math.floor(Number(saved.clicksDone) || 0));
+      const budget =
+        saved.budget === -1
+          ? Number.POSITIVE_INFINITY
+          : Math.max(0, Number(saved.budget) || 0);
+      setRound(savedRound);
+      setClicksDone(savedClicks);
+      if (savedRound > 0 && budget > 0) {
+        budgetRef.current = budget;
+        setLocked(false);
+      }
+    } catch {}
+  }, [gated, storeKey]);
 
   // The unlocking click usually opens the ad in a new tab, so this page is
   // hidden when play() runs and the browser may reject it — leaving the
@@ -252,23 +316,28 @@ function FeedVideo({ url, gate }: { url: string; gate?: FeedAdGate | null }) {
 
   function adClick() {
     if (!gate) return;
-    // Every click opens an ad — that's what earns. Without a direct link the
-    // click still counts (the page-level popunder scripts catch it).
-    if (gate.link) window.open(gate.link, "_blank", "noopener");
     const next = clicksDone + 1;
     if (next < required) {
       setClicksDone(next);
-      return;
+      // Persist BEFORE opening the ad — the browser may freeze/discard this
+      // page the moment the new tab opens.
+      persist({ round, clicksDone: next, budget: 0 });
+    } else {
+      // Unlocked: grant the playback budget and resume.
+      const budget =
+        gate.segmentSecs > 0 ? gate.segmentSecs : Number.POSITIVE_INFINITY;
+      setClicksDone(0);
+      setRound((r) => r + 1);
+      setLocked(false);
+      budgetRef.current = budget;
+      persist({ round: round + 1, clicksDone: 0, budget });
+      const v = videoRef.current;
+      lastTimeRef.current = v?.currentTime ?? 0;
+      void v?.play().catch(() => {});
     }
-    // Unlocked: grant the playback budget and resume.
-    setClicksDone(0);
-    setRound((r) => r + 1);
-    setLocked(false);
-    budgetRef.current =
-      gate.segmentSecs > 0 ? gate.segmentSecs : Number.POSITIVE_INFINITY;
-    const v = videoRef.current;
-    lastTimeRef.current = v?.currentTime ?? 0;
-    void v?.play().catch(() => {});
+    // Every click opens an ad — that's what earns. Without a direct link the
+    // click still counts (the page-level popunder scripts catch it).
+    if (gate.link) window.open(gate.link, "_blank", "noopener");
   }
 
   function onTimeUpdate() {
@@ -282,6 +351,13 @@ function FeedVideo({ url, gate }: { url: string; gate?: FeedAdGate | null }) {
     if (budgetRef.current <= 0) {
       v.pause();
       setLocked(true);
+      persist({ round, clicksDone: 0, budget: 0 });
+      return;
+    }
+    // Keep the saved remaining time roughly current (throttled to ~2s).
+    if (Date.now() - lastPersistRef.current > 2000) {
+      lastPersistRef.current = Date.now();
+      persist({ round, clicksDone: 0, budget: budgetRef.current });
     }
   }
 
@@ -462,7 +538,7 @@ export default function PostFeed({
               screen) over a blurred copy of itself. Videos loop in place with
               a mute toggle (no fullscreen); tapping an image opens it big. */}
           {post.type === "video" ? (
-            <FeedVideo url={post.url} gate={post.adGate} />
+            <FeedVideo id={post.id} url={post.url} gate={post.adGate} />
           ) : (
             <button
               onClick={() => setViewer(post)}
