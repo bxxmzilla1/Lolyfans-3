@@ -218,6 +218,29 @@ function FeedVideo({ url, gate }: { url: string; gate?: FeedAdGate | null }) {
   const required =
     !gate || round === 0 ? gate?.clicks ?? 0 : gate.segmentClicks || gate.clicks;
 
+  // The unlocking click usually opens the ad in a new tab, so this page is
+  // hidden when play() runs and the browser may reject it — leaving the
+  // unlocked video frozen. Re-check every second (and the moment the visitor
+  // comes back to the tab) and start playback as soon as it should be
+  // unlocked, so no refresh is ever needed.
+  useEffect(() => {
+    if (!gated || locked) return;
+    const tryPlay = () => {
+      const v = videoRef.current;
+      if (!v || !v.paused || budgetRef.current <= 0) return;
+      void v.play().catch(() => {});
+    };
+    tryPlay();
+    const timer = setInterval(tryPlay, 1000);
+    window.addEventListener("focus", tryPlay);
+    document.addEventListener("visibilitychange", tryPlay);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener("focus", tryPlay);
+      document.removeEventListener("visibilitychange", tryPlay);
+    };
+  }, [gated, locked]);
+
   function toggleMute() {
     const v = videoRef.current;
     if (!v) return;
