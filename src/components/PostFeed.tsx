@@ -8,7 +8,6 @@ import {
   AdsterraBanner300x250,
   AdsterraBanner468,
 } from "@/components/AdsterraAds";
-import { AD_CLICK_EVENT, useAdClickTracker } from "@/lib/adClickTracker";
 import { formatCount, formatTime, mediaUrl } from "@/lib/utils";
 import {
   IconChat,
@@ -30,6 +29,8 @@ export type FeedAdGate = {
   segmentSecs: number;
   /** Ad clicks required for each next part. */
   segmentClicks: number;
+  /** Adsterra ad URL opened on each click. */
+  link: string | null;
 };
 
 export type FeedPost = {
@@ -202,17 +203,57 @@ function CommentsSheet({
  * is set on the element directly because React doesn't reliably update the
  * muted attribute after the initial render.
  *
- * With an ad gate, the video starts locked: the visitor unlocks it by
- * clicking the real ad units already on the page (banners / native). Every
- * detected ad click counts toward the unlock. An unlock grants `segmentSecs`
- * of playback time (0 = the whole video); when the time runs out, the
- * overlay comes back asking for the next clicks.
+ * With an ad gate, the video starts locked behind an "open ad" overlay: each
+ * click opens the creator's Adsterra link and counts toward the unlock. An
+ * unlock grants `segmentSecs` of playback time (0 = the whole video); when
+ * the time runs out, the overlay comes back asking for the next clicks.
  *
  * Progress (clicks + remaining watch time) is saved in localStorage per post:
- * clicking an ad backgrounds this page, and mobile browsers often discard and
+ * opening the ad backgrounds this page, and mobile browsers often discard and
  * reload it before the visitor comes back — without persistence that reload
  * would wipe their clicks and re-lock the video they just paid for.
  */
+/** How long the visitor must press and hold before an ad action fires. */
+const HOLD_MS = 1000;
+
+/**
+ * Press-and-hold gesture: the action fires when the pointer is released
+ * after being held for HOLD_MS. Firing on release keeps window.open inside
+ * a real user gesture (popup blockers allow it) and filters out accidental
+ * taps, so every opened ad is a deliberate click.
+ */
+function useHold(action: () => void) {
+  const [holding, setHolding] = useState(false);
+  const startRef = useRef(0);
+
+  function down(e: React.PointerEvent) {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+    startRef.current = Date.now();
+    setHolding(true);
+  }
+  function up() {
+    const done = startRef.current > 0 && Date.now() - startRef.current >= HOLD_MS;
+    startRef.current = 0;
+    setHolding(false);
+    if (done) action();
+  }
+  function cancel() {
+    startRef.current = 0;
+    setHolding(false);
+  }
+
+  return {
+    holding,
+    props: {
+      onPointerDown: down,
+      onPointerUp: up,
+      onPointerLeave: cancel,
+      onPointerCancel: cancel,
+      onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+    },
+  };
+}
+
 function FeedVideo({
   id,
   url,
@@ -337,35 +378,34 @@ function FeedVideo({
     if (v.paused && !locked) void v.play().catch(() => {});
   }
 
-  // Detect real clicks on the ad units elsewhere on the page…
-  useAdClickTracker(gated && locked);
+  function adClick() {
+    if (!gate) return;
+    const next = clicksDone + 1;
+    if (next < required) {
+      setClicksDone(next);
+      // Persist BEFORE opening the ad — the browser may freeze/discard this
+      // page the moment the new tab opens.
+      persist({ round, clicksDone: next, budget: 0 });
+    } else {
+      // Unlocked: grant the playback budget and resume.
+      const budget =
+        gate.segmentSecs > 0 ? gate.segmentSecs : Number.POSITIVE_INFINITY;
+      setClicksDone(0);
+      setRound((r) => r + 1);
+      setLocked(false);
+      budgetRef.current = budget;
+      persist({ round: round + 1, clicksDone: 0, budget });
+      const v = videoRef.current;
+      lastTimeRef.current = v?.currentTime ?? 0;
+      void v?.play().catch(() => {});
+    }
+    // Every click opens an ad — that's what earns. Without a direct link the
+    // click still counts (the page-level popunder scripts catch it).
+    if (gate.link) window.open(gate.link, "_blank", "noopener");
+  }
 
-  // …and count each one toward this video's unlock.
-  useEffect(() => {
-    if (!gate || !locked) return;
-    const onAdClick = () => {
-      const next = clicksDone + 1;
-      if (next < required) {
-        setClicksDone(next);
-        // Persist right away — the ad click may background/reload this page.
-        persist({ round, clicksDone: next, budget: 0 });
-      } else {
-        // Unlocked: grant the playback budget and resume.
-        const budget =
-          gate.segmentSecs > 0 ? gate.segmentSecs : Number.POSITIVE_INFINITY;
-        setClicksDone(0);
-        setRound((r) => r + 1);
-        setLocked(false);
-        budgetRef.current = budget;
-        persist({ round: round + 1, clicksDone: 0, budget });
-        const v = videoRef.current;
-        lastTimeRef.current = v?.currentTime ?? 0;
-        void v?.play().catch(() => {});
-      }
-    };
-    window.addEventListener(AD_CLICK_EVENT, onAdClick);
-    return () => window.removeEventListener(AD_CLICK_EVENT, onAdClick);
-  }, [gate, locked, clicksDone, required, round, persist]);
+  // Unlocking requires a deliberate 1-second press-and-hold.
+  const unlockHold = useHold(adClick);
 
   function onTimeUpdate() {
     const v = videoRef.current;
@@ -429,14 +469,30 @@ function FeedVideo({
               ? "This video is locked"
               : "Unlock to keep watching"}
           </p>
-          <p className="px-6 py-2.5 rounded-full bg-accent text-white text-sm font-bold">
-            Tap {required === 1 ? "an ad" : `${required} ads`} on this page to
-            unlock
-          </p>
+          <button
+            type="button"
+            {...unlockHold.props}
+            className="relative overflow-hidden px-7 py-3 rounded-full bg-accent text-white text-sm font-bold select-none touch-none"
+            style={{ WebkitTouchCallout: "none" }}
+          >
+            {unlockHold.holding && (
+              <span
+                aria-hidden
+                className="absolute inset-y-0 left-0 bg-white/35"
+                style={{ animation: `lf-hold-fill ${HOLD_MS}ms linear forwards` }}
+              />
+            )}
+            <span className="relative">
+              {unlockHold.holding ? "Keep holding…" : "Hold to unlock"}
+              {required > 1 ? ` · ${clicksDone}/${required}` : ""}
+            </span>
+          </button>
           <p className="text-white/75 text-[11px]">
-            {clicksDone}/{required} ad{required === 1 ? "" : "s"} tapped
-            {required - clicksDone > 0
-              ? ` — ${required - clicksDone} more to go`
+            Press and hold for 1 second
+            {required > 1
+              ? ` — ${required - clicksDone} click${
+                  required - clicksDone === 1 ? "" : "s"
+                } left to unlock`
               : ""}
           </p>
         </div>

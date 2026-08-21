@@ -14,6 +14,7 @@ export default function AdSettings() {
   const [minutes, setMinutes] = useState("0");
   const [seconds, setSeconds] = useState("0");
   const [segmentClicks, setSegmentClicks] = useState("");
+  const [link, setLink] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
@@ -33,6 +34,7 @@ export default function AdSettings() {
         setMinutes(String(Math.floor(secs / 60)));
         setSeconds(String(secs % 60));
         setSegmentClicks(sc > 0 ? String(sc) : "");
+        setLink(String(meta.ad_gate_link ?? ""));
       });
   }, []);
 
@@ -49,6 +51,11 @@ export default function AdSettings() {
 
   async function save() {
     if (saving) return;
+    const trimmedLink = link.trim();
+    if (enabled && trimmedLink && !/^https?:\/\//i.test(trimmedLink)) {
+      setError("The ad link must start with https://");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -57,6 +64,8 @@ export default function AdSettings() {
           ad_gate_clicks: nClicks,
           ad_gate_segment_secs: nSegmentSecs,
           ad_gate_segment_clicks: nSegmentClicks,
+          ad_gate_tap: false,
+          ad_gate_link: trimmedLink,
         },
       });
       setSaved(true);
@@ -75,14 +84,14 @@ export default function AdSettings() {
         <div>
           <p className="text-sm font-semibold">Ad-click video unlock</p>
           <p className="text-xs text-muted mt-1">
-            Visitors unlock videos by tapping the Adsterra ads shown on the
-            page (banners and native units). Everything at 0 turns this off.
+            Visitors must click your Adsterra ads to watch videos on your
+            profile and the home feed. Everything at 0 turns this off.
           </p>
         </div>
 
         <div className="space-y-1.5">
           <label className="text-xs font-semibold">
-            Ad taps to unlock a video
+            Ad clicks to unlock a video
           </label>
           <input
             type="number"
@@ -92,9 +101,8 @@ export default function AdSettings() {
             className={`${inputClass} w-full`}
           />
           <p className="text-[11px] text-muted">
-            How many ads on the page they must tap before the video plays.
             0 = the video starts playing free — but it still locks after the
-            playback time below, and the next parts charge taps.
+            playback time below, and the next parts charge clicks.
           </p>
         </div>
 
@@ -124,14 +132,14 @@ export default function AdSettings() {
             <span className="text-xs text-muted">sec</span>
           </div>
           <p className="text-[11px] text-muted">
-            After this much playback the video locks again until they tap
+            After this much playback the video locks again until they click
             more ads. 0m 0s = the first unlock opens the whole video.
           </p>
         </div>
 
         <div className="space-y-1.5">
           <label className="text-xs font-semibold">
-            Ad taps for each next part
+            Ad clicks for each next part
           </label>
           <input
             type="number"
@@ -142,7 +150,25 @@ export default function AdSettings() {
             className={`${inputClass} w-full`}
           />
           <p className="text-[11px] text-muted">
-            Leave empty to charge the same number of taps every time.
+            Leave empty to charge the same number of clicks every time.
+          </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold">
+            Adsterra ad link (opened on every click)
+          </label>
+          <input
+            value={link}
+            onChange={(e) => setLink(e.target.value)}
+            placeholder="https://www.effectivecpmnetwork.com/..."
+            className={`${inputClass} w-full font-mono text-xs`}
+          />
+          <p className="text-[11px] text-muted">
+            Paste an Adsterra <b>Direct Link</b> (Adsterra → Websites → add a
+            Direct Link ad unit and copy its URL). Each unlock click opens it
+            in a new tab, so every click earns. Without it, clicks still count
+            but only fire the popunder scripts already on the page.
           </p>
         </div>
 
@@ -162,8 +188,8 @@ export default function AdSettings() {
           <p className="font-semibold text-fg text-sm">How it works now</p>
           {nClicks > 0 ? (
             <p>
-              Every video starts locked — visitors tap {nClicks} ad
-              {nClicks === 1 ? "" : "s"} on the page to start watching.
+              Every video starts locked — visitors click {nClicks} ad
+              {nClicks === 1 ? "" : "s"} to start watching.
             </p>
           ) : (
             <p>Every video starts playing free.</p>
@@ -172,15 +198,15 @@ export default function AdSettings() {
             <p>
               After {Math.floor(nSegmentSecs / 60)}m {nSegmentSecs % 60}s of
               playback it locks, and each next part costs{" "}
-              {effectiveSegmentClicks} tap
+              {effectiveSegmentClicks} click
               {effectiveSegmentClicks === 1 ? "" : "s"}.
             </p>
           ) : nClicks > 0 ? (
             <p>The first unlock opens the whole video.</p>
           ) : null}
           <p>
-            Only real taps on the ad units (banners and the native block)
-            count — taps elsewhere on the page don&apos;t.
+            Unlocking requires a 1-second press-and-hold, so every counted
+            click is deliberate.
           </p>
         </div>
       )}
