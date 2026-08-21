@@ -466,8 +466,8 @@ function FeedVideo({
           </span>
           <p className="text-white text-sm font-semibold drop-shadow">
             {round === 0
-              ? "Open the ad to unlock this video"
-              : "Open the ad to keep watching"}
+              ? "This video is locked"
+              : "Unlock to keep watching"}
           </p>
           <button
             type="button"
@@ -483,7 +483,7 @@ function FeedVideo({
               />
             )}
             <span className="relative">
-              {unlockHold.holding ? "Keep holding…" : "Hold to open ad"}
+              {unlockHold.holding ? "Keep holding…" : "Hold to unlock"}
               {required > 1 ? ` · ${clicksDone}/${required}` : ""}
             </span>
           </button>
