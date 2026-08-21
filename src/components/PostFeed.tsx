@@ -1,9 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Portal from "./Portal";
+import { AdsterraBanner468 } from "@/components/AdsterraAds";
 import { formatCount, formatTime, mediaUrl } from "@/lib/utils";
 import {
   IconChat,
@@ -565,7 +566,8 @@ export default function PostFeed({
     // Instagram-style: full-width posts separated by a hairline, no cards.
     <div className="pb-4 divide-y divide-line">
       {posts.map((post) => (
-        <article key={post.id}>
+        <Fragment key={post.id}>
+        <article>
           <div className="flex items-center gap-2.5 px-3.5 py-2.5">
             <Link
               href={`/p/${post.ownerId}`}
@@ -667,6 +669,12 @@ export default function PostFeed({
               : "Add a comment…"}
           </button>
         </article>
+
+        {/* Adsterra: in-feed banner after every post. The 468x60 unit lives
+            in its own isolated iframe, so each instance loads (and counts)
+            its own impression — unlike the native unit, it can repeat. */}
+        <AdsterraBanner468 />
+        </Fragment>
       ))}
 
       {/* Fullscreen viewer — images only; videos always play inline. */}
