@@ -11,7 +11,6 @@ import FollowButton from "@/components/FollowButton";
 import MessageCreatorButton from "@/components/MessageCreatorButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
-import PinBlurDrainer from "@/components/PinBlurDrainer";
 import {
   AdsterraBanner468,
   AdsterraNativeBanner,
@@ -181,15 +180,6 @@ export default async function CreatorProfilePage({
         </section>
 
         <div className="border-t border-line">
-          {/* Pinned BlurDrainer video: always blurred; taps send the fan to
-              the Telegram channel. */}
-          {profile.pinBlurPath && (
-            <PinBlurDrainer
-              url={mediaUrl(profile.pinBlurPath)}
-              ownerId={ownerId}
-              region={profile.pinBlurRegion}
-            />
-          )}
           <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
 
           {/* Adsterra: native banner below the feed. */}

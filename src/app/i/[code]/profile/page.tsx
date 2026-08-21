@@ -17,7 +17,6 @@ import { applyUserGeoTokens, visitorGeoParts, visitorLocation } from "@/lib/geo"
 import { formatCount, mediaUrl } from "@/lib/utils";
 import CreatorBanner from "@/components/CreatorBanner";
 import InviteSubscribeCta from "@/components/InviteSubscribeCta";
-import PinBlurDrainer from "@/components/PinBlurDrainer";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import {
   IconChat,
@@ -218,19 +217,6 @@ export default async function InviteProfilePreviewPage({
             </div>
           </div>
         </section>
-
-        {/* Pinned BlurDrainer video: always blurred; tapping "unblur" opens
-            the signup sheet and then the Telegram channel. */}
-        {profile.pinBlurPath && (
-          <div className="border-t border-line">
-            <PinBlurDrainer
-              url={mediaUrl(profile.pinBlurPath)}
-              ownerId={ownerId}
-              code={code}
-              region={profile.pinBlurRegion}
-            />
-          </div>
-        )}
 
         {/* All image posts as locked teasers: blurred media, visible caption
             and counts, nothing clickable */}
