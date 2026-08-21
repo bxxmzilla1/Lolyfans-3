@@ -258,10 +258,14 @@ function FeedVideo({
   id,
   url,
   gate,
+  watchHref,
 }: {
   id: string;
   url: string;
   gate?: FeedAdGate | null;
+  /** If set, tapping the video opens its own /watch page (full page load,
+   *  so all ad units render and count again). */
+  watchHref?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
@@ -447,9 +451,12 @@ function FeedVideo({
         disablePictureInPicture
         controlsList="nodownload nofullscreen noremoteplayback"
         onTimeUpdate={onTimeUpdate}
+        onClick={
+          watchHref ? () => window.location.assign(watchHref) : undefined
+        }
         className={`relative w-full h-auto max-h-[70vh] object-contain ${
           gated && locked ? "blur-xl" : ""
-        }`}
+        } ${watchHref ? "cursor-pointer" : ""}`}
       />
 
       {gated && locked && (
@@ -514,9 +521,12 @@ function FeedVideo({
 export default function PostFeed({
   posts: initialPosts,
   canInteract,
+  watchOnTap = false,
 }: {
   posts: FeedPost[];
   canInteract: boolean;
+  /** Tapping a video opens its own /watch page with a fresh set of ads. */
+  watchOnTap?: boolean;
 }) {
   const [posts, setPosts] = useState(initialPosts);
   const [commentsFor, setCommentsFor] = useState<FeedPost | null>(null);
@@ -615,7 +625,12 @@ export default function PostFeed({
               screen) over a blurred copy of itself. Videos loop in place with
               a mute toggle (no fullscreen); tapping an image opens it big. */}
           {post.type === "video" ? (
-            <FeedVideo id={post.id} url={post.url} gate={post.adGate} />
+            <FeedVideo
+              id={post.id}
+              url={post.url}
+              gate={post.adGate}
+              watchHref={watchOnTap ? `/watch/${post.id}` : undefined}
+            />
           ) : (
             <button
               onClick={() => setViewer(post)}

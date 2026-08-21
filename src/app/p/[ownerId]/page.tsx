@@ -177,7 +177,11 @@ export default async function CreatorProfilePage({
         </section>
 
         <div className="border-t border-line">
-          <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
+          <PostFeed
+            posts={feedPosts}
+            canInteract={chats.length > 0}
+            watchOnTap
+          />
 
           {/* Adsterra: 300x250 rectangle + native banner below the feed. */}
           <AdsterraBanner300x250 />

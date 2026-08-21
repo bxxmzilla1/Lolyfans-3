@@ -84,7 +84,7 @@ export default async function Home() {
         <AdsterraBanner468 />
 
         <div className="lg:bg-card lg:border lg:border-line lg:rounded-2xl lg:overflow-hidden">
-          <PostFeed posts={feedPosts} canInteract={false} />
+          <PostFeed posts={feedPosts} canInteract={false} watchOnTap />
         </div>
 
         {/* Adsterra: 300x250 rectangle + native banner below the feed. */}
