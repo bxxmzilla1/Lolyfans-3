@@ -182,10 +182,11 @@ export default async function CreatorProfilePage({
           {/* Adsterra: 300x250 rectangle + native banner below the feed. */}
           <AdsterraBanner300x250 />
           <AdsterraNativeBanner />
-        </div>
 
-        {/* Adsterra: skyscraper rails on wide screens. */}
-        <AdsterraSideRails />
+          {/* Adsterra: skyscrapers — fixed side rails on wide screens,
+              inline side-by-side pair on mobile. */}
+          <AdsterraSideRails />
+        </div>
     </GuestPage>
   );
 }

@@ -70,16 +70,44 @@ function IframeBanner({
   height: number;
   className?: string;
 }) {
+  // Units wider than the screen (468x60, 728x90) are scaled down to fit so
+  // the whole ad stays visible on mobile instead of being clipped.
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [scale, setScale] = useState(1);
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const update = () =>
+      setScale(Math.min(1, (el.clientWidth || width) / width));
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [width]);
   return (
     <div className={className}>
-      <iframe
-        srcDoc={bannerHtml(host, adKey, width, height)}
-        width={width}
-        height={height}
-        scrolling="no"
-        title="Advertisement"
-        style={{ border: 0, maxWidth: "100%" }}
-      />
+      <div ref={wrapRef} className="w-full flex justify-center">
+        <div
+          style={{
+            width: Math.round(width * scale),
+            height: Math.round(height * scale),
+            overflow: "hidden",
+          }}
+        >
+          <iframe
+            srcDoc={bannerHtml(host, adKey, width, height)}
+            width={width}
+            height={height}
+            scrolling="no"
+            title="Advertisement"
+            style={{
+              border: 0,
+              transform: `scale(${scale})`,
+              transformOrigin: "top left",
+            }}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -146,11 +174,32 @@ export function AdsterraLeaderboard() {
   );
 }
 
-/** Skyscraper rails pinned to the sides of the centered feed column on
- *  wide screens: 160x600 on the left, 160x300 on the right. */
+/** Skyscrapers: pinned to the sides of the centered feed column on wide
+ *  screens (160x600 left, 160x300 right); on smaller screens they render
+ *  inline, side by side (160+160 = 320px, fits any phone). */
 export function AdsterraSideRails() {
   const wide = useMediaQuery("(min-width: 1280px)");
-  if (!wide) return null;
+  if (wide === null) return null;
+  if (!wide) {
+    return (
+      <div className="flex justify-center items-start gap-2 py-2 px-2">
+        <IframeBanner
+          host={DKC}
+          adKey="45f2724520bd4373cc9e9586a1fa50b4"
+          width={160}
+          height={600}
+          className="overflow-hidden"
+        />
+        <IframeBanner
+          host={DKC}
+          adKey="60d7aea23ff7caa6d7fa069deebca0c3"
+          width={160}
+          height={300}
+          className="overflow-hidden"
+        />
+      </div>
+    );
+  }
   return (
     <>
       <div className="fixed left-4 top-1/2 -translate-y-1/2 z-20">

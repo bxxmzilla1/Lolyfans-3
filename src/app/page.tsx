@@ -91,6 +91,10 @@ export default async function Home() {
         <AdsterraBanner300x250 />
         <AdsterraNativeBanner />
 
+        {/* Adsterra: skyscrapers — fixed side rails on wide screens,
+            inline side-by-side pair on mobile. */}
+        <AdsterraSideRails />
+
         <p className="text-center text-xs text-muted pt-4">
           Are you a creator?{" "}
           <Link href="/creator" className="text-accent font-semibold">
@@ -98,9 +102,6 @@ export default async function Home() {
           </Link>
         </p>
       </div>
-
-      {/* Adsterra: skyscraper rails on wide screens. */}
-      <AdsterraSideRails />
     </main>
   );
 }
