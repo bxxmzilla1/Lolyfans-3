@@ -11,7 +11,6 @@ import SocialProofManager from "./SocialProofManager";
 import SubscriptionSettings from "./SubscriptionSettings";
 import TelegramSettings from "./TelegramSettings";
 import ShareLinkSettings from "./ShareLinkSettings";
-import StarsBotSettings from "./StarsBotSettings";
 import Portal from "./Portal";
 import {
   IconGrid,
@@ -20,7 +19,6 @@ import {
   IconLink,
   IconLogout,
   IconSend,
-  IconStar,
   IconTip,
   IconUser,
 } from "./Icons";
@@ -30,7 +28,6 @@ type Section =
   | "posts"
   | "social"
   | "share"
-  | "stars"
   | "subscriptions"
   | "telegram"
   | "links"
@@ -295,7 +292,7 @@ function ProfileSection() {
 }
 
 export default function SettingsModal({ onClose }: { onClose: () => void }) {
-  const [section, setSection] = useState<Section>("stars");
+  const [section, setSection] = useState<Section>("profile");
   const router = useRouter();
 
   useEffect(() => {
@@ -337,16 +334,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         </header>
 
         <div className="shrink-0 flex gap-1.5 px-5 pt-4 pb-2 border-b border-line bg-card/40 overflow-x-auto scrollbar-none [&>button]:shrink-0">
-          <button
-            onClick={() => setSection("stars")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-              section === "stars"
-                ? "bg-amber-500 text-black"
-                : "bg-card2 border border-line text-muted hover:text-fg"
-            }`}
-          >
-            <IconStar className="w-3.5 h-3.5" /> Stars PPV bot
-          </button>
           <button
             onClick={() => setSection("profile")}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
@@ -436,17 +423,14 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               section === "profile" ||
               section === "subscriptions" ||
               section === "telegram" ||
-              section === "share" ||
-              section === "stars"
+              section === "share"
                 ? "max-w-2xl"
                 : section === "posts"
                   ? "max-w-4xl"
                   : "max-w-6xl"
             }`}
           >
-            {section === "stars" ? (
-              <StarsBotSettings />
-            ) : section === "profile" ? (
+            {section === "profile" ? (
               <ProfileSection />
             ) : section === "posts" ? (
               <PostsManager />
