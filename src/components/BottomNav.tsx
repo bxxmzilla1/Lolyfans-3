@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconChat, IconLock, IconLink } from "./Icons";
+import { IconChart, IconLock, IconLink } from "./Icons";
 
 const tabs = [
-  { href: "/inbox", label: "Chats", Icon: IconChat },
+  { href: "/inbox", label: "Dashboard", Icon: IconChart },
   { href: "/vault", label: "Vault", Icon: IconLock },
   { href: "/invites", label: "Links", Icon: IconLink },
 ];

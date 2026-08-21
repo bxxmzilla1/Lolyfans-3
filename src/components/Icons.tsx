@@ -16,6 +16,17 @@ function Svg({ className, children }: IconProps & { children: React.ReactNode })
   );
 }
 
+export function IconChart({ className }: IconProps) {
+  return (
+    <Svg className={className}>
+      <path d="M3 3v18h18" />
+      <path d="M7 16v-5" />
+      <path d="M12 16V8" />
+      <path d="M17 16v-3" />
+    </Svg>
+  );
+}
+
 export function IconChat({ className }: IconProps) {
   return (
     <Svg className={className}>

@@ -3,7 +3,6 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import TelegramChatList from "./TelegramChatList";
 import VaultPanel from "./VaultPanel";
 import BottomNav from "./BottomNav";
 import SettingsModal from "./SettingsModal";
@@ -38,20 +37,16 @@ export default function OwnerShell({ children }: { children: React.ReactNode }) 
   return (
     <div className="h-dvh flex overflow-hidden">
       <OwnerPresence />
-      {/* Left sidebar: chats + settings (desktop) */}
-      <aside className="hidden lg:flex w-[320px] shrink-0 flex-col border-r border-line bg-card/60 backdrop-blur">
+      {/* Left sidebar: logo + settings (desktop) — the chat list is gone,
+          the center column shows the Adsterra earnings dashboard instead. */}
+      <aside className="hidden lg:flex w-[240px] shrink-0 flex-col border-r border-line bg-card/60 backdrop-blur">
         <Link href="/inbox" className="px-5 py-5 flex items-center gap-3">
           <Logo className="w-9 h-9 glow-accent" />
           <span className="text-xl font-bold ig-gradient-text tracking-tight">
             LolyFans
           </span>
         </Link>
-        <div className="flex-1 overflow-y-auto overscroll-contain pb-2 touch-pan-y">
-          <p className="px-5 pt-1 pb-2 text-[11px] font-semibold uppercase tracking-widest text-muted">
-            Telegram channels
-          </p>
-          <TelegramChatList />
-        </div>
+        <div className="flex-1" />
         <div className="border-t border-line p-3">
           <SettingsMenu />
         </div>
