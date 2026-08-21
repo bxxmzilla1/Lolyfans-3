@@ -14,7 +14,6 @@ export default function AdSettings() {
   const [minutes, setMinutes] = useState("0");
   const [seconds, setSeconds] = useState("0");
   const [segmentClicks, setSegmentClicks] = useState("");
-  const [tapAd, setTapAd] = useState(false);
   const [link, setLink] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -35,7 +34,6 @@ export default function AdSettings() {
         setMinutes(String(Math.floor(secs / 60)));
         setSeconds(String(secs % 60));
         setSegmentClicks(sc > 0 ? String(sc) : "");
-        setTapAd(meta.ad_gate_tap === true || meta.ad_gate_tap === "true");
         setLink(String(meta.ad_gate_link ?? ""));
       });
   }, []);
@@ -49,17 +47,13 @@ export default function AdSettings() {
   // (first part free, later parts charge).
   const effectiveSegmentClicks = nSegmentClicks || nClicks;
   const enabled =
-    nClicks > 0 || (nSegmentSecs > 0 && effectiveSegmentClicks > 0) || tapAd;
+    nClicks > 0 || (nSegmentSecs > 0 && effectiveSegmentClicks > 0);
 
   async function save() {
     if (saving) return;
     const trimmedLink = link.trim();
     if (enabled && trimmedLink && !/^https?:\/\//i.test(trimmedLink)) {
       setError("The ad link must start with https://");
-      return;
-    }
-    if (tapAd && !trimmedLink) {
-      setError("Ad on tap needs the Adsterra ad link below to open.");
       return;
     }
     setSaving(true);
@@ -70,7 +64,7 @@ export default function AdSettings() {
           ad_gate_clicks: nClicks,
           ad_gate_segment_secs: nSegmentSecs,
           ad_gate_segment_clicks: nSegmentClicks,
-          ad_gate_tap: tapAd,
+          ad_gate_tap: false,
           ad_gate_link: trimmedLink,
         },
       });
@@ -160,25 +154,6 @@ export default function AdSettings() {
           </p>
         </div>
 
-        <label className="flex items-start gap-3 rounded-xl border border-line bg-card2 p-3 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={tapAd}
-            onChange={(e) => setTapAd(e.target.checked)}
-            className="mt-0.5 w-4 h-4 accent-[var(--accent,#e91e63)]"
-          />
-          <span>
-            <span className="block text-xs font-semibold">
-              Open an ad when the video is pressed and held
-            </span>
-            <span className="block text-[11px] text-muted mt-0.5">
-              Pressing and holding a playing video for 1 second opens your ad
-              link in a new tab in the background — the video keeps playing
-              and the visitor stays on your page. Needs the ad link below.
-            </span>
-          </span>
-        </label>
-
         <div className="space-y-1.5">
           <label className="text-xs font-semibold">
             Adsterra ad link (opened on every click)
@@ -229,14 +204,8 @@ export default function AdSettings() {
           ) : nClicks > 0 ? (
             <p>The first unlock opens the whole video.</p>
           ) : null}
-          {tapAd && (
-            <p>
-              Pressing and holding a playing video for 1 second opens your ad
-              link in a background tab.
-            </p>
-          )}
           <p>
-            All ad actions require a 1-second press-and-hold, so every counted
+            Unlocking requires a 1-second press-and-hold, so every counted
             click is deliberate.
           </p>
         </div>

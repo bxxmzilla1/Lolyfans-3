@@ -25,8 +25,6 @@ export type FeedAdGate = {
   segmentSecs: number;
   /** Ad clicks required for each next part. */
   segmentClicks: number;
-  /** Tapping the playing video also opens the ad in a background tab. */
-  tapAd?: boolean;
   /** Adsterra ad URL opened on each click. */
   link: string | null;
 };
@@ -280,7 +278,6 @@ function FeedVideo({
   );
   const lastTimeRef = useRef(0);
   const lastPersistRef = useRef(0);
-  const lastTapAdRef = useRef(0);
   const storeKey = `lf-adgate:${id}`;
 
   const required =
@@ -399,28 +396,8 @@ function FeedVideo({
     if (gate.link) window.open(gate.link, "_blank", "noopener");
   }
 
-  // Ad Settings → "ad on tap": press-and-holding the playing video opens the
-  // ad in a new tab and immediately pulls focus back, so it lands in the
-  // background and the video keeps playing. Best-effort — some mobile
-  // browsers always foreground new tabs. Throttled against double-fires.
-  function onVideoTap() {
-    if (!gate?.tapAd || locked) return;
-    const now = Date.now();
-    if (now - lastTapAdRef.current < 1500) return;
-    lastTapAdRef.current = now;
-    if (gate.link) {
-      const w = window.open(gate.link, "_blank");
-      try {
-        w?.blur();
-        window.focus();
-      } catch {}
-    }
-  }
-
-  // Both ad actions require a deliberate 1-second press-and-hold.
+  // Unlocking requires a deliberate 1-second press-and-hold.
   const unlockHold = useHold(adClick);
-  const tapHold = useHold(onVideoTap);
-  const tapHoldActive = !!gate?.tapAd && !locked;
 
   function onTimeUpdate() {
     const v = videoRef.current;
@@ -466,31 +443,10 @@ function FeedVideo({
         disablePictureInPicture
         controlsList="nodownload nofullscreen noremoteplayback"
         onTimeUpdate={onTimeUpdate}
-        {...(tapHoldActive ? tapHold.props : {})}
-        style={
-          tapHoldActive
-            ? { WebkitTouchCallout: "none", userSelect: "none" }
-            : undefined
-        }
         className={`relative w-full h-auto max-h-[70vh] object-contain ${
           gated && locked ? "blur-xl" : ""
         }`}
       />
-
-      {/* Hold-progress pill while the visitor presses a playing video */}
-      {tapHoldActive && tapHold.holding && (
-        <div className="absolute inset-x-0 bottom-16 z-10 flex justify-center pointer-events-none">
-          <div className="px-4 py-2 rounded-full bg-black/70 backdrop-blur-sm text-white text-xs font-semibold w-44 text-center">
-            Keep holding…
-            <div className="h-1 mt-1.5 rounded-full bg-white/25 overflow-hidden">
-              <div
-                className="h-full bg-white rounded-full"
-                style={{ animation: `lf-hold-fill ${HOLD_MS}ms linear forwards` }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {gated && locked && (
         <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/55 p-4 text-center">
