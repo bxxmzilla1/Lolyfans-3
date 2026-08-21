@@ -730,6 +730,31 @@ alter table telegram_unlocks enable row level security;
 create index if not exists telegram_unlocks_owner_idx
   on telegram_unlocks (owner_id, created_at desc);
 
+-- Short pay-link token (lolyfans.com/payment/<code>) and the Telegram ids of
+-- the teaser / Saved Messages copies (see migration-telegram.sql).
+alter table telegram_unlocks add column if not exists short_code text unique;
+alter table telegram_unlocks add column if not exists tg_message_id bigint;
+alter table telegram_unlocks add column if not exists tg_cached_message_id bigint;
+
+-- Vault media pre-uploaded to Telegram: one Saved Messages copy per file plus
+-- a pre-rendered blurred teaser clip for videos, with resumable-upload state.
+create table if not exists telegram_media_cache (
+  id uuid primary key default gen_random_uuid(),
+  owner_id uuid not null references auth.users(id) on delete cascade,
+  media_path text not null,
+  media_type text not null, -- image | video
+  tg_message_id bigint,     -- clear copy in Saved Messages
+  teaser_path text,         -- storage path of the badge-less blurred clip
+  caching_at timestamptz,   -- in-flight claim (prevents duplicate uploads)
+  progress int,             -- 0–100 upload progress for the vault UI
+  upload_file_id text,      -- Telegram chunked-upload id (resume across invocations)
+  upload_parts_done int,
+  upload_size bigint,
+  created_at timestamptz not null default now(),
+  unique (owner_id, media_path)
+);
+alter table telegram_media_cache enable row level security;
+
 -- ---------------------------------------------------------------------------
 -- Telegram Stars PPV bot: the creator DMs their bot, activates it with the
 -- private code, sends a photo/video + Stars price, and gets a forwardable
