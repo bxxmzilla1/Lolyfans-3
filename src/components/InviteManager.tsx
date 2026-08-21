@@ -217,6 +217,7 @@ export default function InviteManager() {
   // Destination: false = custom URL, true = the creator's own profile page.
   const [toProfile, setToProfile] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Invite | null>(null);
   const [renaming, setRenaming] = useState<InviteWithStats | null>(null);
@@ -258,6 +259,7 @@ export default function InviteManager() {
   async function create() {
     if (!toProfile && !redirectUrl.trim()) return;
     setCreating(true);
+    setCreateError("");
     const res = await fetch("/api/invites", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -266,16 +268,19 @@ export default function InviteManager() {
         allowedCountries: countries,
         redirectUrl: toProfile ? PROFILE_DESTINATION : redirectUrl,
       }),
-    });
+    }).catch(() => null);
     setCreating(false);
-    if (res.ok) {
+    if (res?.ok) {
       setLabel("");
       setCountries([]);
       setRedirectUrl("");
       setToProfile(false);
       setShowForm(false);
       load();
+      return;
     }
+    const data = await res?.json().catch(() => null);
+    setCreateError(data?.error || "Could not create the link — try again");
   }
 
   async function toggleActive(invite: Invite) {
@@ -444,6 +449,10 @@ export default function InviteManager() {
             </p>
             <CountryPicker selected={countries} onChange={setCountries} />
           </div>
+
+          {createError && (
+            <p className="text-sm text-red-400">{createError}</p>
+          )}
 
           <div className="flex gap-2">
             <button
