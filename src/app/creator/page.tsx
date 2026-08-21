@@ -6,7 +6,7 @@ import OwnerDarkMode from "@/components/OwnerDarkMode";
 
 export const dynamic = "force-dynamic";
 
-/** Creator sign in / sign up. Unaffected by the public Telegram redirect. */
+/** Creator sign in / sign up. */
 export default async function CreatorAuthPage() {
   if (await getOwnerId()) redirect("/inbox");
 
@@ -20,7 +20,7 @@ export default async function CreatorAuthPage() {
             LolyFans
           </h1>
           <p className="text-muted text-sm text-center">
-            Creator sign in — manage Telegram, vault, and invite links.
+            Creator sign in — manage your profile, posts, and invite links.
           </p>
         </div>
         <AuthForm />

@@ -10,17 +10,11 @@ import {
   syncSubscription,
 } from "@/lib/payments";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
-import {
-  fanChatForCard,
-  getUnlock,
-  markPaidAndDeliver,
-} from "@/lib/telegramUnlock";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 
 export const runtime = "nodejs";
-// Telegram unlock deliveries (videos) can take minutes.
-export const maxDuration = 300;
+export const maxDuration = 60;
 
 /**
  * Stripe webhook. Must be pointed at the *canonical* host that does not 308
@@ -59,38 +53,6 @@ export async function POST(req: NextRequest) {
   // posted by /api/payments/tip directly; tip Checkout via session.completed.
   if (event.type === "payment_intent.succeeded") {
     const pi = event.data.object as Stripe.PaymentIntent;
-
-    // Telegram-DM unlock: deliver the clear media (safety net for the
-    // client-side complete call). May have no chatId when the fan paid with
-    // a new card, so handle it before the chat-scoped branches below.
-    if (pi.metadata?.kind === "tg-unlock" && pi.metadata.unlockId) {
-      const unlock = await getUnlock(pi.metadata.unlockId);
-      if (unlock) {
-        // Register the card so double-tap works from the first payment —
-        // even when the fan closed the tab before the complete call ran.
-        // Unrecognised fans (paying on the pay-link domain) get a hidden
-        // chat tied to their Telegram peer to hold the card.
-        const pmId =
-          typeof pi.payment_method === "string"
-            ? pi.payment_method
-            : pi.payment_method?.id ?? null;
-        const custId = typeof pi.customer === "string" ? pi.customer : null;
-        let tgChatId: string | null =
-          pi.metadata.chatId ?? unlock.paid_chat_id ?? null;
-        if (!tgChatId && custId && pmId) {
-          tgChatId = await fanChatForCard({ unlock });
-        }
-        if (tgChatId) {
-          await saveStripePaymentMethod(tgChatId, custId, pmId);
-        }
-        await markPaidAndDeliver({
-          unlock,
-          chatId: tgChatId,
-          paymentIntentId: pi.id,
-        });
-      }
-      return NextResponse.json({ received: true });
-    }
 
     const chatId = pi.metadata?.chatId;
     if (!chatId) return NextResponse.json({ received: true });

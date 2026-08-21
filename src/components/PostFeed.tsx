@@ -255,30 +255,12 @@ export default function PostFeed({
   const [messaging, setMessaging] = useState<string | null>(null);
   const router = useRouter();
 
-  /**
-   * "Message" → the creator's private Telegram channel. If the creator has no
-   * channel configured (or the fan doesn't have access yet), open the
-   * creator's profile page instead.
-   */
+  /** "Message" → the creator's profile page. */
   async function message(post: FeedPost) {
     if (messaging) return;
     setMessaging(post.id);
-    try {
-      const res = await fetch(
-        `/api/payments/subscribe/link?ownerId=${post.ownerId}`
-      );
-      const json = (await res.json().catch(() => ({}))) as {
-        link?: string | null;
-      };
-      if (res.ok && json.link) {
-        window.location.href = json.link;
-        return;
-      }
-    } catch {
-      // fall through to the profile page
-    }
-    setMessaging(null);
     router.push(`/p/${post.ownerId}`);
+    setMessaging(null);
   }
 
   async function toggleLike(post: FeedPost) {

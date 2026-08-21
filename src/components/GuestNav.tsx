@@ -7,9 +7,9 @@ import Logo from "./Logo";
 import { IconHome, IconUser } from "./Icons";
 
 /**
- * Guest navigation: Home and Profile only. Fans reach creators through the
- * private Telegram channel, so there's no in-app chat tab. Soft-pushes the URL
- * so the fan shell can keep panels mounted and switch instantly.
+ * Guest navigation: Home and Profile only — there's no in-app chat tab.
+ * Soft-pushes the URL so the fan shell can keep panels mounted and switch
+ * instantly.
  */
 export default function GuestNav() {
   const pathname = usePathname();

@@ -32,7 +32,6 @@ export async function GET(req: NextRequest) {
 
     if (chat) {
       const dest = await guestAccessDestination(chat.id, chat.owner_id);
-      // External Telegram URLs are absolute; relative fallbacks use this origin.
       const href =
         !dest.allowed && next
           ? `${next}${next.includes("?") ? "&" : "?"}pay=1`

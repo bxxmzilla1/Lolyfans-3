@@ -6,7 +6,6 @@ import { stripe, stripeConfigured } from "@/lib/stripe";
 import { requestOrigin } from "@/lib/smsNotify";
 import {
   subPlanFromMetadata,
-  telegramLinkFromMetadata,
   SUB_INTERVAL_LABEL,
 } from "@/lib/subscriptionPlan";
 
@@ -157,10 +156,7 @@ export async function POST(req: NextRequest) {
           unit_amount: plan.priceCents,
           recurring: { interval: plan.interval },
           product_data: {
-            // Telegram-gated profiles bill for channel access by name.
-            name: telegramLinkFromMetadata(meta)
-              ? `${ownerName} — Private Telegram Channel (${SUB_INTERVAL_LABEL[plan.interval]})`
-              : `${ownerName} — ${SUB_INTERVAL_LABEL[plan.interval]} subscription`,
+            name: `${ownerName} — ${SUB_INTERVAL_LABEL[plan.interval]} subscription`,
           },
         },
       },

@@ -98,165 +98,17 @@ export default function VaultManager() {
 
   // Outline each item by its send status: orange = sent free, red = locked &
   // never unlocked, green = locked & unlocked (bought). Next to an open chat
-  // the scope is that chat; on the standalone vault page it covers every
-  // Telegram send. No outline = never sent in that scope.
+  // the scope is that chat. No outline = never sent in that scope.
   const pathname = usePathname();
-  const tgPeerRaw = pathname?.match(/^\/inbox\/tg\/([^/?#]+)/)?.[1] ?? null;
-  const tgPeer = tgPeerRaw ? decodeURIComponent(tgPeerRaw) : null;
-  const chatId = tgPeer
-    ? null
-    : pathname?.match(/^\/inbox\/([^/?#]+)/)?.[1] ?? null;
+  const chatId = pathname?.match(/^\/inbox\/([^/?#]+)/)?.[1] ?? null;
   const [sendStatus, setSendStatus] = useState<Record<string, SendStatus>>({});
-
-  // Saved Messages upload state per media path — manual uploads only.
-  type CacheState = { ready: boolean; uploading: boolean; progress: number };
-  type CacheSummary = { ready: number; uploading: number; progress: number };
-  const [cacheStatus, setCacheStatus] = useState<Record<string, CacheState>>({});
-  const [cacheSummary, setCacheSummary] = useState<CacheSummary>({
-    ready: 0,
-    uploading: 0,
-    progress: 0,
-  });
-  const [tgReady, setTgReady] = useState(false);
-  const [cacheError, setCacheError] = useState("");
-  const cacheInflightRef = useRef(false);
-  // Paths the creator started this session — we keep slicing until ready.
-  const resumeQueueRef = useRef(
-    new Map<string, { mediaType: "image" | "video" }>()
-  );
-  const sliceInflightRef = useRef(new Set<string>());
-  const loadCacheStatus = useCallback(async () => {
-    if (cacheInflightRef.current) return;
-    cacheInflightRef.current = true;
-    try {
-      const res = await fetch("/api/vault/cache").catch(() => null);
-      if (!res?.ok) return;
-      const data = await res.json().catch(() => null);
-      if (!data) return;
-      setTgReady(!!data.telegram);
-      setCacheStatus((data.status as Record<string, CacheState>) ?? {});
-      const summary = data.summary as CacheSummary | undefined;
-      if (summary) {
-        setCacheSummary({
-          ready: Number(summary.ready) || 0,
-          uploading: Number(summary.uploading) || 0,
-          progress: Number(summary.progress) || 0,
-        });
-      }
-    } finally {
-      cacheInflightRef.current = false;
-    }
-  }, []);
-
-  const runUploadSlice = useCallback(
-    async (mediaPath: string, mediaType: "image" | "video") => {
-      if (sliceInflightRef.current.has(mediaPath)) return;
-      sliceInflightRef.current.add(mediaPath);
-      try {
-        const res = await fetch("/api/vault/cache", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mediaPath, mediaType }),
-        }).catch(() => null);
-        const data = res ? await res.json().catch(() => null) : null;
-        if (data?.ready) {
-          resumeQueueRef.current.delete(mediaPath);
-          setCacheError("");
-        } else if (data?.error) {
-          setCacheError(String(data.error));
-          // Migration / permanent errors: stop retrying this file.
-          if (/migration/i.test(String(data.error))) {
-            resumeQueueRef.current.delete(mediaPath);
-          }
-        }
-        if (typeof data?.progress === "number") {
-          setCacheStatus((prev) => ({
-            ...prev,
-            [mediaPath]: {
-              ready: !!data.ready,
-              uploading: !data.ready,
-              progress: data.ready
-                ? 100
-                : Math.max(1, Number(data.progress) || 1),
-            },
-          }));
-          setCacheSummary((prev) => ({
-            ...prev,
-            uploading: data.ready
-              ? Math.max(0, prev.uploading - 1)
-              : Math.max(1, prev.uploading),
-            progress: data.ready ? prev.progress : Number(data.progress) || prev.progress,
-            ready: data.ready ? prev.ready + 1 : prev.ready,
-          }));
-        }
-      } finally {
-        sliceInflightRef.current.delete(mediaPath);
-      }
-    },
-    []
-  );
-
-  async function startCacheUpload(item: Item) {
-    resumeQueueRef.current.set(item.media_path, {
-      mediaType: item.media_type === "video" ? "video" : "image",
-    });
-    setResumeEpoch((n) => n + 1);
-    // Optimistic: show the bar right away; slices update it from there.
-    setCacheStatus((prev) => ({
-      ...prev,
-      [item.media_path]: {
-        ready: false,
-        uploading: true,
-        progress: Math.max(1, prev[item.media_path]?.progress ?? 1),
-      },
-    }));
-    setCacheSummary((prev) => ({
-      ...prev,
-      uploading: Math.max(1, prev.uploading + 1),
-      progress: Math.max(1, prev.progress),
-    }));
-  }
-
-  // Bumps when the user queues an upload so the resume loop mounts.
-  const [resumeEpoch, setResumeEpoch] = useState(0);
-  const anyUploading =
-    resumeEpoch > 0 ||
-    cacheSummary.uploading > 0 ||
-    Object.values(cacheStatus).some((s) => s.uploading || (!s.ready && s.progress > 0));
-
-  // Keep slicing every user-started upload until it's ready. Each POST does
-  // ~55s of work; the vault page chains them so big videos finish.
-  useEffect(() => {
-    if (resumeQueueRef.current.size === 0) return;
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled || document.visibilityState !== "visible") return;
-      if (resumeQueueRef.current.size === 0) return;
-      for (const [mediaPath, meta] of [...resumeQueueRef.current]) {
-        if (sliceInflightRef.current.has(mediaPath)) continue;
-        await runUploadSlice(mediaPath, meta.mediaType);
-        if (cancelled) return;
-      }
-      await loadCacheStatus();
-    };
-    const timer = setInterval(() => void tick(), 4000);
-    void tick();
-    return () => {
-      cancelled = true;
-      clearInterval(timer);
-    };
-  }, [resumeEpoch, loadCacheStatus, runUploadSlice]);
 
   const statusInflightRef = useRef(false);
   const loadSendStatus = useCallback(async () => {
     if (statusInflightRef.current) return;
     statusInflightRef.current = true;
     try {
-      const query = chatId
-        ? `?chatId=${chatId}`
-        : tgPeer
-          ? `?peer=${encodeURIComponent(tgPeer)}`
-          : "";
+      const query = chatId ? `?chatId=${chatId}` : "";
       const res = await fetch(`/api/vault/status${query}`).catch(() => null);
       if (!res?.ok) return;
       const data = await res.json().catch(() => null);
@@ -264,15 +116,14 @@ export default function VaultManager() {
     } finally {
       statusInflightRef.current = false;
     }
-  }, [chatId, tgPeer]);
+  }, [chatId]);
 
   useEffect(() => {
     setSendStatus({});
     // Immediate refresh on chat switch — this is the important path.
     loadSendStatus();
-    loadCacheStatus();
     // Live updates for legacy chats: repaint when something is sent or the
-    // fan unlocks. Telegram/global scopes rely on the backup poll below.
+    // fan unlocks.
     const supabase = chatId ? supabaseBrowser() : null;
     const channel = supabase
       ?.channel(`chat:${chatId}`)
@@ -284,14 +135,13 @@ export default function VaultManager() {
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") {
         loadSendStatus();
-        loadCacheStatus();
       }
     }, 5000);
     return () => {
       clearInterval(timer);
       if (supabase && channel) supabase.removeChannel(channel);
     };
-  }, [chatId, loadSendStatus, loadCacheStatus]);
+  }, [chatId, loadSendStatus]);
 
   const loadAlbums = useCallback(async () => {
     const res = await fetch("/api/vault/albums");
@@ -893,63 +743,6 @@ export default function VaultManager() {
             </span>
           </div>
         )}
-        {tgReady && (
-          <div className="space-y-2">
-            {cacheError && (
-              <div className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-                {cacheError}
-              </div>
-            )}
-            {(cacheSummary.uploading > 0 || anyUploading) && (
-              <div className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2.5 space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-semibold text-sky-300">
-                  <span>
-                    Uploading to Telegram
-                    {cacheSummary.uploading > 1
-                      ? ` · ${cacheSummary.uploading} files`
-                      : ""}
-                  </span>
-                  <span className="tabular-nums">
-                    {cacheSummary.progress || 1}%
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-black/40 overflow-hidden">
-                  <div
-                    className="h-full bg-sky-400 transition-all duration-700"
-                    style={{
-                      width: `${Math.max(4, cacheSummary.progress || 1)}%`,
-                    }}
-                  />
-                </div>
-                <p className="text-[11px] text-muted">
-                  {cacheSummary.ready} ready for instant PPV · keep this tab
-                  open until it finishes
-                </p>
-              </div>
-            )}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-4 h-4 rounded-full bg-sky-500 flex items-center justify-center">
-                  <IconCheck className="w-2.5 h-2.5 text-white" />
-                </span>
-                On Telegram — instant PPV
-                {cacheSummary.ready > 0 ? ` (${cacheSummary.ready})` : ""}
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="w-4 h-4 rounded-full bg-black/60 border border-white/50 flex items-center justify-center">
-                  <IconSend className="w-2 h-2 text-white" />
-                </span>
-                Tap badge to upload (manual only)
-              </span>
-              <span className="inline-flex items-center gap-1.5">
-                <span className="rounded bg-black/70 px-1 py-0.5 text-[9px] font-semibold text-amber-300">
-                  ▶ %
-                </span>
-                Paused — tap to resume
-              </span>
-            </div>
-          </div>
-        )}
         <div className="grid grid-cols-3 gap-1">
           {visibleItems.map((item) => (
             <button
@@ -1001,87 +794,6 @@ export default function VaultManager() {
                   }`}
                 />
               )}
-              {/* Saved Messages state: blue check = uploaded (instant PPV),
-                  progress bar = uploading now, paused bar = click to resume,
-                  cloud button = tap to upload. */}
-              {!selectMode &&
-                tgReady &&
-                (cacheStatus[item.media_path]?.ready ? (
-                  <span
-                    title="On Telegram — sends instantly as PPV"
-                    className="absolute top-1 left-1 w-5 h-5 rounded-full bg-sky-500 flex items-center justify-center shadow"
-                  >
-                    <IconCheck className="w-3 h-3 text-white" />
-                  </span>
-                ) : cacheStatus[item.media_path]?.uploading ? (
-                  <>
-                    <span className="absolute top-1 left-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-sky-300 tabular-nums">
-                      {cacheStatus[item.media_path].progress}%
-                    </span>
-                    <span className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/60">
-                      <span
-                        className="block h-full bg-sky-400 transition-all duration-700"
-                        style={{
-                          width: `${Math.max(4, cacheStatus[item.media_path].progress)}%`,
-                        }}
-                      />
-                    </span>
-                  </>
-                ) : (cacheStatus[item.media_path]?.progress ?? 0) > 0 ? (
-                  // Paused mid-upload (big video between slices) — click to
-                  // resume right away instead of waiting for the worker.
-                  <>
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      title="Upload paused — click to resume now"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        void startCacheUpload(item);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          void startCacheUpload(item);
-                        }
-                      }}
-                      className="absolute top-1 left-1 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-semibold text-amber-300 tabular-nums hover:bg-sky-600 hover:text-white transition-colors"
-                    >
-                      ▶ {cacheStatus[item.media_path].progress}%
-                    </span>
-                    <span className="absolute bottom-0 left-0 right-0 h-1.5 bg-black/60">
-                      <span
-                        className="block h-full bg-amber-400/80"
-                        style={{
-                          width: `${Math.max(4, cacheStatus[item.media_path].progress)}%`,
-                        }}
-                      />
-                    </span>
-                  </>
-                ) : (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    title="Not on Telegram yet — click to upload it for instant PPV sending"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      void startCacheUpload(item);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        void startCacheUpload(item);
-                      }
-                    }}
-                    className="absolute top-1 left-1 w-5 h-5 rounded-full bg-black/60 border border-white/50 flex items-center justify-center hover:bg-sky-600 hover:border-sky-400 transition-colors"
-                  >
-                    <IconSend className="w-2.5 h-2.5 text-white" />
-                  </span>
-                ))}
               {selectMode && (
                 <span
                   className={`absolute top-1.5 right-1.5 w-5.5 h-5.5 rounded-full border-2 flex items-center justify-center ${

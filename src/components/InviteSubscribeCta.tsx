@@ -6,22 +6,9 @@ import { IconEye, IconEyeOff } from "./Icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
-/** Fetch the site-wide main Telegram channel and send the fan there. */
-export async function goToChannel(_ownerId?: string) {
-  try {
-    const res = await fetch("/api/payments/subscribe/link");
-    const data = await res.json().catch(() => ({}));
-    if (res.ok && typeof data.link === "string" && data.link) {
-      window.location.href = data.link;
-      return;
-    }
-  } catch {}
-  window.location.href = "/";
-}
-
 /**
  * Sign-up sheet (email + password only) shown over the invite profile;
- * after join, sends the fan into the creator's Telegram channel.
+ * after join, sends the fan to the creator's profile page.
  */
 export function JoinChannelSheet({
   code,
@@ -65,7 +52,7 @@ export function JoinChannelSheet({
       setError(data?.error || "Could not sign up");
       return;
     }
-    await goToChannel(ownerId);
+    window.location.href = `/p/${ownerId}`;
   }
 
   const inputClass =
@@ -82,7 +69,7 @@ export function JoinChannelSheet({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-3">
-            <p className="font-bold">Join Private Telegram Channel</p>
+            <p className="font-bold">Join for free</p>
             <button
               type="button"
               onClick={onClose}
@@ -95,7 +82,7 @@ export function JoinChannelSheet({
 
           <div className="space-y-3">
             <p className="text-xs text-muted">
-              Create a free account, then join the private channel.
+              Create a free account to unlock the full profile.
             </p>
             <input
               type="email"
@@ -137,7 +124,7 @@ export function JoinChannelSheet({
               disabled={busy || !email.trim() || password.length < 6}
               className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity"
             >
-              {busy ? "Joining…" : "Join the channel"}
+              {busy ? "Joining…" : "Join for free"}
             </button>
           </div>
         </div>
@@ -147,9 +134,8 @@ export function JoinChannelSheet({
 }
 
 /**
- * Invite-profile "Join Private Telegram Channel" button. Opens the sign-up
- * sheet over the profile; after join, sends the fan into the creator's
- * Telegram channel. No subscription payment.
+ * Invite-profile join button. Opens the sign-up sheet over the profile;
+ * after join, sends the fan to the creator's profile page. No payment.
  */
 export default function InviteSubscribeCta({
   code,
@@ -172,7 +158,7 @@ export default function InviteSubscribeCta({
           onClick={() => setOpen(true)}
           className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold text-center active:opacity-80 transition-opacity"
         >
-          JOIN PRIVATE TELEGRAM CHANNEL
+          JOIN FOR FREE
         </button>
         <p className="text-xs text-muted text-center">Free to join</p>
       </div>

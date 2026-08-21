@@ -133,26 +133,6 @@ export async function DELETE(req: NextRequest) {
   const paths = (items ?? []).map((i) => i.media_path).filter(Boolean);
   if (paths.length > 0) {
     await db.storage.from("media").remove(paths);
-    // Drop the Telegram cache rows and their pre-rendered teaser clips too.
-    // Best-effort — orphaned rows are harmless, just stale.
-    try {
-      const { data: cached } = await db
-        .from("telegram_media_cache")
-        .select("teaser_path")
-        .eq("owner_id", ownerId)
-        .in("media_path", paths);
-      const teasers = (cached ?? [])
-        .map((c) => c.teaser_path as string | null)
-        .filter((p): p is string => !!p);
-      if (teasers.length > 0) await db.storage.from("media").remove(teasers);
-      await db
-        .from("telegram_media_cache")
-        .delete()
-        .eq("owner_id", ownerId)
-        .in("media_path", paths);
-    } catch {
-      // ignore
-    }
   }
   return NextResponse.json({ ok: true });
 }

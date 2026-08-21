@@ -1,14 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useGuestShell } from "./GuestShellContext";
 import type { SubPlan } from "@/lib/subscriptionPlan";
 
-/**
- * Join / follow button for a creator profile. Channel access is free — the
- * full button opens the Telegram channel after following; the compact
- * discovery button is a plain follow toggle.
- */
+/** Follow / unfollow toggle for a creator profile. Following is free. */
 export default function FollowButton({
   ownerId,
   initialFollowing,
@@ -25,26 +21,7 @@ export default function FollowButton({
 }) {
   const [following, setFollowing] = useState(initialFollowing);
   const [busy, setBusy] = useState(false);
-  const [tgLink, setTgLink] = useState<string | null>(null);
   const { refresh } = useGuestShell();
-
-  async function fetchTelegramLink(): Promise<string | null> {
-    try {
-      const res = await fetch(`/api/payments/subscribe/link?ownerId=${ownerId}`);
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && typeof data.link === "string" && data.link) {
-        setTgLink(data.link);
-        return data.link as string;
-      }
-    } catch {}
-    return null;
-  }
-
-  useEffect(() => {
-    if (small) return;
-    if (following) void fetchTelegramLink();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [following, small]);
 
   async function toggleFollow() {
     if (busy) return;
@@ -65,47 +42,11 @@ export default function FollowButton({
     setBusy(false);
   }
 
-  async function joinFree() {
-    if (busy) return;
-    if (!following) await toggleFollow();
-    const link = tgLink || (await fetchTelegramLink());
-    if (link) {
-      window.location.href = link;
-      return;
-    }
-  }
-
-  async function openOrUnfollow() {
-    if (busy) return;
-    const link = tgLink || (await fetchTelegramLink());
-    if (link) {
-      window.location.href = link;
-      return;
-    }
-    await toggleFollow();
-  }
-
-  const onClick = small
-    ? toggleFollow
-    : following
-      ? openOrUnfollow
-      : joinFree;
-
-  const label = following
-    ? small
-      ? "Following"
-      : tgLink
-        ? "OPEN TELEGRAM CHANNEL"
-        : "Following"
-    : small
-      ? "JOIN"
-      : busy
-        ? "…"
-        : "JOIN PRIVATE TELEGRAM CHANNEL";
+  const label = following ? "Following" : busy ? "…" : small ? "JOIN" : "FOLLOW";
 
   const button = (
     <button
-      onClick={onClick}
+      onClick={toggleFollow}
       disabled={busy}
       className={`${
         small
@@ -123,30 +64,14 @@ export default function FollowButton({
     </button>
   );
 
-  if (small || following) {
-    return (
-      <div className="space-y-1.5">
-        {button}
-        {!small && !following && (
-          <p className="text-xs text-muted text-center">Free to join</p>
-        )}
-        {!small && following && tgLink && (
-          <button
-            onClick={toggleFollow}
-            disabled={busy}
-            className="w-full text-center text-xs text-muted hover:text-fg transition-colors disabled:opacity-50"
-          >
-            Leave
-          </button>
-        )}
-      </div>
-    );
-  }
+  if (small) return button;
 
   return (
     <div className="space-y-1.5">
       {button}
-      <p className="text-xs text-muted text-center">Free to join</p>
+      {!following && (
+        <p className="text-xs text-muted text-center">Free to join</p>
+      )}
     </div>
   );
 }

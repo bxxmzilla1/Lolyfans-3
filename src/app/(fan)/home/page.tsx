@@ -1,8 +1,8 @@
-import { redirectFansToMainChannel } from "@/lib/fanRedirect";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-/** In-app fan home removed — everyone goes to the main Telegram channel. */
+/** Old fan home — the public Home Feed lives on the root page now. */
 export default async function FanHomePage() {
-  await redirectFansToMainChannel();
+  redirect("/");
 }

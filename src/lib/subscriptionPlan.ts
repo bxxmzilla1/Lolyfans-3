@@ -19,30 +19,6 @@ export const SUB_INTERVAL_LABEL: Record<SubInterval, string> = {
   lifetime: "lifetime",
 };
 
-/** Normalize a Telegram invite link ("" when unusable). Accepts t.me /
- *  telegram.me URLs with or without the protocol. */
-export function normalizeTelegramLink(raw: unknown): string {
-  const s = String(raw ?? "").trim();
-  if (!s) return "";
-  const withProto = /^https?:\/\//i.test(s) ? s : `https://${s}`;
-  try {
-    const u = new URL(withProto);
-    if (!/^(t|telegram)\.me$/i.test(u.hostname)) return "";
-    return u.toString();
-  } catch {
-    return "";
-  }
-}
-
-/**
- * The creator's private Telegram channel invite link. Kept OUT of SubPlan on
- * purpose: SubPlan is passed to client components pre-payment, and the link
- * must only reach fans through the subscription-gated endpoint.
- */
-export function telegramLinkFromMetadata(meta: Record<string, unknown>): string {
-  return normalizeTelegramLink(meta.sub_telegram_link);
-}
-
 export function subPlanFromMetadata(meta: Record<string, unknown>): SubPlan {
   const priceCents = Math.max(0, Math.round(Number(meta.sub_price_cents) || 0));
   const rawInterval = meta.sub_interval;

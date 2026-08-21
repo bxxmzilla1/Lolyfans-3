@@ -1,8 +1,8 @@
-import { redirectFansToMainChannel } from "@/lib/fanRedirect";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-/** In-app chat removed — fans go to the main Telegram channel. */
+/** In-app chat removed — fans go to the Home Feed. */
 export default async function GuestChatPage() {
-  await redirectFansToMainChannel();
+  redirect("/");
 }

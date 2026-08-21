@@ -19,10 +19,6 @@ const TABLES = [
   "invites",
   "invite_visits",
   "invite_events",
-  "telegram_bots",
-  "bot_operators",
-  "stars_unlocks",
-  "telegram_unlocks",
   "vault_albums",
   "vault_items",
   "posts",
@@ -64,22 +60,6 @@ export async function GET() {
     report.inviteGeoColumns = error ? `ERROR: ${error.message}` : "ok";
   } catch (e) {
     report.inviteGeoColumns = `ERROR: ${e instanceof Error ? e.message : "unknown"}`;
-  }
-
-  // The homepage redirect and fan fallbacks read this row.
-  try {
-    const { data, error } = await db
-      .from("site_settings")
-      .select("value")
-      .eq("key", "main_telegram_link")
-      .maybeSingle();
-    report.mainTelegramLink = error
-      ? `ERROR: ${error.message}`
-      : data?.value
-        ? "set"
-        : "NOT SET — homepage won't redirect fans";
-  } catch (e) {
-    report.mainTelegramLink = `ERROR: ${e instanceof Error ? e.message : "unknown"}`;
   }
 
   // All uploads, teasers and thumbnails live in the "media" bucket.

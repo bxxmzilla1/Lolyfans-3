@@ -30,8 +30,8 @@ export const dynamic = "force-dynamic";
 
 /**
  * Invite link profile preview ("Profile page directly" or step after the
- * landing page). The Join Telegram / Subscribe button opens a Stripe card
- * sheet over this page — the profile stays visible in the background.
+ * landing page). The Join button opens a sign-up sheet over this page — the
+ * profile stays visible in the background.
  */
 export default async function InviteProfilePreviewPage({
   params,
@@ -68,8 +68,7 @@ export default async function InviteProfilePreviewPage({
     db.from("invites").select("*").eq("code", code).single<Invite>(),
   ]);
 
-  // Returning guests: paid → chat / channel; unpaid → stay on this profile
-  // so the Join Telegram card sheet can open over it (never bounce to /signup).
+  // Returning guests with an account go straight to the open profile page.
   let alreadyJoined = false;
   let openPay = pay === "1";
   const existing = cookieChat?.data ?? null;
@@ -279,7 +278,7 @@ export default async function InviteProfilePreviewPage({
         {/* Subscribe gate under the locked feed */}
         <div className="border-t border-line px-4 py-6 text-center space-y-3">
           <p className="text-sm font-semibold">
-            Join the private Telegram channel to see more
+            Join for free to see more
           </p>
           <InviteSubscribeCta {...ctaProps} />
         </div>

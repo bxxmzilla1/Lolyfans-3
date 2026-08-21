@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
   ).trim();
   if (!voiceId) {
     return NextResponse.json(
-      { error: "Add your ElevenLabs Voice ID in Settings → Telegram first" },
+      { error: "No ElevenLabs Voice ID configured for this account" },
       { status: 400 }
     );
   }

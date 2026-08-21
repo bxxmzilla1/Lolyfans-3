@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { mediaUrl } from "@/lib/utils";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { videoFrameFromInput } from "@/lib/telegram";
+import { videoFrameFromInput } from "@/lib/videoFrame";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;

@@ -8,7 +8,6 @@ import { formatCount, mediaUrl } from "@/lib/utils";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
-import MessageCreatorButton from "@/components/MessageCreatorButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
 import {
@@ -118,14 +117,6 @@ export default async function CreatorProfilePage({
             name={profile.name}
             avatarPath={profile.avatarPath}
             bannerPath={profile.bannerPath}
-            actions={
-              hasChatWithOwner ? (
-                <MessageCreatorButton
-                  ownerId={ownerId}
-                  className="px-5 py-2 rounded-full bg-card border border-line2 text-sm font-semibold"
-                />
-              ) : undefined
-            }
           />
 
           {/* Identity block: everything left-aligned like OnlyFans */}

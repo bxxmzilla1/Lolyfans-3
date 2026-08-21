@@ -1,5 +1,4 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { getMainTelegramLink } from "@/lib/mainChannel";
 import { subPlanFromMetadata, type SubPlan } from "@/lib/subscriptionPlan";
 
 export const ACTIVE_SUB_STATUSES = ["trialing", "active", "past_due", "canceling"];
@@ -54,15 +53,14 @@ export async function inviteCodeForChat(chatId: string): Promise<string | null> 
 }
 
 /**
- * Where a returning guest should land — the site-wide main Telegram channel.
+ * Where a returning guest should land — the creator's profile page.
  * Invite links never use this; they redirect via their own redirect_url.
  */
 export async function guestAccessDestination(
   _chatId: string,
-  _ownerId: string
+  ownerId: string
 ): Promise<{ allowed: boolean; href: string }> {
-  const link = await getMainTelegramLink();
-  return { allowed: true, href: link || "/" };
+  return { allowed: true, href: `/p/${ownerId}` };
 }
 
 /**
@@ -77,10 +75,9 @@ export async function guestChatAccessDestination(
     .eq("id", chatId)
     .maybeSingle();
   if (!chat) return { allowed: false, href: "/api/guest/gone", ownerId: null };
-  const link = await getMainTelegramLink();
   return {
     allowed: true,
-    href: link || "/",
+    href: `/p/${chat.owner_id}`,
     ownerId: chat.owner_id as string,
   };
 }
