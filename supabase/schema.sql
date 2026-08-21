@@ -157,6 +157,12 @@ create table if not exists messages (
 alter table messages add column if not exists locked boolean not null default false;
 alter table messages add column if not exists hidden boolean not null default false;
 
+-- Multi-media messages: [{ "path": "...", "type": "image"|"video" }, ...].
+-- media_path / media_type stay as the first item for older clients & previews.
+-- (Added here because owner_chat_stats below reads it — SQL functions are
+-- validated at creation time, so the column must exist first.)
+alter table messages add column if not exists media_items jsonb not null default '[]'::jsonb;
+
 create index if not exists messages_chat_created_idx on messages (chat_id, created_at);
 
 -- One-shot inbox stats: latest message preview + unread count for every chat
@@ -507,10 +513,6 @@ alter table invites add column if not exists redirect_url text;
 -- Unlock price of a locked media message, in cents. 0 = manual lock only
 -- (owner blur toggle). A positive price makes it pay-to-unlock via Stripe.
 alter table messages add column if not exists price_cents int not null default 0;
-
--- Multi-media messages: [{ "path": "...", "type": "image"|"video" }, ...].
--- media_path / media_type stay as the first item for older clients & previews.
-alter table messages add column if not exists media_items jsonb not null default '[]'::jsonb;
 
 -- Which fan has unlocked which locked message (one row = revealed for them).
 create table if not exists message_unlocks (
