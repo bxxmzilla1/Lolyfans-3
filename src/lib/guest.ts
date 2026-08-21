@@ -57,12 +57,14 @@ export async function guestChats(requestHeaders: Headers): Promise<GuestChat[]> 
 
 /** Ad-click gate on videos (Settings → Ad Settings). null = disabled. */
 export type AdGate = {
-  /** Ad clicks required to unlock a video. */
+  /** Ad clicks required to start a video (0 = the first part plays free). */
   clicks: number;
   /** Seconds of playback unlocked per round (0 = whole video). */
   segmentSecs: number;
   /** Ad clicks required for each next part. */
   segmentClicks: number;
+  /** Tapping the playing video also opens the ad in a background tab. */
+  tapAd: boolean;
   /** Adsterra ad URL opened on each click (e.g. a Direct Link). */
   link: string | null;
 };
@@ -85,20 +87,27 @@ export type OwnerProfile = {
 
 function parseAdGate(meta: Record<string, unknown>): AdGate | null {
   const clicks = Math.max(0, Math.floor(Number(meta.ad_gate_clicks) || 0));
-  if (clicks < 1) return null;
   const segmentSecs = Math.max(
     0,
     Math.floor(Number(meta.ad_gate_segment_secs) || 0)
   );
-  const segmentClicks = Math.max(
-    1,
-    Math.floor(Number(meta.ad_gate_segment_clicks) || 0) || clicks
+  const explicitSegmentClicks = Math.max(
+    0,
+    Math.floor(Number(meta.ad_gate_segment_clicks) || 0)
   );
+  const segmentClicks = explicitSegmentClicks || clicks;
+  const tapAd = meta.ad_gate_tap === true || meta.ad_gate_tap === "true";
+  // Ways the gate can be active: clicks up front, a timed re-lock
+  // (clicks = 0 means the first part plays free but later parts still
+  // charge), and/or ad-on-tap while the video plays.
+  const segmentGate = segmentSecs > 0 && segmentClicks > 0;
+  if (clicks < 1 && !segmentGate && !tapAd) return null;
   const link = String(meta.ad_gate_link ?? "").trim();
   return {
     clicks,
     segmentSecs,
     segmentClicks,
+    tapAd,
     link: /^https?:\/\//i.test(link) ? link : null,
   };
 }

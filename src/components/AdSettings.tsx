@@ -14,6 +14,7 @@ export default function AdSettings() {
   const [minutes, setMinutes] = useState("0");
   const [seconds, setSeconds] = useState("0");
   const [segmentClicks, setSegmentClicks] = useState("");
+  const [tapAd, setTapAd] = useState(false);
   const [link, setLink] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -34,6 +35,7 @@ export default function AdSettings() {
         setMinutes(String(Math.floor(secs / 60)));
         setSeconds(String(secs % 60));
         setSegmentClicks(sc > 0 ? String(sc) : "");
+        setTapAd(meta.ad_gate_tap === true || meta.ad_gate_tap === "true");
         setLink(String(meta.ad_gate_link ?? ""));
       });
   }, []);
@@ -43,13 +45,21 @@ export default function AdSettings() {
     Math.max(0, Math.floor(Number(minutes) || 0)) * 60 +
     Math.max(0, Math.min(59, Math.floor(Number(seconds) || 0)));
   const nSegmentClicks = Math.max(0, Math.floor(Number(segmentClicks) || 0));
-  const enabled = nClicks > 0;
+  // Active with clicks up front, or with a timed re-lock even at 0 clicks
+  // (first part free, later parts charge).
+  const effectiveSegmentClicks = nSegmentClicks || nClicks;
+  const enabled =
+    nClicks > 0 || (nSegmentSecs > 0 && effectiveSegmentClicks > 0) || tapAd;
 
   async function save() {
     if (saving) return;
     const trimmedLink = link.trim();
     if (enabled && trimmedLink && !/^https?:\/\//i.test(trimmedLink)) {
       setError("The ad link must start with https://");
+      return;
+    }
+    if (tapAd && !trimmedLink) {
+      setError("Ad on tap needs the Adsterra ad link below to open.");
       return;
     }
     setSaving(true);
@@ -60,6 +70,7 @@ export default function AdSettings() {
           ad_gate_clicks: nClicks,
           ad_gate_segment_secs: nSegmentSecs,
           ad_gate_segment_clicks: nSegmentClicks,
+          ad_gate_tap: tapAd,
           ad_gate_link: trimmedLink,
         },
       });
@@ -80,7 +91,7 @@ export default function AdSettings() {
           <p className="text-sm font-semibold">Ad-click video unlock</p>
           <p className="text-xs text-muted mt-1">
             Visitors must click your Adsterra ads to watch videos on your
-            profile and the home feed. Set the clicks to 0 to turn this off.
+            profile and the home feed. Everything at 0 turns this off.
           </p>
         </div>
 
@@ -96,7 +107,8 @@ export default function AdSettings() {
             className={`${inputClass} w-full`}
           />
           <p className="text-[11px] text-muted">
-            0 = videos play freely with no ad gate.
+            0 = the video starts playing free — but it still locks after the
+            playback time below, and the next parts charge clicks.
           </p>
         </div>
 
@@ -148,6 +160,25 @@ export default function AdSettings() {
           </p>
         </div>
 
+        <label className="flex items-start gap-3 rounded-xl border border-line bg-card2 p-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={tapAd}
+            onChange={(e) => setTapAd(e.target.checked)}
+            className="mt-0.5 w-4 h-4 accent-[var(--accent,#e91e63)]"
+          />
+          <span>
+            <span className="block text-xs font-semibold">
+              Open an ad when the video is tapped
+            </span>
+            <span className="block text-[11px] text-muted mt-0.5">
+              Any tap on a playing video opens your ad link in a new tab in
+              the background — the video keeps playing and the visitor stays
+              on your page. Needs the ad link below.
+            </span>
+          </span>
+        </label>
+
         <div className="space-y-1.5">
           <label className="text-xs font-semibold">
             Adsterra ad link (opened on every click)
@@ -180,19 +211,29 @@ export default function AdSettings() {
       {enabled && (
         <div className="rounded-2xl border border-line bg-card2 p-4 text-xs text-muted space-y-1">
           <p className="font-semibold text-fg text-sm">How it works now</p>
-          <p>
-            Every video starts locked — visitors click {nClicks} ad
-            {nClicks === 1 ? "" : "s"} to start watching.
-          </p>
+          {nClicks > 0 ? (
+            <p>
+              Every video starts locked — visitors click {nClicks} ad
+              {nClicks === 1 ? "" : "s"} to start watching.
+            </p>
+          ) : (
+            <p>Every video starts playing free.</p>
+          )}
           {nSegmentSecs > 0 ? (
             <p>
               After {Math.floor(nSegmentSecs / 60)}m {nSegmentSecs % 60}s of
-              playback it locks again, and each next part costs{" "}
-              {nSegmentClicks || nClicks} click
-              {(nSegmentClicks || nClicks) === 1 ? "" : "s"}.
+              playback it locks, and each next part costs{" "}
+              {effectiveSegmentClicks} click
+              {effectiveSegmentClicks === 1 ? "" : "s"}.
             </p>
-          ) : (
+          ) : nClicks > 0 ? (
             <p>The first unlock opens the whole video.</p>
+          ) : null}
+          {tapAd && (
+            <p>
+              Every tap on a playing video opens your ad link in a background
+              tab.
+            </p>
           )}
         </div>
       )}

@@ -25,6 +25,8 @@ export type FeedAdGate = {
   segmentSecs: number;
   /** Ad clicks required for each next part. */
   segmentClicks: number;
+  /** Tapping the playing video also opens the ad in a background tab. */
+  tapAd?: boolean;
   /** Adsterra ad URL opened on each click. */
   link: string | null;
 };
@@ -220,14 +222,24 @@ function FeedVideo({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
-  const gated = !!gate && gate.clicks > 0;
-  const [locked, setLocked] = useState(gated);
+  const gated = !!gate;
+  // clicks = 0 → the first part plays free; the timed re-lock still applies.
+  const freeStart = !!gate && gate.clicks < 1;
+  const [locked, setLocked] = useState(gated && !freeStart);
   const [clicksDone, setClicksDone] = useState(0);
-  const [round, setRound] = useState(0);
+  // Round 0 = the initial unlock; a free start begins at round 1.
+  const [round, setRound] = useState(freeStart ? 1 : 0);
   // Playback-time budget left from the last unlock (seconds).
-  const budgetRef = useRef(0);
+  const budgetRef = useRef(
+    freeStart && gate
+      ? gate.segmentSecs > 0
+        ? gate.segmentSecs
+        : Number.POSITIVE_INFINITY
+      : 0
+  );
   const lastTimeRef = useRef(0);
   const lastPersistRef = useRef(0);
+  const lastTapAdRef = useRef(0);
   const storeKey = `lf-adgate:${id}`;
 
   const required =
@@ -278,6 +290,12 @@ function FeedVideo({
       if (savedRound > 0 && budget > 0) {
         budgetRef.current = budget;
         setLocked(false);
+      } else if (savedRound > 0) {
+        // Saved progress says the last granted time was used up — relevant
+        // for free-start videos whose fresh state would begin unlocked.
+        budgetRef.current = 0;
+        videoRef.current?.pause();
+        setLocked(true);
       }
     } catch {}
   }, [gated, storeKey]);
@@ -340,6 +358,24 @@ function FeedVideo({
     if (gate.link) window.open(gate.link, "_blank", "noopener");
   }
 
+  // Ad Settings → "ad on tap": tapping the playing video opens the ad in a
+  // new tab and immediately pulls focus back, so it lands in the background
+  // and the video keeps playing. Best-effort — some mobile browsers always
+  // foreground new tabs. Throttled so accidental double-taps fire once.
+  function onVideoTap() {
+    if (!gate?.tapAd || locked) return;
+    const now = Date.now();
+    if (now - lastTapAdRef.current < 1500) return;
+    lastTapAdRef.current = now;
+    if (gate.link) {
+      const w = window.open(gate.link, "_blank");
+      try {
+        w?.blur();
+        window.focus();
+      } catch {}
+    }
+  }
+
   function onTimeUpdate() {
     const v = videoRef.current;
     if (!v || !gated || locked) return;
@@ -376,7 +412,7 @@ function FeedVideo({
       <video
         ref={videoRef}
         src={`${url}#t=0.001`}
-        autoPlay={!gated}
+        autoPlay={!gated || freeStart}
         loop
         muted
         playsInline
@@ -384,6 +420,7 @@ function FeedVideo({
         disablePictureInPicture
         controlsList="nodownload nofullscreen noremoteplayback"
         onTimeUpdate={onTimeUpdate}
+        onClick={onVideoTap}
         className={`relative w-full h-auto max-h-[70vh] object-contain ${
           gated && locked ? "blur-xl" : ""
         }`}
