@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Portal from "./Portal";
@@ -13,25 +13,12 @@ import {
   IconChat,
   IconHeart,
   IconHeartFilled,
-  IconLock,
   IconSend,
   IconUser,
   IconVerified,
   IconVolume,
   IconVolumeMute,
 } from "./Icons";
-
-/** Ad-click gate config for a post's video (from the creator's Ad Settings). */
-export type FeedAdGate = {
-  /** Ad clicks required to unlock the video. */
-  clicks: number;
-  /** Seconds of playback per unlock (0 = whole video). */
-  segmentSecs: number;
-  /** Ad clicks required for each next part. */
-  segmentClicks: number;
-  /** Adsterra ad URL opened on each click. */
-  link: string | null;
-};
 
 export type FeedPost = {
   id: string;
@@ -46,7 +33,6 @@ export type FeedPost = {
   likes: number;
   comments: number;
   liked: boolean;
-  adGate?: FeedAdGate | null;
 };
 
 type Comment = {
@@ -202,172 +188,18 @@ function CommentsSheet({
  * button to unmute. No fullscreen — it always plays in place. The muted flag
  * is set on the element directly because React doesn't reliably update the
  * muted attribute after the initial render.
- *
- * With an ad gate, the video starts locked behind an "open ad" overlay: each
- * click opens the creator's Adsterra link and counts toward the unlock. An
- * unlock grants `segmentSecs` of playback time (0 = the whole video); when
- * the time runs out, the overlay comes back asking for the next clicks.
- *
- * Progress (clicks + remaining watch time) is saved in localStorage per post:
- * opening the ad backgrounds this page, and mobile browsers often discard and
- * reload it before the visitor comes back — without persistence that reload
- * would wipe their clicks and re-lock the video they just paid for.
  */
-/** How long the visitor must press and hold before an ad action fires. */
-const HOLD_MS = 1000;
-
-/**
- * Press-and-hold gesture: the action fires when the pointer is released
- * after being held for HOLD_MS. Firing on release keeps window.open inside
- * a real user gesture (popup blockers allow it) and filters out accidental
- * taps, so every opened ad is a deliberate click.
- */
-function useHold(action: () => void) {
-  const [holding, setHolding] = useState(false);
-  const startRef = useRef(0);
-
-  function down(e: React.PointerEvent) {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-    startRef.current = Date.now();
-    setHolding(true);
-  }
-  function up() {
-    const done = startRef.current > 0 && Date.now() - startRef.current >= HOLD_MS;
-    startRef.current = 0;
-    setHolding(false);
-    if (done) action();
-  }
-  function cancel() {
-    startRef.current = 0;
-    setHolding(false);
-  }
-
-  return {
-    holding,
-    props: {
-      onPointerDown: down,
-      onPointerUp: up,
-      onPointerLeave: cancel,
-      onPointerCancel: cancel,
-      onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
-    },
-  };
-}
-
 function FeedVideo({
-  id,
   url,
-  gate,
   watchHref,
 }: {
-  id: string;
   url: string;
-  gate?: FeedAdGate | null;
   /** If set, tapping the video opens its own /watch page (full page load,
    *  so all ad units render and count again). */
   watchHref?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
-  const gated = !!gate;
-  // clicks = 0 → the first part plays free; the timed re-lock still applies.
-  const freeStart = !!gate && gate.clicks < 1;
-  const [locked, setLocked] = useState(gated && !freeStart);
-  const [clicksDone, setClicksDone] = useState(0);
-  // Round 0 = the initial unlock; a free start begins at round 1.
-  const [round, setRound] = useState(freeStart ? 1 : 0);
-  // Playback-time budget left from the last unlock (seconds).
-  const budgetRef = useRef(
-    freeStart && gate
-      ? gate.segmentSecs > 0
-        ? gate.segmentSecs
-        : Number.POSITIVE_INFINITY
-      : 0
-  );
-  const lastTimeRef = useRef(0);
-  const lastPersistRef = useRef(0);
-  const storeKey = `lf-adgate:${id}`;
-
-  const required =
-    !gate || round === 0 ? gate?.clicks ?? 0 : gate.segmentClicks || gate.clicks;
-
-  // Unlock progress survives the page being reloaded after an ad visit.
-  // Infinity (whole video unlocked) is stored as -1; entries expire after 6h.
-  const persist = useCallback(
-    (state: { round: number; clicksDone: number; budget: number }) => {
-      try {
-        localStorage.setItem(
-          storeKey,
-          JSON.stringify({
-            round: state.round,
-            clicksDone: state.clicksDone,
-            budget: Number.isFinite(state.budget) ? state.budget : -1,
-            ts: Date.now(),
-          })
-        );
-      } catch {}
-    },
-    [storeKey]
-  );
-
-  useEffect(() => {
-    if (!gated) return;
-    try {
-      const raw = localStorage.getItem(storeKey);
-      if (!raw) return;
-      const saved = JSON.parse(raw) as {
-        round?: number;
-        clicksDone?: number;
-        budget?: number;
-        ts?: number;
-      };
-      if (!saved.ts || Date.now() - saved.ts > 6 * 3600_000) {
-        localStorage.removeItem(storeKey);
-        return;
-      }
-      const savedRound = Math.max(0, Math.floor(Number(saved.round) || 0));
-      const savedClicks = Math.max(0, Math.floor(Number(saved.clicksDone) || 0));
-      const budget =
-        saved.budget === -1
-          ? Number.POSITIVE_INFINITY
-          : Math.max(0, Number(saved.budget) || 0);
-      setRound(savedRound);
-      setClicksDone(savedClicks);
-      if (savedRound > 0 && budget > 0) {
-        budgetRef.current = budget;
-        setLocked(false);
-      } else if (savedRound > 0) {
-        // Saved progress says the last granted time was used up — relevant
-        // for free-start videos whose fresh state would begin unlocked.
-        budgetRef.current = 0;
-        videoRef.current?.pause();
-        setLocked(true);
-      }
-    } catch {}
-  }, [gated, storeKey]);
-
-  // The unlocking click usually opens the ad in a new tab, so this page is
-  // hidden when play() runs and the browser may reject it — leaving the
-  // unlocked video frozen. Re-check every second (and the moment the visitor
-  // comes back to the tab) and start playback as soon as it should be
-  // unlocked, so no refresh is ever needed.
-  useEffect(() => {
-    if (!gated || locked) return;
-    const tryPlay = () => {
-      const v = videoRef.current;
-      if (!v || !v.paused || budgetRef.current <= 0) return;
-      void v.play().catch(() => {});
-    };
-    tryPlay();
-    const timer = setInterval(tryPlay, 1000);
-    window.addEventListener("focus", tryPlay);
-    document.addEventListener("visibilitychange", tryPlay);
-    return () => {
-      clearInterval(timer);
-      window.removeEventListener("focus", tryPlay);
-      document.removeEventListener("visibilitychange", tryPlay);
-    };
-  }, [gated, locked]);
 
   function toggleMute() {
     const v = videoRef.current;
@@ -375,57 +207,7 @@ function FeedVideo({
     v.muted = !v.muted;
     setMuted(v.muted);
     // Unmuting from the button is a user gesture, so playback may resume.
-    if (v.paused && !locked) void v.play().catch(() => {});
-  }
-
-  function adClick() {
-    if (!gate) return;
-    const next = clicksDone + 1;
-    if (next < required) {
-      setClicksDone(next);
-      // Persist BEFORE opening the ad — the browser may freeze/discard this
-      // page the moment the new tab opens.
-      persist({ round, clicksDone: next, budget: 0 });
-    } else {
-      // Unlocked: grant the playback budget and resume.
-      const budget =
-        gate.segmentSecs > 0 ? gate.segmentSecs : Number.POSITIVE_INFINITY;
-      setClicksDone(0);
-      setRound((r) => r + 1);
-      setLocked(false);
-      budgetRef.current = budget;
-      persist({ round: round + 1, clicksDone: 0, budget });
-      const v = videoRef.current;
-      lastTimeRef.current = v?.currentTime ?? 0;
-      void v?.play().catch(() => {});
-    }
-    // Every click opens an ad — that's what earns. Without a direct link the
-    // click still counts (the page-level popunder scripts catch it).
-    if (gate.link) window.open(gate.link, "_blank", "noopener");
-  }
-
-  // Unlocking requires a deliberate 1-second press-and-hold.
-  const unlockHold = useHold(adClick);
-
-  function onTimeUpdate() {
-    const v = videoRef.current;
-    if (!v || !gated || locked) return;
-    if (!Number.isFinite(budgetRef.current)) return;
-    // Count only small forward deltas so loops and seeks don't eat budget.
-    const delta = v.currentTime - lastTimeRef.current;
-    lastTimeRef.current = v.currentTime;
-    if (delta > 0 && delta < 1.5) budgetRef.current -= delta;
-    if (budgetRef.current <= 0) {
-      v.pause();
-      setLocked(true);
-      persist({ round, clicksDone: 0, budget: 0 });
-      return;
-    }
-    // Keep the saved remaining time roughly current (throttled to ~2s).
-    if (Date.now() - lastPersistRef.current > 2000) {
-      lastPersistRef.current = Date.now();
-      persist({ round, clicksDone: 0, budget: budgetRef.current });
-    }
+    if (v.paused) void v.play().catch(() => {});
   }
 
   return (
@@ -443,60 +225,20 @@ function FeedVideo({
       <video
         ref={videoRef}
         src={`${url}#t=0.001`}
-        autoPlay={!gated || freeStart}
+        autoPlay
         loop
         muted
         playsInline
         preload="metadata"
         disablePictureInPicture
         controlsList="nodownload nofullscreen noremoteplayback"
-        onTimeUpdate={onTimeUpdate}
         onClick={
           watchHref ? () => window.location.assign(watchHref) : undefined
         }
         className={`relative w-full h-auto max-h-[70vh] object-contain ${
-          gated && locked ? "blur-xl" : ""
-        } ${watchHref ? "cursor-pointer" : ""}`}
+          watchHref ? "cursor-pointer" : ""
+        }`}
       />
-
-      {gated && locked && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/55 p-4 text-center">
-          <span className="w-12 h-12 rounded-full ig-gradient glow-accent flex items-center justify-center">
-            <IconLock className="w-5 h-5 text-white" />
-          </span>
-          <p className="text-white text-sm font-semibold drop-shadow">
-            {round === 0
-              ? "This video is locked"
-              : "Unlock to keep watching"}
-          </p>
-          <button
-            type="button"
-            {...unlockHold.props}
-            className="relative overflow-hidden px-7 py-3 rounded-full bg-accent text-white text-sm font-bold select-none touch-none"
-            style={{ WebkitTouchCallout: "none" }}
-          >
-            {unlockHold.holding && (
-              <span
-                aria-hidden
-                className="absolute inset-y-0 left-0 bg-white/35"
-                style={{ animation: `lf-hold-fill ${HOLD_MS}ms linear forwards` }}
-              />
-            )}
-            <span className="relative">
-              {unlockHold.holding ? "Keep holding…" : "Hold to unlock"}
-              {required > 1 ? ` · ${clicksDone}/${required}` : ""}
-            </span>
-          </button>
-          <p className="text-white/75 text-[11px]">
-            Press and hold for 1 second
-            {required > 1
-              ? ` — ${required - clicksDone} click${
-                  required - clicksDone === 1 ? "" : "s"
-                } left to unlock`
-              : ""}
-          </p>
-        </div>
-      )}
 
       <button
         type="button"
@@ -626,9 +368,7 @@ export default function PostFeed({
               a mute toggle (no fullscreen); tapping an image opens it big. */}
           {post.type === "video" ? (
             <FeedVideo
-              id={post.id}
               url={post.url}
-              gate={post.adGate}
               watchHref={watchOnTap ? `/watch/${post.id}` : undefined}
             />
           ) : (

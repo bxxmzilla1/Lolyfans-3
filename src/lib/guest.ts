@@ -55,18 +55,6 @@ export async function guestChats(requestHeaders: Headers): Promise<GuestChat[]> 
   return chats;
 }
 
-/** Ad-click gate on videos (Settings → Ad Settings). null = disabled. */
-export type AdGate = {
-  /** Ad clicks required to start a video (0 = the first part plays free). */
-  clicks: number;
-  /** Seconds of playback unlocked per round (0 = whole video). */
-  segmentSecs: number;
-  /** Ad clicks required for each next part. */
-  segmentClicks: number;
-  /** Adsterra ad URL opened on each click (e.g. a Direct Link). */
-  link: string | null;
-};
-
 export type OwnerProfile = {
   name: string;
   avatarPath: string | null;
@@ -79,33 +67,7 @@ export type OwnerProfile = {
   showLocation: boolean;
   /** Profile-subscription plan (price 0 = free). */
   plan: SubPlan;
-  /** Ad-click video gate, when the creator enabled it. */
-  adGate: AdGate | null;
 };
-
-function parseAdGate(meta: Record<string, unknown>): AdGate | null {
-  const clicks = Math.max(0, Math.floor(Number(meta.ad_gate_clicks) || 0));
-  const segmentSecs = Math.max(
-    0,
-    Math.floor(Number(meta.ad_gate_segment_secs) || 0)
-  );
-  const explicitSegmentClicks = Math.max(
-    0,
-    Math.floor(Number(meta.ad_gate_segment_clicks) || 0)
-  );
-  const segmentClicks = explicitSegmentClicks || clicks;
-  // Two ways the gate can be active: clicks up front, and/or a timed re-lock
-  // (clicks = 0 means the first part plays free but later parts still charge).
-  const segmentGate = segmentSecs > 0 && segmentClicks > 0;
-  if (clicks < 1 && !segmentGate) return null;
-  const link = String(meta.ad_gate_link ?? "").trim();
-  return {
-    clicks,
-    segmentSecs,
-    segmentClicks,
-    link: /^https?:\/\//i.test(link) ? link : null,
-  };
-}
 
 /** Display profiles (name, picture, checkmark) for a set of creators. */
 export async function ownerProfiles(
@@ -137,7 +99,6 @@ export async function ownerProfiles(
           bio: meta.profile_bio?.trim() || null,
           showLocation: !!meta.profile_show_location,
           plan: subPlanFromMetadata(meta as Record<string, unknown>),
-          adGate: parseAdGate(meta as Record<string, unknown>),
         },
       ] as const;
     })

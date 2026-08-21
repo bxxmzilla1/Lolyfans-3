@@ -107,7 +107,6 @@ export default async function CreatorProfilePage({
     likes: (post.like_count ?? 0) + (stats.likes.get(post.id) ?? 0),
     comments: stats.comments.get(post.id) ?? 0,
     liked: stats.likedByMe.has(post.id),
-    adGate: profile.adGate,
   }));
 
   return (
