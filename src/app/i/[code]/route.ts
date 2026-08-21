@@ -5,6 +5,7 @@ import {
   countryAllowed,
   ipFromHeaders,
   Invite,
+  PROFILE_DESTINATION,
 } from "@/lib/invites";
 import { recordInviteEvent } from "@/lib/inviteEvents";
 import { lookupIp } from "@/lib/ipinfo";
@@ -86,6 +87,11 @@ export async function GET(
   const url = (invite!.redirect_url || "").trim();
   // Legacy links created before redirect links became mandatory.
   if (!url) return blocked("This invite link is no longer active");
+
+  // "profile" destination: load the creator's public profile page.
+  if (url === PROFILE_DESTINATION) {
+    return NextResponse.redirect(new URL(`/p/${invite!.owner_id}`, req.url), 307);
+  }
 
   return NextResponse.redirect(url, 307);
 }

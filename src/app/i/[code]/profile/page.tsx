@@ -8,6 +8,7 @@ import {
   countryAllowed,
   ipFromHeaders,
   Invite,
+  PROFILE_DESTINATION,
 } from "@/lib/invites";
 import { recordInviteEvent } from "@/lib/inviteEvents";
 import { ownerProfiles } from "@/lib/guest";
@@ -125,6 +126,7 @@ export default async function InviteProfilePreviewPage({
   // Invite links are pure redirect links now — anyone landing on this old
   // profile preview follows the link's mandatory destination instead.
   const dest = (invite?.redirect_url || "").trim();
+  if (usable.ok && dest === PROFILE_DESTINATION) redirect(`/p/${invite!.owner_id}`);
   if (usable.ok && dest) redirect(dest);
 
   const allowed = invite ? countryAllowed(invite.allowed_countries, country) : false;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { Invite } from "@/lib/invites";
+import { PROFILE_DESTINATION, type Invite } from "@/lib/invites";
 import CountryPicker, { countryFlag, countryName } from "./CountryPicker";
 import ConfirmDialog from "./ConfirmDialog";
 import Portal from "./Portal";
@@ -17,11 +17,48 @@ let invitesCache: InviteWithStats[] | null = null;
 
 /** Short display form of a redirect URL (hostname, or raw text if unparsable). */
 function redirectHost(url: string): string {
+  if (url === PROFILE_DESTINATION) return "My profile page";
   try {
     return new URL(url).hostname.replace(/^www\./, "");
   } catch {
     return url;
   }
+}
+
+/** Destination picker: send visitors to a custom URL or the profile page. */
+function DestinationToggle({
+  toProfile,
+  onChange,
+}: {
+  toProfile: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <button
+        type="button"
+        onClick={() => onChange(false)}
+        className={`rounded-xl py-2.5 text-sm font-semibold border transition-colors ${
+          !toProfile
+            ? "bg-accent text-white border-accent"
+            : "bg-card2 border-line text-muted hover:text-fg"
+        }`}
+      >
+        Custom link
+      </button>
+      <button
+        type="button"
+        onClick={() => onChange(true)}
+        className={`rounded-xl py-2.5 text-sm font-semibold border transition-colors ${
+          toProfile
+            ? "bg-accent text-white border-accent"
+            : "bg-card2 border-line text-muted hover:text-fg"
+        }`}
+      >
+        My profile page
+      </button>
+    </div>
+  );
 }
 
 type Visit = {
@@ -177,12 +214,15 @@ export default function InviteManager() {
   const [label, setLabel] = useState("");
   const [countries, setCountries] = useState<string[]>([]);
   const [redirectUrl, setRedirectUrl] = useState("");
+  // Destination: false = custom URL, true = the creator's own profile page.
+  const [toProfile, setToProfile] = useState(false);
   const [creating, setCreating] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Invite | null>(null);
   const [renaming, setRenaming] = useState<InviteWithStats | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [editRedirectUrl, setEditRedirectUrl] = useState("");
+  const [editToProfile, setEditToProfile] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -216,7 +256,7 @@ export default function InviteManager() {
   }, []);
 
   async function create() {
-    if (!redirectUrl.trim()) return;
+    if (!toProfile && !redirectUrl.trim()) return;
     setCreating(true);
     const res = await fetch("/api/invites", {
       method: "POST",
@@ -224,7 +264,7 @@ export default function InviteManager() {
       body: JSON.stringify({
         label,
         allowedCountries: countries,
-        redirectUrl,
+        redirectUrl: toProfile ? PROFILE_DESTINATION : redirectUrl,
       }),
     });
     setCreating(false);
@@ -232,6 +272,7 @@ export default function InviteManager() {
       setLabel("");
       setCountries([]);
       setRedirectUrl("");
+      setToProfile(false);
       setShowForm(false);
       load();
     }
@@ -299,7 +340,9 @@ export default function InviteManager() {
 
   async function saveRename() {
     if (!renaming) return;
-    const newRedirectUrl = editRedirectUrl.trim();
+    const newRedirectUrl = editToProfile
+      ? PROFILE_DESTINATION
+      : editRedirectUrl.trim();
     if (!newRedirectUrl) return; // the redirect link is mandatory
     const id = renaming.id;
     const newLabel = renameValue.trim();
@@ -373,19 +416,26 @@ export default function InviteManager() {
 
           <div className="space-y-1.5">
             <p className="text-sm font-semibold">
-              Redirect link <span className="text-red-400">*</span>
+              Destination <span className="text-red-400">*</span>
             </p>
             <p className="text-xs text-muted">
-              Allowed visitors are sent straight to this link.
+              Where allowed visitors are sent when they open the link.
             </p>
-            <input
-              value={redirectUrl}
-              onChange={(e) => setRedirectUrl(e.target.value)}
-              type="url"
-              required
-              placeholder="https://t.me/…"
-              className="w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors"
-            />
+            <DestinationToggle toProfile={toProfile} onChange={setToProfile} />
+            {toProfile ? (
+              <p className="text-xs text-muted">
+                Visitors land on your public profile page with your posts.
+              </p>
+            ) : (
+              <input
+                value={redirectUrl}
+                onChange={(e) => setRedirectUrl(e.target.value)}
+                type="url"
+                required
+                placeholder="https://t.me/…"
+                className="w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors"
+              />
+            )}
           </div>
 
           <div>
@@ -404,7 +454,7 @@ export default function InviteManager() {
             </button>
             <button
               onClick={create}
-              disabled={creating || !redirectUrl.trim()}
+              disabled={creating || (!toProfile && !redirectUrl.trim())}
               className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-40"
             >
               {creating ? "Creating…" : "Create link"}
@@ -516,7 +566,10 @@ export default function InviteManager() {
                     onClick={() => {
                       setRenaming(invite);
                       setRenameValue(invite.label ?? "");
-                      setEditRedirectUrl(invite.redirect_url ?? "");
+                      const isProfile =
+                        invite.redirect_url === PROFILE_DESTINATION;
+                      setEditToProfile(isProfile);
+                      setEditRedirectUrl(isProfile ? "" : invite.redirect_url ?? "");
                     }}
                     aria-label="Edit link"
                     title="Edit link"
@@ -657,19 +710,29 @@ export default function InviteManager() {
             />
             <div className="space-y-1.5 border-t border-line pt-3">
               <p className="text-sm font-semibold">
-                Redirect link <span className="text-red-400">*</span>
+                Destination <span className="text-red-400">*</span>
               </p>
               <p className="text-xs text-muted">
-                Allowed visitors are sent straight to this link.
+                Where allowed visitors are sent when they open the link.
               </p>
-              <input
-                value={editRedirectUrl}
-                onChange={(e) => setEditRedirectUrl(e.target.value)}
-                type="url"
-                required
-                placeholder="https://t.me/…"
-                className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+              <DestinationToggle
+                toProfile={editToProfile}
+                onChange={setEditToProfile}
               />
+              {editToProfile ? (
+                <p className="text-xs text-muted">
+                  Visitors land on your public profile page with your posts.
+                </p>
+              ) : (
+                <input
+                  value={editRedirectUrl}
+                  onChange={(e) => setEditRedirectUrl(e.target.value)}
+                  type="url"
+                  required
+                  placeholder="https://t.me/…"
+                  className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
+                />
+              )}
             </div>
             <div className="flex gap-2">
               <button
@@ -680,7 +743,7 @@ export default function InviteManager() {
               </button>
               <button
                 onClick={saveRename}
-                disabled={!editRedirectUrl.trim()}
+                disabled={!editToProfile && !editRedirectUrl.trim()}
                 className="flex-1 bg-accent text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-40"
               >
                 Save

@@ -1,7 +1,12 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { inviteUsable, countryAllowed, Invite } from "@/lib/invites";
+import {
+  inviteUsable,
+  countryAllowed,
+  Invite,
+  PROFILE_DESTINATION,
+} from "@/lib/invites";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +38,7 @@ export default async function InviteSignupPage({
   if (!usable.ok || !allowed) redirect(`/i/${code}`);
 
   const dest = (invite?.redirect_url || "").trim();
+  if (dest === PROFILE_DESTINATION) redirect(`/p/${invite!.owner_id}`);
   if (dest) redirect(dest);
   redirect(`/i/${code}`);
 }

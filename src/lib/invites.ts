@@ -1,5 +1,11 @@
 import type { NextRequest } from "next/server";
 
+/**
+ * Sentinel stored in redirect_url meaning "send visitors to the creator's
+ * own profile page (/p/<owner_id>)" instead of an external URL.
+ */
+export const PROFILE_DESTINATION = "profile";
+
 export type Invite = {
   id: string;
   owner_id: string;
@@ -11,7 +17,10 @@ export type Invite = {
   active: boolean;
   expires_at: string | null;
   created_at: string;
-  /** Where allowed visitors are sent — every invite link is a redirect link. */
+  /**
+   * Where allowed visitors are sent — an external URL, or PROFILE_DESTINATION
+   * to load the creator's profile page.
+   */
   redirect_url?: string | null;
 };
 

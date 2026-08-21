@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { fetchAllRows } from "@/lib/fetchAllRows";
+import { PROFILE_DESTINATION } from "@/lib/invites";
 
 type Stats = { joins: number; clicks: number; countries: Record<string, number> };
 const blank = (): Stats => ({ joins: 0, clicks: 0, countries: {} });
@@ -114,10 +115,15 @@ function countryCodes(raw: unknown): string[] {
     : [];
 }
 
-/** Bare domains get https://; invalid input becomes null. */
+/**
+ * Bare domains get https://; invalid input becomes null. The literal
+ * PROFILE_DESTINATION ("profile") passes through — it means "send visitors
+ * to the creator's own profile page".
+ */
 function normalizeRedirectUrl(raw: unknown): string | null {
   const s = String(raw ?? "").trim();
   if (!s) return null;
+  if (s === PROFILE_DESTINATION) return PROFILE_DESTINATION;
   const withProto = /^https?:\/\//i.test(s) ? s : `https://${s}`;
   try {
     return new URL(withProto).toString();
