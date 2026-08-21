@@ -1,8 +1,8 @@
-import { redirectFansToMainChannel } from "@/lib/fanRedirect";
+import { redirect } from "next/navigation";
 
 /**
- * Fan shell removed — Home / Profile (and any other (fan) route) bounce
- * straight to the main Telegram channel with no Lolyfans UI.
+ * Old fan shell routes (/home, /profile) — the public Home Feed lives on the
+ * root page now, so everything here just goes there.
  */
 export default async function FanLayout({
   children,
@@ -10,5 +10,5 @@ export default async function FanLayout({
   children: React.ReactNode;
 }) {
   void children;
-  await redirectFansToMainChannel();
+  redirect("/");
 }

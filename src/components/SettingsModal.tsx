@@ -8,7 +8,6 @@ import InviteManager from "./InviteManager";
 import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
-import SubscriptionSettings from "./SubscriptionSettings";
 import TelegramSettings from "./TelegramSettings";
 import ShareLinkSettings from "./ShareLinkSettings";
 import Portal from "./Portal";
@@ -19,7 +18,6 @@ import {
   IconLink,
   IconLogout,
   IconSend,
-  IconTip,
   IconUser,
 } from "./Icons";
 
@@ -28,7 +26,6 @@ type Section =
   | "posts"
   | "social"
   | "share"
-  | "subscriptions"
   | "telegram"
   | "links"
   | "apikey";
@@ -375,17 +372,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <IconLink className="w-3.5 h-3.5" /> Share link
           </button>
           <button
-            onClick={() => setSection("subscriptions")}
-            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
-              section === "subscriptions"
-                ? "bg-accent text-white"
-                : "bg-card2 border border-line text-muted hover:text-fg"
-            }`}
-            title="Main Telegram channel redirect for lolyfans.com"
-          >
-            <IconTip className="w-3.5 h-3.5" /> Main channel
-          </button>
-          <button
             onClick={() => setSection("telegram")}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
               section === "telegram"
@@ -421,7 +407,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           <div
             className={`mx-auto w-full ${
               section === "profile" ||
-              section === "subscriptions" ||
               section === "telegram" ||
               section === "share"
                 ? "max-w-2xl"
@@ -438,8 +423,6 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               <SocialProofManager />
             ) : section === "share" ? (
               <ShareLinkSettings />
-            ) : section === "subscriptions" ? (
-              <SubscriptionSettings />
             ) : section === "telegram" ? (
               <TelegramSettings />
             ) : section === "apikey" ? (
