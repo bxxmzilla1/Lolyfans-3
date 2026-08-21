@@ -8,8 +8,10 @@ import InviteManager from "./InviteManager";
 import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
+import AdSettings from "./AdSettings";
 import Portal from "./Portal";
 import {
+  IconChart,
   IconGrid,
   IconHeart,
   IconKey,
@@ -18,7 +20,7 @@ import {
   IconUser,
 } from "./Icons";
 
-type Section = "profile" | "posts" | "social" | "links" | "apikey";
+type Section = "profile" | "posts" | "social" | "ads" | "links" | "apikey";
 
 /** Public profile settings: banner, avatar, display name, bio, location. */
 function ProfileSection() {
@@ -352,6 +354,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <IconHeart className="w-3.5 h-3.5" /> Social proof
           </button>
           <button
+            onClick={() => setSection("ads")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+              section === "ads"
+                ? "bg-accent text-white"
+                : "bg-card2 border border-line text-muted hover:text-fg"
+            }`}
+          >
+            <IconChart className="w-3.5 h-3.5" /> Ad Settings
+          </button>
+          <button
             onClick={() => setSection("links")}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
               section === "links"
@@ -376,7 +388,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto p-5 lg:p-8">
           <div
             className={`mx-auto w-full ${
-              section === "profile"
+              section === "profile" || section === "ads"
                 ? "max-w-2xl"
                 : section === "posts"
                   ? "max-w-4xl"
@@ -389,6 +401,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               <PostsManager />
             ) : section === "social" ? (
               <SocialProofManager />
+            ) : section === "ads" ? (
+              <AdSettings />
             ) : section === "apikey" ? (
               <ApiKeyManager />
             ) : (

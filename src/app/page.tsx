@@ -56,6 +56,7 @@ export default async function Home() {
         likes: (post.like_count ?? 0) + (stats.likes.get(post.id) ?? 0),
         comments: stats.comments.get(post.id) ?? 0,
         liked: false,
+        adGate: profile.adGate,
       };
     });
 

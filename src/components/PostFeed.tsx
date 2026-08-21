@@ -9,12 +9,25 @@ import {
   IconChat,
   IconHeart,
   IconHeartFilled,
+  IconLock,
   IconSend,
   IconUser,
   IconVerified,
   IconVolume,
   IconVolumeMute,
 } from "./Icons";
+
+/** Ad-click gate config for a post's video (from the creator's Ad Settings). */
+export type FeedAdGate = {
+  /** Ad clicks required to unlock the video. */
+  clicks: number;
+  /** Seconds of playback per unlock (0 = whole video). */
+  segmentSecs: number;
+  /** Ad clicks required for each next part. */
+  segmentClicks: number;
+  /** Adsterra ad URL opened on each click. */
+  link: string | null;
+};
 
 export type FeedPost = {
   id: string;
@@ -29,6 +42,7 @@ export type FeedPost = {
   likes: number;
   comments: number;
   liked: boolean;
+  adGate?: FeedAdGate | null;
 };
 
 type Comment = {
@@ -184,10 +198,25 @@ function CommentsSheet({
  * button to unmute. No fullscreen — it always plays in place. The muted flag
  * is set on the element directly because React doesn't reliably update the
  * muted attribute after the initial render.
+ *
+ * With an ad gate, the video starts locked behind an "open ad" overlay: each
+ * click opens the creator's Adsterra link and counts toward the unlock. An
+ * unlock grants `segmentSecs` of playback time (0 = the whole video); when
+ * the time runs out, the overlay comes back asking for the next clicks.
  */
-function FeedVideo({ url }: { url: string }) {
+function FeedVideo({ url, gate }: { url: string; gate?: FeedAdGate | null }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [muted, setMuted] = useState(true);
+  const gated = !!gate && gate.clicks > 0;
+  const [locked, setLocked] = useState(gated);
+  const [clicksDone, setClicksDone] = useState(0);
+  const [round, setRound] = useState(0);
+  // Playback-time budget left from the last unlock (seconds).
+  const budgetRef = useRef(0);
+  const lastTimeRef = useRef(0);
+
+  const required =
+    !gate || round === 0 ? gate?.clicks ?? 0 : gate.segmentClicks || gate.clicks;
 
   function toggleMute() {
     const v = videoRef.current;
@@ -195,7 +224,42 @@ function FeedVideo({ url }: { url: string }) {
     v.muted = !v.muted;
     setMuted(v.muted);
     // Unmuting from the button is a user gesture, so playback may resume.
-    if (v.paused) void v.play().catch(() => {});
+    if (v.paused && !locked) void v.play().catch(() => {});
+  }
+
+  function adClick() {
+    if (!gate) return;
+    // Every click opens an ad — that's what earns. Without a direct link the
+    // click still counts (the page-level popunder scripts catch it).
+    if (gate.link) window.open(gate.link, "_blank", "noopener");
+    const next = clicksDone + 1;
+    if (next < required) {
+      setClicksDone(next);
+      return;
+    }
+    // Unlocked: grant the playback budget and resume.
+    setClicksDone(0);
+    setRound((r) => r + 1);
+    setLocked(false);
+    budgetRef.current =
+      gate.segmentSecs > 0 ? gate.segmentSecs : Number.POSITIVE_INFINITY;
+    const v = videoRef.current;
+    lastTimeRef.current = v?.currentTime ?? 0;
+    void v?.play().catch(() => {});
+  }
+
+  function onTimeUpdate() {
+    const v = videoRef.current;
+    if (!v || !gated || locked) return;
+    if (!Number.isFinite(budgetRef.current)) return;
+    // Count only small forward deltas so loops and seeks don't eat budget.
+    const delta = v.currentTime - lastTimeRef.current;
+    lastTimeRef.current = v.currentTime;
+    if (delta > 0 && delta < 1.5) budgetRef.current -= delta;
+    if (budgetRef.current <= 0) {
+      v.pause();
+      setLocked(true);
+    }
   }
 
   return (
@@ -213,15 +277,45 @@ function FeedVideo({ url }: { url: string }) {
       <video
         ref={videoRef}
         src={`${url}#t=0.001`}
-        autoPlay
+        autoPlay={!gated}
         loop
         muted
         playsInline
         preload="metadata"
         disablePictureInPicture
         controlsList="nodownload nofullscreen noremoteplayback"
-        className="relative w-full h-auto max-h-[70vh] object-contain"
+        onTimeUpdate={onTimeUpdate}
+        className={`relative w-full h-auto max-h-[70vh] object-contain ${
+          gated && locked ? "blur-xl" : ""
+        }`}
       />
+
+      {gated && locked && (
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/55 p-4 text-center">
+          <span className="w-12 h-12 rounded-full ig-gradient glow-accent flex items-center justify-center">
+            <IconLock className="w-5 h-5 text-white" />
+          </span>
+          <p className="text-white text-sm font-semibold drop-shadow">
+            {round === 0
+              ? "Click the ad to unlock this video"
+              : "Click the ad to keep watching"}
+          </p>
+          <button
+            type="button"
+            onClick={adClick}
+            className="px-7 py-3 rounded-full bg-accent text-white text-sm font-bold active:opacity-80 transition-opacity"
+          >
+            Open ad{required > 1 ? ` · ${clicksDone}/${required}` : ""}
+          </button>
+          {required > 1 && (
+            <p className="text-white/75 text-[11px]">
+              {required - clicksDone} click
+              {required - clicksDone === 1 ? "" : "s"} left to unlock
+            </p>
+          )}
+        </div>
+      )}
+
       <button
         type="button"
         onClick={toggleMute}
@@ -345,7 +439,7 @@ export default function PostFeed({
               screen) over a blurred copy of itself. Videos loop in place with
               a mute toggle (no fullscreen); tapping an image opens it big. */}
           {post.type === "video" ? (
-            <FeedVideo url={post.url} />
+            <FeedVideo url={post.url} gate={post.adGate} />
           ) : (
             <button
               onClick={() => setViewer(post)}
