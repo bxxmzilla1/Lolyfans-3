@@ -4,16 +4,16 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Portal from "./Portal";
-import VideoPlayer from "./VideoPlayer";
 import { formatCount, formatTime, mediaUrl } from "@/lib/utils";
 import {
   IconChat,
   IconHeart,
   IconHeartFilled,
-  IconPlay,
   IconSend,
   IconUser,
   IconVerified,
+  IconVolume,
+  IconVolumeMute,
 } from "./Icons";
 
 export type FeedPost = {
@@ -180,6 +180,65 @@ function CommentsSheet({
 }
 
 /**
+ * Inline feed video: autoplays on loop, muted by default, with a speaker
+ * button to unmute. No fullscreen — it always plays in place. The muted flag
+ * is set on the element directly because React doesn't reliably update the
+ * muted attribute after the initial render.
+ */
+function FeedVideo({ url }: { url: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [muted, setMuted] = useState(true);
+
+  function toggleMute() {
+    const v = videoRef.current;
+    if (!v) return;
+    v.muted = !v.muted;
+    setMuted(v.muted);
+    // Unmuting from the button is a user gesture, so playback may resume.
+    if (v.paused) void v.play().catch(() => {});
+  }
+
+  return (
+    <div className="relative block w-full overflow-hidden">
+      {/* Blurred first frame fills the sides of non-16:9 videos. */}
+      <video
+        src={`${url}#t=0.001`}
+        aria-hidden
+        muted
+        playsInline
+        preload="metadata"
+        tabIndex={-1}
+        className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
+      />
+      <video
+        ref={videoRef}
+        src={`${url}#t=0.001`}
+        autoPlay
+        loop
+        muted
+        playsInline
+        preload="metadata"
+        disablePictureInPicture
+        controlsList="nodownload nofullscreen noremoteplayback"
+        className="relative w-full h-auto max-h-[70vh] object-contain"
+      />
+      <button
+        type="button"
+        onClick={toggleMute}
+        aria-label={muted ? "Unmute" : "Mute"}
+        className="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-black/60 text-white backdrop-blur-sm flex items-center justify-center active:opacity-80 transition-opacity"
+      >
+        {muted ? (
+          <IconVolumeMute className="w-5 h-5" />
+        ) : (
+          <IconVolume className="w-5 h-5" />
+        )}
+      </button>
+    </div>
+  );
+}
+
+/**
  * OnlyFans-style feed: full-width post cards with like and comment buttons.
  * Used on creator profiles and the guest home feed.
  */
@@ -301,53 +360,31 @@ export default function PostFeed({
           )}
 
           {/* Media is never cropped: it fits the column (capped at 70% of the
-              screen) over a blurred copy of itself. Tapping opens fullscreen. */}
-          <button
-            onClick={() => setViewer(post)}
-            aria-label="View full screen"
-            className="relative block w-full overflow-hidden"
-          >
-            {post.type === "video" ? (
-              <video
-                src={`${post.url}#t=0.001`}
-                aria-hidden
-                muted
-                playsInline
-                preload="metadata"
-                tabIndex={-1}
-                className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
-              />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
+              screen) over a blurred copy of itself. Videos loop in place with
+              a mute toggle (no fullscreen); tapping an image opens it big. */}
+          {post.type === "video" ? (
+            <FeedVideo url={post.url} />
+          ) : (
+            <button
+              onClick={() => setViewer(post)}
+              aria-label="View full screen"
+              className="relative block w-full overflow-hidden"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={post.url}
                 aria-hidden
                 alt=""
                 className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
               />
-            )}
-            {post.type === "video" ? (
-              <>
-                <video
-                  src={`${post.url}#t=0.001`}
-                  playsInline
-                  preload="metadata"
-                  tabIndex={-1}
-                  className="relative w-full h-auto max-h-[70vh] object-contain pointer-events-none"
-                />
-                <span className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-accent text-white glow-accent flex items-center justify-center">
-                  <IconPlay className="w-6 h-6 translate-x-0.5" />
-                </span>
-              </>
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={post.url}
                 alt={post.caption || "Post"}
                 className="relative w-full h-auto max-h-[70vh] object-contain"
               />
-            )}
-          </button>
+            </button>
+          )}
 
           {/* Action row: like + comment */}
           <div className="px-3.5 pt-2.5 flex items-center gap-4">
@@ -385,7 +422,7 @@ export default function PostFeed({
         </article>
       ))}
 
-      {/* Fullscreen media viewer; videos get the themed player controls */}
+      {/* Fullscreen viewer — images only; videos always play inline. */}
       {viewer && (
         <Portal>
           <div
@@ -396,22 +433,13 @@ export default function PostFeed({
               className="w-full max-w-4xl max-h-full"
               onClick={(e) => e.stopPropagation()}
             >
-              {viewer.type === "video" ? (
-                <VideoPlayer
-                  src={viewer.url}
-                  className="rounded-xl"
-                  videoClassName="max-h-[85vh]"
-                  autoPlay
-                />
-              ) : (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={viewer.url}
-                  alt={viewer.caption || "Post"}
-                  onClick={() => setViewer(null)}
-                  className="w-full h-auto max-h-[85vh] object-contain rounded-xl cursor-pointer"
-                />
-              )}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={viewer.url}
+                alt={viewer.caption || "Post"}
+                onClick={() => setViewer(null)}
+                className="w-full h-auto max-h-[85vh] object-contain rounded-xl cursor-pointer"
+              />
             </div>
             <button
               onClick={() => setViewer(null)}
