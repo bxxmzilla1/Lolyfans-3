@@ -45,38 +45,35 @@ export default function FollowButton({
     setBusy(false);
   }
 
-  const label = following
-    ? small
-      ? "Following"
-      : "FOLLOWING"
-    : small
-      ? "Follow"
-      : busy
-        ? "…"
-        : "FOLLOW FOR FREE";
-
   return (
-    <div className="space-y-1.5">
-      <button
-        onClick={toggleFollow}
-        disabled={busy}
-        className={`${
-          small
-            ? "px-3.5 py-1.5 text-xs"
-            : full
-              ? "w-full px-5 py-3 text-sm"
-              : "px-6 py-2.5 text-sm min-w-48"
-        } rounded-full font-semibold transition-colors disabled:opacity-60 ${
-          following
-            ? "bg-card2 border border-line2 text-fg"
-            : "bg-accent text-white"
-        }`}
-      >
-        {label}
-      </button>
-      {!small && !following && (
-        <p className="text-xs text-muted text-center">Free to follow</p>
+    <button
+      onClick={toggleFollow}
+      disabled={busy}
+      className={`${
+        small
+          ? "px-3.5 py-1.5 text-xs"
+          : full
+            ? "w-full px-5 py-3 text-sm"
+            : "px-6 py-2.5 text-sm min-w-48"
+      } rounded-full font-semibold transition-colors disabled:opacity-60 ${
+        following
+          ? "bg-card2 border border-line2 text-fg"
+          : "bg-accent text-white"
+      }`}
+    >
+      {following ? (
+        small ? "Following" : "FOLLOWING"
+      ) : small ? (
+        "Follow"
+      ) : busy ? (
+        "…"
+      ) : (
+        // SUBSCRIBE on the left, FREE on the right.
+        <span className="flex items-center justify-between w-full">
+          <span>SUBSCRIBE</span>
+          <span>FREE</span>
+        </span>
       )}
-    </div>
+    </button>
   );
 }

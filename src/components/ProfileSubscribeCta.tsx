@@ -19,16 +19,14 @@ export default function ProfileSubscribeCta({
 
   return (
     <>
-      <div className="space-y-1.5">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="w-full px-5 py-3 rounded-full bg-accent text-white text-sm font-semibold text-center active:opacity-80 transition-opacity"
-        >
-          SUBSCRIBE
-        </button>
-        <p className="text-xs text-muted text-center">Free to subscribe</p>
-      </div>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="w-full px-5 py-3 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity flex items-center justify-between"
+      >
+        <span>SUBSCRIBE</span>
+        <span>FREE</span>
+      </button>
 
       {open && (
         <JoinChannelSheet
