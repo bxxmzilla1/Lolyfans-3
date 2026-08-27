@@ -98,6 +98,8 @@ export default async function CreatorProfilePage({
   let realLikes = 0;
   for (const n of stats.likes.values()) realLikes += n;
   const likes = profile.likesBase + realLikes;
+  // Displayed post count: owner-set override (Social proof tab) or the real one.
+  const postCount = profile.postsBase > 0 ? profile.postsBase : (posts ?? []).length;
 
   // Creator option: visitors without an account see the media blurred.
   const blurForVisitor = profile.blurPosts && chats.length === 0;
@@ -154,7 +156,7 @@ export default async function CreatorProfilePage({
                 <IconHeart className="w-4 h-4 shrink-0" />
                 {formatCount(likes)} {likes === 1 ? "Like" : "Likes"}
                 {" · "}
-                {feedPosts.length} {feedPosts.length === 1 ? "post" : "posts"}
+                {formatCount(postCount)} {postCount === 1 ? "post" : "posts"}
               </p>
             </div>
 

@@ -164,7 +164,8 @@ export default async function InviteProfilePreviewPage({
   let realLikes = 0;
   for (const n of stats.likes.values()) realLikes += n;
   const likes = profile.likesBase + realLikes;
-  const posts = postCount ?? 0;
+  // Owner-set override (Social proof tab) wins over the real post count.
+  const posts = profile.postsBase > 0 ? profile.postsBase : postCount ?? 0;
   const ctaProps = {
     code,
     ownerId,

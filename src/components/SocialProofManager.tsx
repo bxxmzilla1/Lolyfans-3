@@ -35,6 +35,8 @@ type Comment = {
 export default function SocialProofManager() {
   const [profileLikes, setProfileLikes] = useState("");
   const [profileLikesSaved, setProfileLikesSaved] = useState(false);
+  const [profilePosts, setProfilePosts] = useState("");
+  const [profilePostsSaved, setProfilePostsSaved] = useState(false);
   const [posts, setPosts] = useState<Post[]>([]);
   const [selected, setSelected] = useState<Post | null>(null);
   const [likeInput, setLikeInput] = useState("");
@@ -54,6 +56,8 @@ export default function SocialProofManager() {
         // Kept under the old social_followers key so existing values carry over.
         const n = Number(data.user?.user_metadata?.social_followers);
         if (n > 0) setProfileLikes(String(n));
+        const p = Number(data.user?.user_metadata?.social_posts);
+        if (p > 0) setProfilePosts(String(p));
       });
     fetch("/api/posts")
       .then((r) => r.json())
@@ -75,6 +79,13 @@ export default function SocialProofManager() {
     await supabaseBrowser().auth.updateUser({ data: { social_followers: n } });
     setProfileLikesSaved(true);
     setTimeout(() => setProfileLikesSaved(false), 1500);
+  }
+
+  async function saveProfilePosts() {
+    const n = Math.max(0, Math.floor(Number(profilePosts) || 0));
+    await supabaseBrowser().auth.updateUser({ data: { social_posts: n } });
+    setProfilePostsSaved(true);
+    setTimeout(() => setProfilePostsSaved(false), 1500);
   }
 
   async function saveLikes() {
@@ -180,6 +191,33 @@ export default function SocialProofManager() {
             className="px-5 rounded-xl bg-accent text-white text-sm font-semibold"
           >
             {profileLikesSaved ? "Saved!" : "Save"}
+          </button>
+        </div>
+      </div>
+
+      {/* Displayed post count */}
+      <div className="rounded-2xl border border-line bg-card p-4 space-y-3 max-w-lg">
+        <p className="text-sm font-semibold flex items-center gap-1.5">
+          <IconPlay className="w-4 h-4 text-accent" /> Posts
+        </p>
+        <p className="text-xs text-muted">
+          The post count shown on your public profile. Leave 0 to show the
+          real number of posts.
+        </p>
+        <div className="flex gap-2">
+          <input
+            type="number"
+            min={0}
+            value={profilePosts}
+            onChange={(e) => setProfilePosts(e.target.value)}
+            placeholder="e.g. 250"
+            className={`${inputClass} flex-1`}
+          />
+          <button
+            onClick={saveProfilePosts}
+            className="px-5 rounded-xl bg-accent text-white text-sm font-semibold"
+          >
+            {profilePostsSaved ? "Saved!" : "Save"}
           </button>
         </div>
       </div>

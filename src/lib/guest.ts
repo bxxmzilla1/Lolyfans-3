@@ -62,6 +62,8 @@ export type OwnerProfile = {
   verified: boolean;
   /** Owner-set base like count (Social proof tab; stored as social_followers). */
   likesBase: number;
+  /** Owner-set displayed post count (Social proof tab; 0 = show the real count). */
+  postsBase: number;
   bio: string | null;
   /** Show a location line (the visitor's own city) under the bio. */
   showLocation: boolean;
@@ -87,6 +89,7 @@ export async function ownerProfiles(
         banner_path?: string;
         invite_verified?: boolean;
         social_followers?: number;
+        social_posts?: number;
         profile_bio?: string;
         profile_show_location?: boolean;
         profile_blur_posts?: boolean;
@@ -99,6 +102,7 @@ export async function ownerProfiles(
           bannerPath: meta.banner_path || null,
           verified: !!meta.invite_verified,
           likesBase: Number(meta.social_followers) || 0,
+          postsBase: Number(meta.social_posts) || 0,
           bio: meta.profile_bio?.trim() || null,
           showLocation: !!meta.profile_show_location,
           blurPosts: !!meta.profile_blur_posts,
