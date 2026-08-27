@@ -53,18 +53,18 @@ export async function inviteCodeForChat(chatId: string): Promise<string | null> 
 }
 
 /**
- * Where a returning guest should land — the creator's profile page.
- * Invite links never use this; they redirect via their own redirect_url.
+ * Where a returning guest should land. Channel subscriptions are gone — every
+ * signed-up fan is allowed into the Home feed.
  */
 export async function guestAccessDestination(
   _chatId: string,
-  ownerId: string
+  _ownerId: string
 ): Promise<{ allowed: boolean; href: string }> {
-  return { allowed: true, href: `/p/${ownerId}` };
+  return { allowed: true, href: "/home" };
 }
 
 /**
- * Resolve access for a chat id (loads owner_id). Used by leftover fan routes.
+ * Resolve access for a chat id (loads owner_id). Used by /chat and fan layout.
  */
 export async function guestChatAccessDestination(
   chatId: string
@@ -75,9 +75,5 @@ export async function guestChatAccessDestination(
     .eq("id", chatId)
     .maybeSingle();
   if (!chat) return { allowed: false, href: "/api/guest/gone", ownerId: null };
-  return {
-    allowed: true,
-    href: `/p/${chat.owner_id}`,
-    ownerId: chat.owner_id as string,
-  };
+  return { allowed: true, href: "/home", ownerId: chat.owner_id as string };
 }

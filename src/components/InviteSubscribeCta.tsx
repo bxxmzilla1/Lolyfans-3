@@ -8,7 +8,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
  * Sign-up sheet (email + password only) shown over the invite profile;
- * after join, sends the fan to the creator's profile page.
+ * after join, drops the fan into their private chat with the creator.
  */
 export function JoinChannelSheet({
   code,
@@ -52,7 +52,7 @@ export function JoinChannelSheet({
       setError(data?.error || "Could not sign up");
       return;
     }
-    window.location.href = `/p/${ownerId}`;
+    window.location.href = "/chat";
   }
 
   const inputClass =
@@ -69,7 +69,7 @@ export function JoinChannelSheet({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-3">
-            <p className="font-bold">Join for free</p>
+            <p className="font-bold">Join my private chat</p>
             <button
               type="button"
               onClick={onClose}
@@ -82,7 +82,7 @@ export function JoinChannelSheet({
 
           <div className="space-y-3">
             <p className="text-xs text-muted">
-              Create a free account to unlock the full profile.
+              Create a free account to start chatting.
             </p>
             <input
               type="email"
@@ -124,7 +124,7 @@ export function JoinChannelSheet({
               disabled={busy || !email.trim() || password.length < 6}
               className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity"
             >
-              {busy ? "Joining…" : "Join for free"}
+              {busy ? "Joining…" : "Start chatting"}
             </button>
           </div>
         </div>
@@ -134,8 +134,8 @@ export function JoinChannelSheet({
 }
 
 /**
- * Invite-profile join button. Opens the sign-up sheet over the profile;
- * after join, sends the fan to the creator's profile page. No payment.
+ * Invite-profile "Join my private chat" button. Opens the sign-up sheet over
+ * the profile; after join, drops the fan into the chat. Free to join.
  */
 export default function InviteSubscribeCta({
   code,
@@ -158,7 +158,7 @@ export default function InviteSubscribeCta({
           onClick={() => setOpen(true)}
           className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold text-center active:opacity-80 transition-opacity"
         >
-          JOIN FOR FREE
+          JOIN MY PRIVATE CHAT
         </button>
         <p className="text-xs text-muted text-center">Free to join</p>
       </div>

@@ -49,7 +49,7 @@ export async function POST(req: NextRequest) {
   const dest = await guestAccessDestination(chat.id, chat.owner_id);
   const res = NextResponse.json({
     ok: true,
-    redirect: dest.href,
+    redirect: dest.allowed ? "/home" : dest.href,
   });
   res.cookies.set(
     GUEST_COOKIE,

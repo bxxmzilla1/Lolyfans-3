@@ -8,16 +8,9 @@ import { formatCount, mediaUrl } from "@/lib/utils";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
+import MessageCreatorButton from "@/components/MessageCreatorButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
-import {
-  AdsterraBanner300x250,
-  AdsterraBanner468,
-  AdsterraLeaderboard,
-  AdsterraNativeBanner,
-  AdsterraScripts,
-  AdsterraSideRails,
-} from "@/components/AdsterraAds";
 import { IconHeart, IconMapPin, IconVerified } from "@/components/Icons";
 
 export const dynamic = "force-dynamic";
@@ -111,15 +104,20 @@ export default async function CreatorProfilePage({
 
   return (
     <GuestPage hideHeader>
-        {/* Adsterra: page-level scripts (invisible units). */}
-        <AdsterraScripts />
-
         <section className="pb-4">
           {/* OnlyFans structure: banner, avatar left with actions on the right */}
           <CreatorBanner
             name={profile.name}
             avatarPath={profile.avatarPath}
             bannerPath={profile.bannerPath}
+            actions={
+              hasChatWithOwner ? (
+                <MessageCreatorButton
+                  ownerId={ownerId}
+                  className="px-5 py-2 rounded-full bg-card border border-line2 text-sm font-semibold"
+                />
+              ) : undefined
+            }
           />
 
           {/* Identity block: everything left-aligned like OnlyFans */}
@@ -168,27 +166,10 @@ export default async function CreatorProfilePage({
               </div>
             )}
           </div>
-
-          {/* Adsterra: leaderboard (728x90 desktop / 320x50 mobile) and the
-              468x60 banner between the identity block and the feed. */}
-          <AdsterraLeaderboard />
-          <AdsterraBanner468 />
         </section>
 
         <div className="border-t border-line">
-          <PostFeed
-            posts={feedPosts}
-            canInteract={chats.length > 0}
-            watchOnTap
-          />
-
-          {/* Adsterra: 300x250 rectangle + native banner below the feed. */}
-          <AdsterraBanner300x250 />
-          <AdsterraNativeBanner />
-
-          {/* Adsterra: skyscrapers — fixed side rails on wide screens,
-              inline side-by-side pair on mobile. */}
-          <AdsterraSideRails />
+          <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
         </div>
     </GuestPage>
   );

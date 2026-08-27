@@ -11,7 +11,6 @@ export async function proxy(request: NextRequest) {
     pathname.startsWith("/i/") ||
     pathname.startsWith("/chat") ||
     pathname.startsWith("/p/") ||
-    pathname.startsWith("/watch/") ||
     pathname === "/home" ||
     pathname === "/chats" ||
     pathname === "/profile" ||

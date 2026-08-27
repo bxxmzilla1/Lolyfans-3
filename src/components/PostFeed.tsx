@@ -1,23 +1,19 @@
 "use client";
 
-import { Fragment, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Portal from "./Portal";
-import {
-  AdsterraBanner300x250,
-  AdsterraBanner468,
-} from "@/components/AdsterraAds";
+import VideoPlayer from "./VideoPlayer";
 import { formatCount, formatTime, mediaUrl } from "@/lib/utils";
 import {
   IconChat,
   IconHeart,
   IconHeartFilled,
+  IconPlay,
   IconSend,
   IconUser,
   IconVerified,
-  IconVolume,
-  IconVolumeMute,
 } from "./Icons";
 
 export type FeedPost = {
@@ -184,91 +180,15 @@ function CommentsSheet({
 }
 
 /**
- * Inline feed video: autoplays on loop, muted by default, with a speaker
- * button to unmute. No fullscreen — it always plays in place. The muted flag
- * is set on the element directly because React doesn't reliably update the
- * muted attribute after the initial render.
- */
-function FeedVideo({
-  url,
-  watchHref,
-}: {
-  url: string;
-  /** If set, tapping the video opens its own /watch page (full page load,
-   *  so all ad units render and count again). */
-  watchHref?: string;
-}) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [muted, setMuted] = useState(true);
-
-  function toggleMute() {
-    const v = videoRef.current;
-    if (!v) return;
-    v.muted = !v.muted;
-    setMuted(v.muted);
-    // Unmuting from the button is a user gesture, so playback may resume.
-    if (v.paused) void v.play().catch(() => {});
-  }
-
-  return (
-    <div className="relative block w-full overflow-hidden">
-      {/* Blurred first frame fills the sides of non-16:9 videos. */}
-      <video
-        src={`${url}#t=0.001`}
-        aria-hidden
-        muted
-        playsInline
-        preload="metadata"
-        tabIndex={-1}
-        className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
-      />
-      <video
-        ref={videoRef}
-        src={`${url}#t=0.001`}
-        autoPlay
-        loop
-        muted
-        playsInline
-        preload="metadata"
-        disablePictureInPicture
-        controlsList="nodownload nofullscreen noremoteplayback"
-        onClick={
-          watchHref ? () => window.location.assign(watchHref) : undefined
-        }
-        className={`relative w-full h-auto max-h-[70vh] object-contain ${
-          watchHref ? "cursor-pointer" : ""
-        }`}
-      />
-
-      <button
-        type="button"
-        onClick={toggleMute}
-        aria-label={muted ? "Unmute" : "Mute"}
-        className="absolute bottom-3 right-3 w-10 h-10 rounded-full bg-black/60 text-white backdrop-blur-sm flex items-center justify-center active:opacity-80 transition-opacity"
-      >
-        {muted ? (
-          <IconVolumeMute className="w-5 h-5" />
-        ) : (
-          <IconVolume className="w-5 h-5" />
-        )}
-      </button>
-    </div>
-  );
-}
-
-/**
  * OnlyFans-style feed: full-width post cards with like and comment buttons.
  * Used on creator profiles and the guest home feed.
  */
 export default function PostFeed({
   posts: initialPosts,
   canInteract,
-  watchOnTap = false,
 }: {
   posts: FeedPost[];
   canInteract: boolean;
-  /** Tapping a video opens its own /watch page with a fresh set of ads. */
-  watchOnTap?: boolean;
 }) {
   const [posts, setPosts] = useState(initialPosts);
   const [commentsFor, setCommentsFor] = useState<FeedPost | null>(null);
@@ -276,12 +196,14 @@ export default function PostFeed({
   const [messaging, setMessaging] = useState<string | null>(null);
   const router = useRouter();
 
-  /** "Message" → the creator's profile page. */
-  async function message(post: FeedPost) {
+  /**
+   * "Message" → the fan's private chat when they have an account, otherwise
+   * the creator's profile page (where they can join).
+   */
+  function message(post: FeedPost) {
     if (messaging) return;
     setMessaging(post.id);
-    router.push(`/p/${post.ownerId}`);
-    setMessaging(null);
+    router.push(canInteract ? "/chat" : `/p/${post.ownerId}`);
   }
 
   async function toggleLike(post: FeedPost) {
@@ -320,9 +242,8 @@ export default function PostFeed({
   return (
     // Instagram-style: full-width posts separated by a hairline, no cards.
     <div className="pb-4 divide-y divide-line">
-      {posts.map((post, index) => (
-        <Fragment key={post.id}>
-        <article>
+      {posts.map((post) => (
+        <article key={post.id}>
           <div className="flex items-center gap-2.5 px-3.5 py-2.5">
             <Link
               href={`/p/${post.ownerId}`}
@@ -364,34 +285,53 @@ export default function PostFeed({
           )}
 
           {/* Media is never cropped: it fits the column (capped at 70% of the
-              screen) over a blurred copy of itself. Videos loop in place with
-              a mute toggle (no fullscreen); tapping an image opens it big. */}
-          {post.type === "video" ? (
-            <FeedVideo
-              url={post.url}
-              watchHref={watchOnTap ? `/watch/${post.id}` : undefined}
-            />
-          ) : (
-            <button
-              onClick={() => setViewer(post)}
-              aria-label="View full screen"
-              className="relative block w-full overflow-hidden"
-            >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              screen) over a blurred copy of itself. Tapping opens fullscreen. */}
+          <button
+            onClick={() => setViewer(post)}
+            aria-label="View full screen"
+            className="relative block w-full overflow-hidden"
+          >
+            {post.type === "video" ? (
+              <video
+                src={`${post.url}#t=0.001`}
+                aria-hidden
+                muted
+                playsInline
+                preload="metadata"
+                tabIndex={-1}
+                className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
+              />
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={post.url}
                 aria-hidden
                 alt=""
                 className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
               />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+            )}
+            {post.type === "video" ? (
+              <>
+                <video
+                  src={`${post.url}#t=0.001`}
+                  playsInline
+                  preload="metadata"
+                  tabIndex={-1}
+                  className="relative w-full h-auto max-h-[70vh] object-contain pointer-events-none"
+                />
+                <span className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-accent text-white glow-accent flex items-center justify-center">
+                  <IconPlay className="w-6 h-6 translate-x-0.5" />
+                </span>
+              </>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={post.url}
                 alt={post.caption || "Post"}
                 className="relative w-full h-auto max-h-[70vh] object-contain"
               />
-            </button>
-          )}
+            )}
+          </button>
 
           {/* Action row: like + comment */}
           <div className="px-3.5 pt-2.5 flex items-center gap-4">
@@ -427,15 +367,9 @@ export default function PostFeed({
               : "Add a comment…"}
           </button>
         </article>
-
-        {/* Adsterra: in-feed banner after every post, alternating between the
-            468x60 and 300x250 units. Each lives in its own isolated iframe,
-            so every instance loads (and counts) its own impression. */}
-        {index % 2 === 0 ? <AdsterraBanner468 /> : <AdsterraBanner300x250 />}
-        </Fragment>
       ))}
 
-      {/* Fullscreen viewer — images only; videos always play inline. */}
+      {/* Fullscreen media viewer; videos get the themed player controls */}
       {viewer && (
         <Portal>
           <div
@@ -446,13 +380,22 @@ export default function PostFeed({
               className="w-full max-w-4xl max-h-full"
               onClick={(e) => e.stopPropagation()}
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={viewer.url}
-                alt={viewer.caption || "Post"}
-                onClick={() => setViewer(null)}
-                className="w-full h-auto max-h-[85vh] object-contain rounded-xl cursor-pointer"
-              />
+              {viewer.type === "video" ? (
+                <VideoPlayer
+                  src={viewer.url}
+                  className="rounded-xl"
+                  videoClassName="max-h-[85vh]"
+                  autoPlay
+                />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={viewer.url}
+                  alt={viewer.caption || "Post"}
+                  onClick={() => setViewer(null)}
+                  className="w-full h-auto max-h-[85vh] object-contain rounded-xl cursor-pointer"
+                />
+              )}
             </div>
             <button
               onClick={() => setViewer(null)}
