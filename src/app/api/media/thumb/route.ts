@@ -24,7 +24,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "path required" }, { status: 400 });
   }
 
-  if (VIDEO_EXT.test(path)) return videoThumb(path, w);
+  if (VIDEO_EXT.test(path)) {
+    return (
+      (await videoThumb(path, w)) ??
+      NextResponse.json({ error: "Could not build thumb" }, { status: 500 })
+    );
+  }
 
   const res = await fetch(mediaUrl(path));
   if (!res.ok) {
@@ -40,13 +45,20 @@ export async function GET(req: NextRequest) {
       .webp({ quality: 55 })
       .toBuffer();
     return thumbResponse(out);
-  } catch {
-    // Not an image (e.g. a video with an odd extension) — try a frame grab.
-    return videoThumb(path, w);
+  } catch (err) {
+    console.error("thumb: image resize failed", path, err);
+    // Not an image (e.g. a video with an odd extension) — try a frame grab;
+    // failing that, serve the original file so the tile never breaks.
+    return (
+      (await videoThumb(path, w)) ??
+      NextResponse.redirect(mediaUrl(path), {
+        headers: { "Cache-Control": "public, max-age=3600" },
+      })
+    );
   }
 }
 
-async function videoThumb(path: string, w: number) {
+async function videoThumb(path: string, w: number): Promise<NextResponse | null> {
   // Served straight from storage after the first request.
   const cachePath = `thumbs/w${w}/${path}.webp`;
   const cached = await fetch(mediaUrl(cachePath), { method: "HEAD" }).catch(
@@ -74,8 +86,9 @@ async function videoThumb(path: string, w: number) {
       .catch(() => {});
 
     return thumbResponse(out);
-  } catch {
-    return NextResponse.json({ error: "Could not build thumb" }, { status: 500 });
+  } catch (err) {
+    console.error("thumb: video frame grab failed", path, err);
+    return null;
   }
 }
 

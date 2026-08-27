@@ -562,6 +562,15 @@ export function VaultPicker({
                   alt=""
                   className="w-full h-full object-cover group-hover:scale-105 transition-transform"
                   loading="lazy"
+                  onError={(e) => {
+                    const img = e.currentTarget;
+                    if (item.media_type === "image" && !img.dataset.fallback) {
+                      img.dataset.fallback = "1";
+                      img.src = mediaUrl(item.media_path);
+                    } else {
+                      img.style.visibility = "hidden";
+                    }
+                  }}
                 />
                 {item.media_type === "video" && (
                   <span className="absolute inset-0 m-auto w-8 h-8 rounded-full bg-accent/90 flex items-center justify-center">

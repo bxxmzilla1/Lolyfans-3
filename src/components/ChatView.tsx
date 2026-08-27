@@ -77,6 +77,9 @@ export default function ChatView({
   const [vaultPickerOpen, setVaultPickerOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [sendLocked, setSendLocked] = useState(false);
+  // Owner media send mode: normal chat bubble, or a full-screen notification
+  // (the incoming-media gate takes over the fan's screen).
+  const [sendMode, setSendMode] = useState<"message" | "fullscreen">("message");
   const [lockPrice, setLockPrice] = useState("");
   // Optional decision countdown (seconds) for the incoming-media gate.
   const [decideTimer, setDecideTimer] = useState("");
@@ -1047,6 +1050,7 @@ export default function ChatView({
         : 0;
     const drainCfg =
       role === "owner" && mediaItems.some((i) => i.type === "video") ? blurDrainer : null;
+    const sendFullscreen = role === "owner" && sendMode === "fullscreen";
 
     // Optimistic: show the message immediately, reconcile with the server response.
     const tempId = `temp-${Date.now()}`;
@@ -1074,6 +1078,7 @@ export default function ChatView({
     if (priceCents > 0) setLockPrice("");
     if (decideSeconds > 0) setDecideTimer("");
     if (drainCfg) setBlurDrainer(null);
+    setSendMode("message");
 
     try {
       const res = await fetch("/api/messages", {
@@ -1090,6 +1095,7 @@ export default function ChatView({
           priceCents,
           decideSeconds,
           blurDrainer: drainCfg,
+          fullscreen: sendFullscreen,
         }),
       });
       if (res.ok) {
@@ -1687,6 +1693,50 @@ export default function ChatView({
           </div>
           {role === "owner" ? (
             <div className="space-y-1.5">
+              {/* Send mode: normal bubble vs full-screen notification. Locked,
+                  priced, timed and BlurDrainer media always go full screen. */}
+              {(() => {
+                const gateForced =
+                  sendLocked ||
+                  (parseInt(lockPrice, 10) || 0) > 0 ||
+                  (parseInt(decideTimer, 10) || 0) > 0 ||
+                  !!blurDrainer;
+                const mode = gateForced ? "fullscreen" : sendMode;
+                const pill = (active: boolean) =>
+                  `text-xs font-bold px-2.5 py-1 rounded-lg border transition-colors ${
+                    active
+                      ? "bg-accent text-white border-accent"
+                      : "bg-bg border-line text-muted"
+                  } ${gateForced ? "opacity-60" : ""}`;
+                return (
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs text-muted">Send as</span>
+                    <button
+                      type="button"
+                      disabled={gateForced}
+                      onClick={() => setSendMode("message")}
+                      className={pill(mode === "message")}
+                    >
+                      Message
+                    </button>
+                    <button
+                      type="button"
+                      disabled={gateForced}
+                      onClick={() => setSendMode("fullscreen")}
+                      className={pill(mode === "fullscreen")}
+                    >
+                      Full screen
+                    </button>
+                    <span className="text-[11px] text-muted">
+                      {gateForced
+                        ? "locked media always shows full screen"
+                        : mode === "fullscreen"
+                          ? "takes over their screen"
+                          : "normal chat bubble"}
+                    </span>
+                  </div>
+                );
+              })()}
               <div className="flex items-center gap-1.5 flex-wrap">
                 <span className="text-xs text-muted">Unlock price</span>
                 <IconTip className="w-3.5 h-3.5 text-accent" />

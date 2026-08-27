@@ -126,8 +126,16 @@ function normalizeMediaItems(body: {
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { chatId, content, replyToId, locked, priceCents, decideSeconds, blurDrainer } =
-    body;
+  const {
+    chatId,
+    content,
+    replyToId,
+    locked,
+    priceCents,
+    decideSeconds,
+    blurDrainer,
+    fullscreen,
+  } = body;
   const mediaItems = normalizeMediaItems(body);
   const mediaPath = mediaItems[0]?.path ?? null;
   const mediaType = mediaItems[0]?.type ?? null;
@@ -165,6 +173,19 @@ export async function POST(req: NextRequest) {
   const drain =
     auth.role === "owner" && hasVideo ? parseBlurDrainer(blurDrainer) : null;
 
+  const isLocked = !!locked && mediaItems.length > 0;
+  const price =
+    auth.role === "owner" && mediaItems.length > 0 && Number.isFinite(priceCents)
+      ? Math.max(0, Math.round(Number(priceCents)))
+      : 0;
+  // Send mode for owner media: "full screen notification" leaves fan_decision
+  // null so the incoming-media gate takes over the fan's screen; a plain
+  // "message" is pre-accepted and lands as a normal bubble. Locked/priced,
+  // timed and BlurDrainer media always need the gate.
+  const gateRequired = isLocked || price > 0 || decide > 0 || !!drain;
+  const plainBubble =
+    auth.role === "owner" && hasVisualMedia && !gateRequired && fullscreen !== true;
+
   const { data: message, error } = await db
     .from("messages")
     .insert({
@@ -175,14 +196,12 @@ export async function POST(req: NextRequest) {
       media_type: mediaType,
       media_items: mediaItems,
       reply_to_id: replyToId || null,
-      locked: !!locked && mediaItems.length > 0,
+      locked: isLocked,
       // Only the owner can price media; a positive price makes it pay-to-unlock.
-      price_cents:
-        auth.role === "owner" && mediaItems.length > 0 && Number.isFinite(priceCents)
-          ? Math.max(0, Math.round(Number(priceCents)))
-          : 0,
+      price_cents: price,
       ...(decide > 0 ? { decide_seconds: decide } : {}),
       ...(drain ? { blur_drainer: drain } : {}),
+      ...(plainBubble ? { fan_decision: "accepted" } : {}),
     })
     .select()
     .single();

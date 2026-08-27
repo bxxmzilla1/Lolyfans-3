@@ -8,7 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { chatPreviewLabel, type ChatPreview } from "@/lib/chatPreview";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
-import { IconCard, IconChat, IconCheck, IconEdit, IconFolder, IconGrid, IconMapPin, IconPlus, IconSearch, IconSend, IconTrash } from "./Icons";
+import { IconCard, IconChat, IconCheck, IconEdit, IconFolder, IconGrid, IconPlus, IconSearch, IconSend, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
 import MassMessage from "./MassMessage";
@@ -787,14 +787,6 @@ export default function ChatList() {
                       {chat.custom_name && (
                         <span className="text-muted text-[11px] font-normal truncate">
                           {chat.guest_name}
-                        </span>
-                      )}
-                      {(chat.guest_city || chat.guest_country) && (
-                        <span className="shrink-0 flex items-center gap-0.5 text-muted text-[11px] font-normal">
-                          <IconMapPin className="w-3 h-3 text-accent" />
-                          {chat.guest_city
-                            ? `${chat.guest_city}${chat.guest_country ? `, ${chat.guest_country}` : ""}`
-                            : chat.guest_country}
                         </span>
                       )}
                     </p>
