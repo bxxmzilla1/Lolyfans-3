@@ -13,12 +13,13 @@ import {
 } from "@/lib/blurDrainer";
 
 /**
- * Fullscreen BlurDrainer: video plays under a stacked square blur. Taps on
- * the blur square peel layers instantly (optimistic — the server spend runs
- * in the background). When the wallet can't cover a tap and auto-refill is
- * off, the stuck layer turns into a top-up layer: one tap buys a pack (saved
- * card = instant) and the layer clears automatically. Free drains require
- * card verification first.
+ * Fullscreen BlurDrainer: video plays under a stacked square blur. Tapping
+ * anywhere on the screen peels a layer instantly (pointer-down, optimistic —
+ * the token spends run in the background), so rapid tapping never drops a
+ * click. When the wallet can't cover a tap and auto-refill is off, the stuck
+ * layer turns into a top-up layer: one deliberate tap on it buys a pack
+ * (saved card = instant) and the layer clears automatically. Free drains
+ * require card verification first.
  */
 export default function BlurDrainerPlayer({
   videoPath,
@@ -54,6 +55,11 @@ export default function BlurDrainerPlayer({
   );
   const prevCleared = useRef(initialCleared);
   const inflightRef = useRef(0);
+  // Rapid taps outrun React state — refs keep the counters and guards exact
+  // no matter how fast the fan hammers the screen.
+  const tappedRef = useRef(initialCleared);
+  const needTopupRef = useRef(false);
+  const checkingRef = useRef(false);
   const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
   const [videoEl, setVideoEl] = useState<HTMLVideoElement | null>(null);
   const frame = useVideoContentBox(containerEl, videoEl);
@@ -75,6 +81,8 @@ export default function BlurDrainerPlayer({
   }, [cleared]);
 
   useEffect(() => {
+    tappedRef.current = initialCleared;
+    needTopupRef.current = false;
     setCleared(initialCleared);
     setNeedTopup(null);
   }, [initialCleared, messageId]);
@@ -107,6 +115,7 @@ export default function BlurDrainerPlayer({
         if (!res.ok || !alive) return;
         const data = await res.json();
         if (typeof data.layersCleared === "number" && inflightRef.current === 0) {
+          tappedRef.current = Math.max(tappedRef.current, data.layersCleared);
           setCleared((c) => Math.max(c, data.layersCleared));
           onProgress?.(data.layersCleared);
         }
@@ -120,17 +129,30 @@ export default function BlurDrainerPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messageId]);
 
+  /** Peel one layer, reverting on failure. */
+  function revertOneTap() {
+    tappedRef.current = Math.max(0, tappedRef.current - 1);
+    setCleared(tappedRef.current);
+  }
+
   /** Unblur a layer. Paid taps peel instantly (optimistic) while the token
-   *  spend runs in the background; free taps before card verification wait
-   *  with a spinner so the blur never flashes open prematurely. */
+   *  spend runs in the background — every rapid tap counts, each firing its
+   *  own spend. Free taps before card verification wait with a spinner so
+   *  the blur never flashes open prematurely. */
   async function tap(force = false) {
-    // `force` skips the guards for the automatic retry right after a top-up
-    // (the state updates clearing them haven't re-rendered yet).
-    if (!force && (card || checking || needTopup)) return;
-    if (cleared + inflightRef.current >= config.layers) return;
+    // Refs, not state: guards stay exact even when taps land faster than
+    // React re-renders. `force` skips them for the automatic retry right
+    // after a top-up (the state clearing them hasn't re-rendered yet).
+    if (!force && (card || checkingRef.current || needTopupRef.current)) return;
+    if (tappedRef.current >= config.layers) return;
     const optimistic = !free;
-    if (optimistic) setCleared((c) => Math.min(config.layers, c + 1));
-    else setChecking(true);
+    if (optimistic) {
+      tappedRef.current += 1;
+      setCleared(tappedRef.current);
+    } else {
+      checkingRef.current = true;
+      setChecking(true);
+    }
     inflightRef.current += 1;
     try {
       const res = await fetch("/api/payments/blur-drain", {
@@ -142,11 +164,13 @@ export default function BlurDrainerPlayer({
       if (res.status === 402 && typeof data.needTokens === "number") {
         // Auto-refill didn't cover it (switched off, no saved card, or the
         // charge failed): the blur square becomes a top-up layer.
-        if (optimistic) setCleared((c) => Math.max(0, c - 1));
+        if (optimistic) revertOneTap();
+        needTopupRef.current = true;
         setNeedTopup({ needTokens: data.needTokens });
         return;
       }
       if (res.ok && typeof data.layersCleared === "number") {
+        tappedRef.current = Math.max(tappedRef.current, data.layersCleared);
         setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
       } else if (res.ok && data.setupClientSecret) {
@@ -158,12 +182,13 @@ export default function BlurDrainerPlayer({
           amountCents: 0,
         });
       } else if (optimistic) {
-        setCleared((c) => Math.max(0, c - 1));
+        revertOneTap();
       }
     } catch {
-      if (optimistic) setCleared((c) => Math.max(0, c - 1));
+      if (optimistic) revertOneTap();
     } finally {
       inflightRef.current = Math.max(0, inflightRef.current - 1);
+      checkingRef.current = false;
       setChecking(false);
     }
   }
@@ -172,11 +197,12 @@ export default function BlurDrainerPlayer({
    *  Saved card charges instantly and the layer clears right away; first
    *  purchase opens the in-player card wizard instead. */
   async function topUp() {
-    if (checking || card) return;
+    if (checkingRef.current || card) return;
     const pack =
       TOKEN_PACKS.find(
         (p) => packTotalTokens(p) >= (needTopup?.needTokens ?? 1)
       ) ?? TOKEN_PACKS[TOKEN_PACKS.length - 1];
+    checkingRef.current = true;
     setChecking(true);
     try {
       const res = await fetch("/api/payments/topup", {
@@ -191,7 +217,9 @@ export default function BlurDrainerPlayer({
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.topped) {
         // One-tap charge went through — pay for the stuck layer and continue.
+        needTopupRef.current = false;
         setNeedTopup(null);
+        checkingRef.current = false;
         setChecking(false);
         await tap(true);
         return;
@@ -214,6 +242,7 @@ export default function BlurDrainerPlayer({
     } catch {
       // stays on the top-up layer — the fan can tap again
     } finally {
+      checkingRef.current = false;
       setChecking(false);
     }
   }
@@ -234,6 +263,7 @@ export default function BlurDrainerPlayer({
       } catch {
         // the webhook still credits the payment
       }
+      needTopupRef.current = false;
       setNeedTopup(null);
       if (videoEl) videoEl.play().catch(() => {});
       await tap(true);
@@ -247,6 +277,7 @@ export default function BlurDrainerPlayer({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && typeof data.layersCleared === "number") {
+        tappedRef.current = Math.max(tappedRef.current, data.layersCleared);
         setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
         if (videoEl) videoEl.play().catch(() => {});
@@ -268,12 +299,24 @@ export default function BlurDrainerPlayer({
 
   return (
     <Portal>
-      <div className="fixed inset-0 z-[85] bg-black fade-up flex flex-col">
+      {/* The whole screen is the tap surface: pointer-down (no click delay,
+          no double-tap zoom) so hammering anywhere peels layers instantly. */}
+      <div
+        className="fixed inset-0 z-[85] bg-black fade-up flex flex-col touch-manipulation select-none"
+        onPointerDown={() => {
+          if (card || needTopupRef.current) return;
+          if (remaining <= 0) return;
+          void tap();
+        }}
+      >
         <div className="absolute top-[max(0.75rem,env(safe-area-inset-top))] left-4 right-4 z-20 flex items-start justify-between gap-3 pointer-events-none">
           <p className="text-white text-lg font-extrabold tracking-tight drop-shadow-lg select-none">
             LolyFans
           </p>
-          <div className="flex flex-col items-end gap-1.5 text-right pointer-events-auto">
+          <div
+            className="flex flex-col items-end gap-1.5 text-right pointer-events-auto"
+            onPointerDown={(e) => e.stopPropagation()}
+          >
             <button
               type="button"
               onClick={onClose}
@@ -307,12 +350,18 @@ export default function BlurDrainerPlayer({
             className="absolute inset-0 w-full h-full object-contain bg-black pointer-events-none"
           />
           {frame && remaining > 0 && (
-            <button
-              type="button"
-              onClick={() => (needTopup ? topUp() : tap())}
-              disabled={!!card || checking}
+            // The blur square itself: taps pass through to the full-screen
+            // surface, except when it's the top-up layer — then it's a real
+            // button so buying a pack takes a deliberate tap on it.
+            <div
+              role={needTopup ? "button" : undefined}
+              tabIndex={needTopup ? 0 : undefined}
+              onPointerDown={needTopup ? (e) => e.stopPropagation() : undefined}
+              onClick={needTopup && !checking ? () => void topUp() : undefined}
               aria-label={blurLabel}
-              className="absolute z-10 border border-white/20 overflow-hidden transition-[backdrop-filter,background-color] duration-500 ease-out"
+              className={`absolute z-10 border border-white/20 overflow-hidden transition-[backdrop-filter,background-color] duration-500 ease-out ${
+                needTopup ? "cursor-pointer" : ""
+              }`}
               style={{
                 left: frame.left + config.x * frame.width,
                 top: frame.top + config.y * frame.height,
@@ -359,7 +408,7 @@ export default function BlurDrainerPlayer({
                   </span>
                 )}
               </span>
-            </button>
+            </div>
           )}
           {frame && peelFlash && (
             <span
@@ -380,7 +429,10 @@ export default function BlurDrainerPlayer({
         {card && (
           <div className="absolute inset-x-0 bottom-0 z-30 flex flex-col justify-end pointer-events-none">
             <div className="flex-1 min-h-[20vh] bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
-            <div className="pointer-events-auto w-full max-h-[min(72vh,640px)] overflow-y-auto rounded-t-3xl border-t border-white/15 bg-card px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(0,0,0,0.45)] space-y-2">
+            <div
+              className="pointer-events-auto w-full max-h-[min(72vh,640px)] overflow-y-auto rounded-t-3xl border-t border-white/15 bg-card px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(0,0,0,0.45)] space-y-2"
+              onPointerDown={(e) => e.stopPropagation()}
+            >
               <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-line" />
               {cardNote && (
                 <p className="rounded-xl text-xs font-light px-3.5 py-2.5 text-center bg-accent/10 border border-accent/30 text-fg">
