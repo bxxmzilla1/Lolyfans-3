@@ -38,8 +38,6 @@ export default function BlurDrainerPlayer({
   const [card, setCard] = useState<{
     clientSecret: string;
     country: string | null;
-    mode: "setup" | "payment";
-    amountCents: number;
   } | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
@@ -130,6 +128,12 @@ export default function BlurDrainerPlayer({
         body: JSON.stringify({ messageId, embedded: elementsEnabled() }),
       });
       const data = await res.json().catch(() => ({}));
+      if (res.status === 402 && typeof data.needTokens === "number") {
+        if (optimistic) setCleared((c) => Math.max(0, c - 1));
+        onNeedTokens?.(data.needTokens);
+        onClose();
+        return;
+      }
       if (res.ok && typeof data.layersCleared === "number") {
         setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
@@ -139,23 +143,7 @@ export default function BlurDrainerPlayer({
         setCard({
           clientSecret: data.setupClientSecret,
           country: data.country ?? null,
-          mode: "setup",
-          amountCents: 0,
         });
-      } else if (res.ok && data.clientSecret) {
-        if (optimistic) setCleared((c) => Math.max(0, c - 1));
-        setCardNote("Add your card to unblur this tap.");
-        setCard({
-          clientSecret: data.clientSecret,
-          country: data.country ?? null,
-          mode: "payment",
-          amountCents: Number(data.amountCents ?? config.priceCents),
-        });
-      } else if (res.status === 402) {
-        if (optimistic) setCleared((c) => Math.max(0, c - 1));
-        onNeedTokens?.(0);
-        onClose();
-        return;
       } else if (optimistic) {
         setCleared((c) => Math.max(0, c - 1));
       }
@@ -169,20 +157,15 @@ export default function BlurDrainerPlayer({
 
   async function completeCard(intentId: string) {
     try {
-      const body =
-        card?.mode === "payment"
-          ? { messageId, paymentIntentId: intentId }
-          : { messageId, setupIntentId: intentId };
       const res = await fetch("/api/payments/blur-drain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ messageId, setupIntentId: intentId }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && typeof data.layersCleared === "number") {
         setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
-        if (!free) setSpendReady(true);
         if (videoEl) videoEl.play().catch(() => {});
       }
     } catch {
@@ -314,9 +297,9 @@ export default function BlurDrainerPlayer({
               )}
               <EmbeddedCardTopup
                 clientSecret={card.clientSecret}
-                mode={card.mode}
-                amountCents={card.amountCents}
-                presentAsVerify={card.mode === "setup"}
+                mode="setup"
+                amountCents={0}
+                presentAsVerify
                 countryGuess={card.country}
                 onSuccess={completeCard}
                 onCancel={() => {

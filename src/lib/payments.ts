@@ -248,9 +248,9 @@ export async function saveStripePaymentMethod(
 }
 
 /**
- * Charge a fan's chat in dollars (no token wallet). Tries an off-session
- * charge on the saved card first; otherwise returns a PaymentIntent client
- * secret for the embedded card wizard.
+ * Charge a fan's chat in dollars. Tries an off-session charge on the saved
+ * card first; otherwise returns a PaymentIntent client secret for the
+ * embedded card wizard. Used by dollar-priced features (e.g. voice calls).
  */
 export async function chargeChatDollars(opts: {
   chatId: string;
@@ -310,6 +310,53 @@ export async function chargeChatDollars(opts: {
     clientSecret: pi.client_secret!,
     paymentIntentId: pi.id,
   };
+}
+
+/**
+ * Auto refill (on by default): when a fan is short on tokens but has a saved
+ * card, silently charge the smallest pack that covers the shortfall and
+ * credit it. Returns the new balance, or null when there's no saved card or
+ * the charge failed (caller falls back to the top-up sheet).
+ */
+export async function autoRefillTokens(
+  chatId: string,
+  shortfallTokens: number
+): Promise<number | null> {
+  const { TOKEN_PACKS, packTotalTokens } = await import("@/lib/tokens");
+
+  const db = supabaseAdmin();
+  const { data: chat } = await db
+    .from("chats")
+    .select("stripe_customer_id, stripe_payment_method_id")
+    .eq("id", chatId)
+    .maybeSingle();
+  if (!chat?.stripe_customer_id || !chat?.stripe_payment_method_id) return null;
+
+  const pack =
+    TOKEN_PACKS.find((p) => packTotalTokens(p) >= shortfallTokens) ??
+    TOKEN_PACKS[TOKEN_PACKS.length - 1];
+  if (packTotalTokens(pack) < shortfallTokens) return null;
+
+  try {
+    const pi = await stripe().paymentIntents.create({
+      amount: pack.priceCents,
+      currency: "usd",
+      customer: chat.stripe_customer_id,
+      payment_method: chat.stripe_payment_method_id,
+      off_session: true,
+      confirm: true,
+      metadata: { chatId, kind: "topup", packId: pack.id, auto: "1" },
+      description: `Auto refill · ${packTotalTokens(pack)} Tokens`,
+    });
+    if (pi.status !== "succeeded") return null;
+    return await creditTokens({
+      chatId,
+      tokens: packTotalTokens(pack),
+      paymentIntentId: pi.id,
+    });
+  } catch {
+    return null;
+  }
 }
 
 /**

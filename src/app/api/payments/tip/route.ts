@@ -2,45 +2,31 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
-  chargeChatDollars,
+  autoRefillTokens,
   postTipMessage,
-  saveStripePaymentMethod,
-  tipMessageContent,
+  spendTokens,
+  tokenBalance,
+  tokenTipMessageContent,
 } from "@/lib/payments";
-import { stripe, stripeConfigured } from "@/lib/stripe";
-import { visitorCountryCode } from "@/lib/geo";
-
-const MIN_TIP_CENTS = 100; // $1
-const MAX_TIP_CENTS = 500_000; // $5,000
+import { MIN_TIP_TOKENS, MAX_TIP_TOKENS } from "@/lib/tokens";
 
 /**
- * Fan tip in dollars via Stripe. One-tap with a saved card, or return a
- * client secret for the embedded card wizard. No token wallet.
+ * Fan tip, paid in wallet Tokens. Instant spend — the wallet is topped up
+ * separately via Stripe (/api/payments/topup).
  */
 export async function POST(req: NextRequest) {
-  if (!stripeConfigured()) {
-    return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
+  const { chatId, tokens: tokensRaw, caption } = await req.json();
+  if (!chatId || !Number.isFinite(tokensRaw)) {
+    return NextResponse.json({ error: "chatId and tokens required" }, { status: 400 });
   }
-
-  const body = await req.json().catch(() => ({}));
-  const chatId = body.chatId as string | undefined;
-  const paymentIntentId = body.paymentIntentId as string | undefined;
-  // Accept cents directly, or legacy `tokens` (1 token = 10¢) for old clients.
-  let amountCents = Math.round(Number(body.amountCents ?? body.cents ?? 0));
-  if (!amountCents && Number.isFinite(body.tokens)) {
-    amountCents = Math.round(Number(body.tokens) * 10);
-  }
-  const note = String(body.caption || "").trim().slice(0, 1000);
-
-  if (!chatId) {
-    return NextResponse.json({ error: "chatId required" }, { status: 400 });
-  }
-  if (amountCents < MIN_TIP_CENTS || amountCents > MAX_TIP_CENTS) {
+  const tokens = Math.round(Number(tokensRaw));
+  if (tokens < MIN_TIP_TOKENS || tokens > MAX_TIP_TOKENS) {
     return NextResponse.json(
-      { error: `Tip must be between $${(MIN_TIP_CENTS / 100).toFixed(0)} and $${(MAX_TIP_CENTS / 100).toFixed(0)}` },
+      { error: `Tip must be between ${MIN_TIP_TOKENS} and ${MAX_TIP_TOKENS} Tokens` },
       { status: 400 }
     );
   }
+  const note = String(caption || "").trim().slice(0, 1000);
 
   if (!(await guestOwnsChat(req.headers, chatId))) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -54,56 +40,36 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   if (!chat) return NextResponse.json({ error: "Chat not found" }, { status: 404 });
 
-  async function finish(piId: string) {
-    const message = await postTipMessage({
-      chatId: chat!.id,
-      content: tipMessageContent(amountCents, note),
-      ownerId: chat!.owner_id,
-    });
-    return NextResponse.json({
-      ok: true,
-      tipped: true,
-      message,
-      paymentIntentId: piId,
-    });
-  }
-
-  if (paymentIntentId) {
-    const pi = await stripe().paymentIntents.retrieve(paymentIntentId);
-    if (
-      pi.status !== "succeeded" ||
-      pi.metadata?.kind !== "tip" ||
-      pi.metadata?.chatId !== chatId
-    ) {
-      return NextResponse.json({ error: "Payment not completed" }, { status: 402 });
+  let balance = await spendTokens({ chatId, tokens, kind: "tip" });
+  // Auto refill (default on): saved card silently buys the covering pack.
+  if (balance === null) {
+    const current = await tokenBalance(chatId);
+    const refilled = await autoRefillTokens(chatId, tokens - current);
+    if (refilled !== null) {
+      balance = await spendTokens({ chatId, tokens, kind: "tip" });
     }
-    const pmId =
-      typeof pi.payment_method === "string"
-        ? pi.payment_method
-        : pi.payment_method?.id ?? null;
-    const custId = typeof pi.customer === "string" ? pi.customer : null;
-    await saveStripePaymentMethod(chatId, custId, pmId);
-    return finish(pi.id);
+  }
+  if (balance === null) {
+    return NextResponse.json(
+      {
+        error: "Not enough Tokens",
+        needTokens: tokens,
+        balance: await tokenBalance(chatId),
+      },
+      { status: 402 }
+    );
   }
 
-  const result = await chargeChatDollars({
+  const message = await postTipMessage({
     chatId,
-    amountCents,
-    kind: "tip",
-    description: "Tip",
+    content: tokenTipMessageContent(tokens, note),
+    ownerId: chat.owner_id,
   });
 
-  if ("paid" in result && result.paid) {
-    return finish(result.paymentIntentId);
-  }
-
-  if (!("clientSecret" in result)) {
-    return NextResponse.json({ error: "Could not start payment" }, { status: 500 });
-  }
-
   return NextResponse.json({
-    clientSecret: result.clientSecret,
-    amountCents,
-    country: await visitorCountryCode(req.headers),
+    ok: true,
+    tipped: true,
+    message,
+    balance,
   });
 }

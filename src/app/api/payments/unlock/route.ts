@@ -2,27 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
-  chargeChatDollars,
+  autoRefillTokens,
   recordUnlock,
-  saveStripePaymentMethod,
+  spendTokens,
+  tokenBalance,
 } from "@/lib/payments";
-import { stripe, stripeConfigured } from "@/lib/stripe";
-import { visitorCountryCode } from "@/lib/geo";
+import { tokensForCents } from "@/lib/tokens";
+
 /**
- * Unlock locked media for dollars via Stripe. One-tap with a saved card, or
- * return a client secret for the embedded card wizard. No token wallet.
+ * Unlock locked media with wallet Tokens. The fan tops up their wallet via
+ * Stripe (see /api/payments/topup); unlocking itself is an instant token
+ * spend — no card round-trip, no payment sheet.
  */
 export async function POST(req: NextRequest) {
-  if (!stripeConfigured()) {
-    return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
-  }
-
-  const body = await req.json().catch(() => ({}));
-  const messageId = body.messageId as string | undefined;
-  const paymentIntentId = body.paymentIntentId as string | undefined;
-  if (!messageId) {
-    return NextResponse.json({ error: "messageId required" }, { status: 400 });
-  }
+  const { messageId } = await req.json();
+  if (!messageId) return NextResponse.json({ error: "messageId required" }, { status: 400 });
 
   const db = supabaseAdmin();
   const { data: message } = await db
@@ -44,6 +38,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "This message is not for sale" }, { status: 400 });
   }
 
+  // Already unlocked?
   const { data: existing } = await db
     .from("message_unlocks")
     .select("message_id")
@@ -51,57 +46,58 @@ export async function POST(req: NextRequest) {
     .eq("chat_id", message.chat_id)
     .maybeSingle();
   if (existing) {
-    return NextResponse.json({ ok: true, unlocked: true });
-  }
-
-  // Finish an embedded card payment the client already confirmed.
-  if (paymentIntentId) {
-    const pi = await stripe().paymentIntents.retrieve(paymentIntentId);
-    if (
-      pi.status !== "succeeded" ||
-      pi.metadata?.kind !== "unlock" ||
-      pi.metadata?.messageId !== messageId
-    ) {
-      return NextResponse.json({ error: "Payment not completed" }, { status: 402 });
-    }
-    const pmId =
-      typeof pi.payment_method === "string"
-        ? pi.payment_method
-        : pi.payment_method?.id ?? null;
-    const custId = typeof pi.customer === "string" ? pi.customer : null;
-    await saveStripePaymentMethod(message.chat_id, custId, pmId);
-    await recordUnlock({
-      messageId: message.id,
-      chatId: message.chat_id,
-      priceCents: price,
+    return NextResponse.json({
+      ok: true,
+      unlocked: true,
+      balance: await tokenBalance(message.chat_id),
     });
-    return NextResponse.json({ ok: true, unlocked: true });
   }
 
-  const result = await chargeChatDollars({
+  const tokens = tokensForCents(price);
+  let balance = await spendTokens({
     chatId: message.chat_id,
-    amountCents: price,
+    tokens,
     kind: "unlock",
-    description: "Media unlock",
-    metadata: { messageId: message.id },
+    messageId: message.id,
   });
 
-  if ("paid" in result && result.paid) {
-    await recordUnlock({
-      messageId: message.id,
-      chatId: message.chat_id,
-      priceCents: price,
-    });
-    return NextResponse.json({ ok: true, unlocked: true });
+  // Short on tokens: auto refill (on by default) charges the saved card for
+  // the smallest covering pack, then the spend is retried — true one-tap.
+  if (balance === null) {
+    const current = await tokenBalance(message.chat_id);
+    const refilled = await autoRefillTokens(message.chat_id, tokens - current);
+    if (refilled !== null) {
+      balance = await spendTokens({
+        chatId: message.chat_id,
+        tokens,
+        kind: "unlock",
+        messageId: message.id,
+      });
+    }
   }
 
-  if (!("clientSecret" in result)) {
-    return NextResponse.json({ error: "Could not start payment" }, { status: 500 });
+  if (balance === null) {
+    // No saved card (or the charge failed) — the client opens the top-up sheet.
+    return NextResponse.json(
+      {
+        error: "Not enough Tokens",
+        needTokens: tokens,
+        balance: await tokenBalance(message.chat_id),
+      },
+      { status: 402 }
+    );
   }
+
+  await recordUnlock({
+    messageId: message.id,
+    chatId: message.chat_id,
+    priceCents: price,
+  });
 
   return NextResponse.json({
-    clientSecret: result.clientSecret,
-    amountCents: price,
-    country: await visitorCountryCode(req.headers),
+    ok: true,
+    unlocked: true,
+    tokens,
+    balance,
   });
 }

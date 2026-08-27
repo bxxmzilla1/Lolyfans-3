@@ -1,3 +1,5 @@
+import { formatTokens, tokensForCents } from "./tokens";
+
 /** Creator-shaped BlurDrainer region (normalized 0–1 over the video box). */
 export type BlurDrainerConfig = {
   x: number;
@@ -40,6 +42,5 @@ export function parseBlurDrainer(raw: unknown): BlurDrainerConfig | null {
 
 export function blurDrainPriceLabel(cents: number): string {
   if (cents <= 0) return "FREE";
-  const dollars = cents / 100;
-  return Number.isInteger(dollars) ? `$${dollars}` : `$${dollars.toFixed(2)}`;
+  return formatTokens(tokensForCents(cents));
 }
