@@ -7,7 +7,7 @@ import { IconEye, IconEyeOff } from "./Icons";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
- * Sign-up sheet (email + password only) shown over the invite profile;
+ * Sign-up sheet (name + email + password) shown over the invite profile;
  * after join, drops the fan into their private chat with the creator.
  */
 export function JoinChannelSheet({
@@ -19,6 +19,7 @@ export function JoinChannelSheet({
   ownerId: string;
   onClose: () => void;
 }) {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -27,6 +28,10 @@ export function JoinChannelSheet({
 
   async function signup() {
     if (busy) return;
+    if (!name.trim()) {
+      setError("Enter your name");
+      return;
+    }
     if (!EMAIL_RE.test(email.trim())) {
       setError("Enter a valid email address");
       return;
@@ -42,6 +47,7 @@ export function JoinChannelSheet({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         code,
+        name: name.trim(),
         email: email.trim(),
         password,
       }),
@@ -85,6 +91,15 @@ export function JoinChannelSheet({
               Create a free account to start chatting.
             </p>
             <input
+              type="text"
+              autoComplete="name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Your name"
+              maxLength={40}
+              className={inputClass}
+            />
+            <input
               type="email"
               inputMode="email"
               autoComplete="email"
@@ -121,7 +136,7 @@ export function JoinChannelSheet({
             <button
               type="button"
               onClick={() => void signup()}
-              disabled={busy || !email.trim() || password.length < 6}
+              disabled={busy || !name.trim() || !email.trim() || password.length < 6}
               className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity"
             >
               {busy ? "Joining…" : "Start chatting"}

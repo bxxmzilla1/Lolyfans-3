@@ -10,14 +10,18 @@ import { lookupIp } from "@/lib/ipinfo";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
- * Creates (or resumes) a guest chat after sign-up. Email + password only —
- * no name field, no channel subscription payment. The account works right away.
+ * Creates (or resumes) a guest chat after sign-up. Name + email + password —
+ * no channel subscription payment. The account works right away.
  */
 export async function POST(req: NextRequest) {
-  const { code, email, password } = await req.json();
+  const { code, name, email, password } = await req.json();
 
   if (!code) {
     return NextResponse.json({ error: "Invalid link" }, { status: 400 });
+  }
+  const nameStr = String(name || "").replace(/\s+/g, " ").trim().slice(0, 40);
+  if (!nameStr) {
+    return NextResponse.json({ error: "Enter your name" }, { status: 400 });
   }
   const emailStr = String(email || "").trim().toLowerCase();
   if (!EMAIL_RE.test(emailStr)) {
@@ -65,6 +69,11 @@ export async function POST(req: NextRequest) {
       );
     }
     after(async () => {
+      // Keep the display name fresh — older accounts were auto-named from the
+      // email local-part, so the typed name is always better.
+      if (nameStr && nameStr !== existing.guest_name) {
+        await db.from("chats").update({ guest_name: nameStr }).eq("id", existing.id);
+      }
       if (ip) {
         await db.from("chats").update({ guest_ip: ip }).eq("id", existing.id);
         // Refresh the fan's location (ipinfo) so the inbox shows where they are.
@@ -95,17 +104,13 @@ export async function POST(req: NextRequest) {
     });
     res.cookies.set(
       GUEST_COOKIE,
-      createToken({ chatId: existing.id, name: existing.guest_name }),
+      createToken({ chatId: existing.id, name: nameStr || existing.guest_name }),
       cookieOptions
     );
     return res;
   }
 
-  // Display name is derived from the email local-part (no name field on signup).
-  const local = emailStr.split("@")[0] || "Guest";
-  const guestName =
-    local.replace(/[._+-]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 40) ||
-    `Guest ${Math.floor(1000 + Math.random() * 9000)}`;
+  const guestName = nameStr;
 
   const row = {
     owner_id: invite!.owner_id,

@@ -8,7 +8,7 @@ import { IconEye, IconEyeOff } from "./Icons";
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
- * Guest sign-up: email + password only. After join, drop the fan straight
+ * Guest sign-up: name + email + password. After join, drop the fan straight
  * into their private chat with the creator.
  */
 export default function JoinForm({
@@ -22,6 +22,7 @@ export default function JoinForm({
   plan?: SubPlan | null;
   initialPayStep?: boolean;
 }) {
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -39,6 +40,10 @@ export default function JoinForm({
   async function join(e: React.FormEvent) {
     e.preventDefault();
     if (busy) return;
+    if (!name.trim()) {
+      setError("Enter your name");
+      return;
+    }
     if (!EMAIL_RE.test(email.trim())) {
       setError("Enter a valid email address");
       return;
@@ -54,6 +59,7 @@ export default function JoinForm({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         code,
+        name: name.trim(),
         email: email.trim(),
         password,
       }),
@@ -73,6 +79,15 @@ export default function JoinForm({
   return (
     <>
       <form onSubmit={join} className="w-full flex flex-col gap-3">
+        <input
+          type="text"
+          autoComplete="name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Your name"
+          maxLength={40}
+          className={inputClass}
+        />
         <input
           type="email"
           inputMode="email"
@@ -109,7 +124,7 @@ export default function JoinForm({
         {error && <p className="text-red-400 text-sm text-center">{error}</p>}
         <button
           type="submit"
-          disabled={busy || !email.trim() || password.length < 6}
+          disabled={busy || !name.trim() || !email.trim() || password.length < 6}
           className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity"
         >
           {busy ? "Signing up…" : buttonText?.trim() || "Start chatting"}
