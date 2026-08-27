@@ -32,8 +32,8 @@ export async function GET(req: NextRequest) {
 
     if (chat) {
       const dest = await guestAccessDestination(chat.id, chat.owner_id);
-      // Unpaid + a profile return URL → stay on the profile so the Join
-      // Telegram overlay can open over it.
+      // Unpaid + a profile return URL → stay on the profile so the join
+      // sheet can open over it.
       const href =
         !dest.allowed && next ? `${next}${next.includes("?") ? "&" : "?"}pay=1` : dest.href;
       const res = NextResponse.redirect(new URL(href, req.nextUrl.origin));
