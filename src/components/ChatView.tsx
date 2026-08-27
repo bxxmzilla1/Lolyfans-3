@@ -38,12 +38,10 @@ import {
   IconEyeOff,
   IconFolder,
   IconLink,
-  IconLock,
   IconMic,
   IconPlus,
   IconSend,
   IconTip,
-  IconUnlock,
 } from "./Icons";
 
 const MAX_ATTACHMENTS = 12;
@@ -76,7 +74,6 @@ export default function ChatView({
   const [attachments, setAttachments] = useState<{ path: string; type: MediaKind }[]>([]);
   const [vaultPickerOpen, setVaultPickerOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
-  const [sendLocked, setSendLocked] = useState(false);
   // Owner media send mode: normal chat bubble, or a full-screen notification
   // (the incoming-media gate takes over the fan's screen).
   const [sendMode, setSendMode] = useState<"message" | "fullscreen">("message");
@@ -1042,7 +1039,8 @@ export default function ChatView({
         ? Math.round(parseFloat(lockPrice.replace(/[^\d]/g, ""))) || 0
         : 0;
     const priceCents = lockTokens * CENTS_PER_TOKEN;
-    const locked = (sendLocked || priceCents > 0) && mediaItems.length > 0;
+    // A positive unlock price is what locks media — no separate lock toggle.
+    const locked = priceCents > 0 && mediaItems.length > 0;
     // Owner-set decision countdown for the incoming-media gate (seconds).
     const decideSeconds =
       role === "owner" && mediaItems.some((i) => i.type === "image" || i.type === "video")
@@ -1074,7 +1072,6 @@ export default function ChatView({
     setReplyTo(null);
     setAttachments([]);
     if (usedLink) setLinkAttachment(null);
-    if (locked) setSendLocked(false);
     if (priceCents > 0) setLockPrice("");
     if (decideSeconds > 0) setDecideTimer("");
     if (drainCfg) setBlurDrainer(null);
@@ -1644,7 +1641,7 @@ export default function ChatView({
           <div className="flex items-center gap-2">
             <p className="flex-1 text-xs font-semibold text-accent">
               {attachments.length} file{attachments.length === 1 ? "" : "s"} attached
-              {(sendLocked || parseFloat(lockPrice) > 0) && " · will send locked"}
+              {parseFloat(lockPrice) > 0 && " · will send locked"}
             </p>
             <button
               onClick={() => setAttachments([])}
@@ -1697,7 +1694,6 @@ export default function ChatView({
                   priced, timed and BlurDrainer media always go full screen. */}
               {(() => {
                 const gateForced =
-                  sendLocked ||
                   (parseInt(lockPrice, 10) || 0) > 0 ||
                   (parseInt(decideTimer, 10) || 0) > 0 ||
                   !!blurDrainer;
@@ -1971,24 +1967,6 @@ export default function ChatView({
               title="Attach a link with a custom label"
             >
               <IconLink className="w-4.5 h-4.5" />
-            </button>
-          )}
-          {role === "owner" && (
-            <button
-              onClick={() => setSendLocked((v) => !v)}
-              className={`w-9 h-9 rounded-xl shrink-0 hidden lg:flex items-center justify-center transition-colors ${
-                sendLocked
-                  ? "bg-accent text-white glow-accent"
-                  : "bg-transparent border border-line text-muted hover:text-fg"
-              }`}
-              aria-label={sendLocked ? "Media will send locked" : "Send media locked"}
-              title={
-                sendLocked
-                  ? "Next media sends locked (blurred for them)"
-                  : "Send media locked (blurred for them)"
-              }
-            >
-              {sendLocked ? <IconLock className="w-4.5 h-4.5" /> : <IconUnlock className="w-4.5 h-4.5" />}
             </button>
           )}
           {role === "owner" && (
