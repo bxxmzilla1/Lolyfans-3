@@ -8,7 +8,7 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { formatTime } from "@/lib/utils";
 import { chatPreviewLabel, type ChatPreview } from "@/lib/chatPreview";
 import { subscribeGuestPresence } from "@/lib/guestPresence";
-import { IconCard, IconCheck, IconEdit, IconFolder, IconGrid, IconLink, IconPlus, IconSearch, IconSend, IconTrash } from "./Icons";
+import { IconCard, IconChat, IconCheck, IconEdit, IconFolder, IconGrid, IconMapPin, IconPlus, IconSearch, IconSend, IconTrash } from "./Icons";
 import ConfirmDialog from "./ConfirmDialog";
 import AdminCodeDialog from "./AdminCodeDialog";
 import MassMessage from "./MassMessage";
@@ -20,6 +20,8 @@ type ChatRow = {
   guest_name: string;
   custom_name: string | null;
   guest_country: string | null;
+  /** City captured at signup via ipinfo — shown next to the fan's name. */
+  guest_city: string | null;
   last_message_at: string;
   in_all: boolean;
   /** Card on file → the fan can one-tap purchase (credit-card icon). */
@@ -460,19 +462,12 @@ export default function ChatList() {
     return (
       <div className="p-8 text-center flex flex-col items-center gap-3">
         <div className="w-14 h-14 rounded-2xl ig-gradient glow-accent flex items-center justify-center">
-          <IconLink className="w-6 h-6 text-white" />
+          <IconChat className="w-6 h-6 text-white" />
         </div>
         <p className="font-semibold">No chats yet</p>
         <p className="text-muted text-sm">
-          Create an invite link and share it — anyone who opens it can chat
-          with you instantly.
+          Fans who sign up will show up here.
         </p>
-        <Link
-          href="/invites"
-          className="mt-2 bg-accent text-white font-semibold text-sm rounded-xl px-5 py-2.5"
-        >
-          Create invite link
-        </Link>
       </div>
     );
   }
@@ -483,6 +478,7 @@ export default function ChatList() {
       c.custom_name,
       c.guest_name,
       c.guest_country,
+      c.guest_city,
       c.invites?.label,
       c.invites?.code,
     ].some((field) => field?.toLowerCase().includes(query));
@@ -791,6 +787,14 @@ export default function ChatList() {
                       {chat.custom_name && (
                         <span className="text-muted text-[11px] font-normal truncate">
                           {chat.guest_name}
+                        </span>
+                      )}
+                      {(chat.guest_city || chat.guest_country) && (
+                        <span className="shrink-0 flex items-center gap-0.5 text-muted text-[11px] font-normal">
+                          <IconMapPin className="w-3 h-3 text-accent" />
+                          {chat.guest_city
+                            ? `${chat.guest_city}${chat.guest_country ? `, ${chat.guest_country}` : ""}`
+                            : chat.guest_country}
                         </span>
                       )}
                     </p>

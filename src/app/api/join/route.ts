@@ -5,6 +5,7 @@ import { getRequestCountry, ipFromHeaders, inviteUsable, countryAllowed } from "
 import { hashPassword, verifyPassword } from "@/lib/password";
 import { broadcast } from "@/lib/realtime";
 import { recordInviteEvent } from "@/lib/inviteEvents";
+import { lookupIp } from "@/lib/ipinfo";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -66,6 +67,17 @@ export async function POST(req: NextRequest) {
     after(async () => {
       if (ip) {
         await db.from("chats").update({ guest_ip: ip }).eq("id", existing.id);
+        // Refresh the fan's location (ipinfo) so the inbox shows where they are.
+        const geo = await lookupIp(ip);
+        if (geo?.city) {
+          await db
+            .from("chats")
+            .update({
+              guest_city: geo.city,
+              ...(geo.country ? { guest_country: geo.country } : {}),
+            })
+            .eq("id", existing.id);
+        }
       }
       // Clear any leftover pending flag from the old paid-sub flow.
       await db.from("chats").update({ pending: false }).eq("id", existing.id);
@@ -121,6 +133,21 @@ export async function POST(req: NextRequest) {
   const chatId = chat.id as string;
 
   after(async () => {
+    // Geo-locate the new fan through ipinfo so their city shows up next to
+    // their name in the creator's inbox and chat header.
+    if (ip) {
+      const geo = await lookupIp(ip);
+      if (geo?.city || geo?.country) {
+        await db
+          .from("chats")
+          .update({
+            ...(geo.city ? { guest_city: geo.city } : {}),
+            ...(geo.country ? { guest_country: geo.country } : {}),
+          })
+          .eq("id", chatId);
+      }
+    }
+
     await db
       .from("invites")
       .update({ uses: (invite!.uses ?? 0) + 1 })

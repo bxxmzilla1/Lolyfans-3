@@ -8,6 +8,7 @@ import { formatCount, mediaUrl } from "@/lib/utils";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
+import ProfileSubscribeCta from "@/components/ProfileSubscribeCta";
 import MessageCreatorButton from "@/components/MessageCreatorButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
@@ -29,18 +30,29 @@ export default async function CreatorProfilePage({
   const requestHeaders = await headers();
   const db = supabaseAdmin();
 
-  const [profiles, chats, { data: posts }, location, geo] = await Promise.all([
-    ownerProfiles([ownerId]),
-    guestChats(requestHeaders),
-    db
-      .from("posts")
-      .select("*")
-      .eq("owner_id", ownerId)
-      .order("created_at", { ascending: false })
-      .limit(90),
-    visitorLocation(requestHeaders),
-    visitorGeoParts(requestHeaders),
-  ]);
+  const [profiles, chats, { data: posts }, location, geo, { data: invite }] =
+    await Promise.all([
+      ownerProfiles([ownerId]),
+      guestChats(requestHeaders),
+      db
+        .from("posts")
+        .select("*")
+        .eq("owner_id", ownerId)
+        .order("created_at", { ascending: false })
+        .limit(90),
+      visitorLocation(requestHeaders),
+      visitorGeoParts(requestHeaders),
+      // Latest active invite: lets visitors without an account register
+      // straight from the profile via the SUBSCRIBE button.
+      db
+        .from("invites")
+        .select("code")
+        .eq("owner_id", ownerId)
+        .eq("active", true)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
   const profile = profiles.get(ownerId);
   if (!profile) notFound();
@@ -152,8 +164,9 @@ export default async function CreatorProfilePage({
               </p>
             )}
 
-            {/* Full-width subscription bar under the bio, like OnlyFans */}
-            {chats.length > 0 && (
+            {/* Full-width subscription bar under the bio, like OnlyFans:
+                visitors get SUBSCRIBE (register), signed-up fans get Follow. */}
+            {chats.length > 0 ? (
               <div className="pt-1">
                 <FollowButton
                   ownerId={ownerId}
@@ -164,7 +177,11 @@ export default async function CreatorProfilePage({
                   full
                 />
               </div>
-            )}
+            ) : invite?.code ? (
+              <div className="pt-1">
+                <ProfileSubscribeCta code={invite.code} ownerId={ownerId} />
+              </div>
+            ) : null}
           </div>
         </section>
 

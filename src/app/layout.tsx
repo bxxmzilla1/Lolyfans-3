@@ -44,9 +44,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    // The whole app is light-mode only — the class is baked into the markup
-    // so there's never a flash of dark colors.
-    <html lang="en" className={`light ${geistSans.variable} h-full antialiased`}>
+    // Fans get light mode baked into the markup; owner pages swap the class
+    // to dark before first paint, so hydration must not "fix" it back.
+    <html
+      lang="en"
+      className={`light ${geistSans.variable} h-full antialiased`}
+      suppressHydrationWarning
+    >
       <body className="min-h-full flex flex-col">
         <RegisterSW />
         {children}
