@@ -68,7 +68,7 @@ async function videoThumb(
   debug = false
 ): Promise<NextResponse | null> {
   // Served straight from storage after the first request.
-  const cachePath = `thumbs/w${w}/${path}.webp`;
+  const cachePath = `thumbs/w${w}/${path}.jpg`;
   const cached = await fetch(mediaUrl(cachePath), { method: "HEAD" }).catch(
     () => null
   );
@@ -80,20 +80,15 @@ async function videoThumb(
 
   try {
     // ffmpeg reads the first frame straight from the storage URL — no full
-    // video download.
-    const frame = await videoFrameFromInput(mediaUrl(path));
-    const sharp = (await import("sharp")).default;
-    const out = await sharp(frame)
-      .resize({ width: w, withoutEnlargement: true })
-      .webp({ quality: 55 })
-      .toBuffer();
+    // video download — and scales it down itself (no image library needed).
+    const out = await videoFrameFromInput(mediaUrl(path), w);
 
     await supabaseAdmin()
       .storage.from("media")
-      .upload(cachePath, out, { contentType: "image/webp", upsert: true })
+      .upload(cachePath, out, { contentType: "image/jpeg", upsert: true })
       .catch(() => {});
 
-    return thumbResponse(out);
+    return thumbResponse(out, "image/jpeg");
   } catch (err) {
     console.error("thumb: video frame grab failed", path, err);
     if (debug) {
@@ -103,10 +98,10 @@ async function videoThumb(
   }
 }
 
-function thumbResponse(out: Buffer) {
+function thumbResponse(out: Buffer, contentType = "image/webp") {
   return new NextResponse(new Uint8Array(out), {
     headers: {
-      "Content-Type": "image/webp",
+      "Content-Type": contentType,
       "Cache-Control": "public, max-age=31536000, immutable",
     },
   });

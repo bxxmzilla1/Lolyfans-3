@@ -39,6 +39,23 @@ export default function VideoPlayer({
   const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [posterBroken, setPosterBroken] = useState(false);
+
+  // Verify the poster actually loads; when the thumbnail service fails, fall
+  // back to letting the browser paint the video's own first frame instead of
+  // showing a blank dark tile.
+  useEffect(() => {
+    if (!poster) return;
+    setPosterBroken(false);
+    const probe = new Image();
+    probe.onerror = () => setPosterBroken(true);
+    probe.src = poster;
+    return () => {
+      probe.onerror = null;
+    };
+  }, [poster]);
+
+  const activePoster = poster && !posterBroken ? poster : undefined;
 
   useEffect(() => {
     // The tap that opened the player counts as the user gesture; if the
@@ -118,9 +135,9 @@ export default function VideoPlayer({
       {/* #t=0.001 makes browsers render the first frame as the thumbnail instead of black */}
       <video
         ref={videoRef}
-        src={poster ? src : `${src}#t=0.001`}
-        poster={poster}
-        preload={poster ? "none" : "metadata"}
+        src={activePoster ? src : `${src}#t=0.001`}
+        poster={activePoster}
+        preload={activePoster ? "none" : "metadata"}
         playsInline
         className={`w-full object-contain cursor-pointer ${videoClassName}`}
         onClick={handlePlayClick}

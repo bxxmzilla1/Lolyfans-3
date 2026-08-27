@@ -6,6 +6,7 @@ import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { mediaUrl } from "@/lib/utils";
 import { useVideoContentBox } from "@/lib/useVideoContentBox";
 import { elementsEnabled } from "@/lib/stripeClient";
+import { TOKEN_PACKS, packTotalTokens, formatTokens } from "@/lib/tokens";
 import {
   blurDrainPriceLabel,
   type BlurDrainerConfig,
@@ -13,37 +14,44 @@ import {
 
 /**
  * Fullscreen BlurDrainer: video plays under a stacked square blur. Taps on
- * the blur square peel layers. Paid drains spend Tokens instantly per tap;
- * free drains require card verification first.
+ * the blur square peel layers instantly (optimistic — the server spend runs
+ * in the background). When the wallet can't cover a tap and auto-refill is
+ * off, the stuck layer turns into a top-up layer: one tap buys a pack (saved
+ * card = instant) and the layer clears automatically. Free drains require
+ * card verification first.
  */
 export default function BlurDrainerPlayer({
   videoPath,
   config,
   initialCleared = 0,
   messageId,
+  chatId,
   onClose,
   onProgress,
-  onNeedTokens,
 }: {
   videoPath: string;
   config: BlurDrainerConfig;
   initialCleared?: number;
   messageId: string;
+  chatId: string;
   onClose: () => void;
   onProgress?: (layersCleared: number) => void;
-  onNeedTokens?: (needTokens: number) => void;
 }) {
   const [cleared, setCleared] = useState(initialCleared);
   const [peelFlash, setPeelFlash] = useState(false);
   const [card, setCard] = useState<{
     clientSecret: string;
     country: string | null;
+    mode: "setup" | "payment";
+    amountCents: number;
   } | null>(null);
   const [cardNote, setCardNote] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
-  // Optimistic peeling once a prior tap succeeded this session (or progress
-  // was restored from the server). Until then the blur stays in place.
-  const [spendReady, setSpendReady] = useState(initialCleared > 0);
+  // Wallet too small for the next tap (and auto-refill didn't cover it):
+  // the blur square becomes a top-up layer until the fan buys a pack.
+  const [needTopup, setNeedTopup] = useState<{ needTokens: number } | null>(
+    null
+  );
   const prevCleared = useRef(initialCleared);
   const inflightRef = useRef(0);
   const [containerEl, setContainerEl] = useState<HTMLElement | null>(null);
@@ -68,7 +76,7 @@ export default function BlurDrainerPlayer({
 
   useEffect(() => {
     setCleared(initialCleared);
-    setSpendReady(initialCleared > 0);
+    setNeedTopup(null);
   }, [initialCleared, messageId]);
 
   useEffect(() => {
@@ -112,12 +120,15 @@ export default function BlurDrainerPlayer({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messageId]);
 
-  /** Unblur a layer. Paid taps peel optimistically once spending is known to
-   *  work; the first tap (or any free tap before verification) waits on the
-   *  server with a spinner so the blur never flashes open prematurely. */
-  async function tap() {
-    if (card || checking || cleared + inflightRef.current >= config.layers) return;
-    const optimistic = !free && spendReady;
+  /** Unblur a layer. Paid taps peel instantly (optimistic) while the token
+   *  spend runs in the background; free taps before card verification wait
+   *  with a spinner so the blur never flashes open prematurely. */
+  async function tap(force = false) {
+    // `force` skips the guards for the automatic retry right after a top-up
+    // (the state updates clearing them haven't re-rendered yet).
+    if (!force && (card || checking || needTopup)) return;
+    if (cleared + inflightRef.current >= config.layers) return;
+    const optimistic = !free;
     if (optimistic) setCleared((c) => Math.min(config.layers, c + 1));
     else setChecking(true);
     inflightRef.current += 1;
@@ -129,20 +140,22 @@ export default function BlurDrainerPlayer({
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 402 && typeof data.needTokens === "number") {
+        // Auto-refill didn't cover it (switched off, no saved card, or the
+        // charge failed): the blur square becomes a top-up layer.
         if (optimistic) setCleared((c) => Math.max(0, c - 1));
-        onNeedTokens?.(data.needTokens);
-        onClose();
+        setNeedTopup({ needTokens: data.needTokens });
         return;
       }
       if (res.ok && typeof data.layersCleared === "number") {
         setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
-        if (!free) setSpendReady(true);
       } else if (res.ok && data.setupClientSecret) {
         setCardNote("Verify your card below to unblur the video for free.");
         setCard({
           clientSecret: data.setupClientSecret,
           country: data.country ?? null,
+          mode: "setup",
+          amountCents: 0,
         });
       } else if (optimistic) {
         setCleared((c) => Math.max(0, c - 1));
@@ -155,7 +168,77 @@ export default function BlurDrainerPlayer({
     }
   }
 
+  /** The stuck layer's top-up: buy the smallest pack that covers the tap.
+   *  Saved card charges instantly and the layer clears right away; first
+   *  purchase opens the in-player card wizard instead. */
+  async function topUp() {
+    if (checking || card) return;
+    const pack =
+      TOKEN_PACKS.find(
+        (p) => packTotalTokens(p) >= (needTopup?.needTokens ?? 1)
+      ) ?? TOKEN_PACKS[TOKEN_PACKS.length - 1];
+    setChecking(true);
+    try {
+      const res = await fetch("/api/payments/topup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          chatId,
+          packId: pack.id,
+          embedded: elementsEnabled(),
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.topped) {
+        // One-tap charge went through — pay for the stuck layer and continue.
+        setNeedTopup(null);
+        setChecking(false);
+        await tap(true);
+        return;
+      }
+      if (res.ok && data.clientSecret) {
+        setCardNote(
+          `Top up ${formatTokens(packTotalTokens(pack))} to keep unblurring.`
+        );
+        setCard({
+          clientSecret: data.clientSecret,
+          country: data.country ?? null,
+          mode: "payment",
+          amountCents: data.amountCents ?? pack.priceCents,
+        });
+        return;
+      }
+      if (data.checkoutUrl) {
+        window.location.href = data.checkoutUrl;
+      }
+    } catch {
+      // stays on the top-up layer — the fan can tap again
+    } finally {
+      setChecking(false);
+    }
+  }
+
   async function completeCard(intentId: string) {
+    const mode = card?.mode ?? "setup";
+    setCard(null);
+    setCardNote(null);
+    if (mode === "payment") {
+      // Card top-up finished: credit the tokens, then automatically pay for
+      // the layer the fan was stuck on and let them continue tapping.
+      try {
+        await fetch("/api/payments/topup/complete", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId, paymentIntentId: intentId }),
+        });
+      } catch {
+        // the webhook still credits the payment
+      }
+      setNeedTopup(null);
+      if (videoEl) videoEl.play().catch(() => {});
+      await tap(true);
+      return;
+    }
     try {
       const res = await fetch("/api/payments/blur-drain", {
         method: "POST",
@@ -171,17 +254,17 @@ export default function BlurDrainerPlayer({
     } catch {
       // webhook still records
     }
-    setCard(null);
-    setCardNote(null);
   }
 
   const freePrompt = free && cleared === 0;
   const blurLabel =
     remaining <= 0
       ? "Tap to unblur"
-      : freePrompt
-        ? "Confirm your payment details to watch this video for FREE"
-        : `Tap ${remaining} time${remaining === 1 ? "" : "s"} to unblur the video`;
+      : needTopup
+        ? "You're out of Tokens"
+        : freePrompt
+          ? "Confirm your payment details to watch this video for FREE"
+          : `Tap ${remaining} time${remaining === 1 ? "" : "s"} to unblur the video`;
 
   return (
     <Portal>
@@ -226,7 +309,7 @@ export default function BlurDrainerPlayer({
           {frame && remaining > 0 && (
             <button
               type="button"
-              onClick={tap}
+              onClick={() => (needTopup ? topUp() : tap())}
               disabled={!!card || checking}
               aria-label={blurLabel}
               className="absolute z-10 border border-white/20 overflow-hidden transition-[backdrop-filter,background-color] duration-500 ease-out"
@@ -250,6 +333,15 @@ export default function BlurDrainerPlayer({
                     />
                     <span className="text-white/75 text-sm font-thin tracking-wide drop-shadow-lg select-none">
                       One moment…
+                    </span>
+                  </span>
+                ) : needTopup ? (
+                  <span className="flex flex-col items-center gap-2.5">
+                    <span className="text-white/85 text-xl sm:text-2xl font-thin tracking-wide drop-shadow-lg select-none leading-snug">
+                      {blurLabel}
+                    </span>
+                    <span className="px-4 py-2 rounded-full bg-accent text-white text-sm font-semibold shadow-lg select-none">
+                      Tap to top up &amp; continue
                     </span>
                   </span>
                 ) : freePrompt ? (
@@ -297,9 +389,9 @@ export default function BlurDrainerPlayer({
               )}
               <EmbeddedCardTopup
                 clientSecret={card.clientSecret}
-                mode="setup"
-                amountCents={0}
-                presentAsVerify
+                mode={card.mode}
+                amountCents={card.amountCents}
+                presentAsVerify={card.mode === "setup"}
                 countryGuess={card.country}
                 onSuccess={completeCard}
                 onCancel={() => {

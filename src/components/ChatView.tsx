@@ -2607,13 +2607,9 @@ export default function ChatView({
               videoPath={video.path}
               config={cfg}
               messageId={drainPlayer.id}
+              chatId={chatId}
               initialCleared={drainPlayer.blur_layers_cleared ?? 0}
               onClose={() => setDrainPlayer(null)}
-              onNeedTokens={(need) =>
-                openWallet(
-                  `You need ${formatTokens(need)} to unblur — top up to continue.`
-                )
-              }
               onProgress={(n) =>
                 setMessages((prev) =>
                   prev.map((m) =>
