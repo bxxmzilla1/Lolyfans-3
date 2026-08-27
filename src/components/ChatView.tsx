@@ -1787,19 +1787,37 @@ export default function ChatView({
         </div>
       )}
 
-      <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        {cardTopup ? (
-          <EmbeddedCardTopup
-            clientSecret={cardTopup.clientSecret}
-            amountCents={cardTopup.amountCents}
-            countryGuess={cardTopup.country}
-            onSuccess={completeCardTopup}
-            onCancel={() => {
+      {/* First-purchase card wizard: focused modal over a dark backdrop, same
+          treatment as the token pack sheet. */}
+      {cardTopup && (
+        <Portal>
+          <div
+            className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
+            onClick={() => {
               pendingUnlockIdRef.current = null;
               setCardTopup(null);
             }}
-          />
-        ) : (
+          >
+            <div
+              className="w-full max-w-sm fade-up"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <EmbeddedCardTopup
+                clientSecret={cardTopup.clientSecret}
+                amountCents={cardTopup.amountCents}
+                countryGuess={cardTopup.country}
+                onSuccess={completeCardTopup}
+                onCancel={() => {
+                  pendingUnlockIdRef.current = null;
+                  setCardTopup(null);
+                }}
+              />
+            </div>
+          </div>
+        </Portal>
+      )}
+
+      <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
         <>
         {recording ? (
           <div className="flex items-center gap-3 bg-card2/80 border border-line2 rounded-2xl px-3 py-2 backdrop-blur">
@@ -2031,7 +2049,6 @@ export default function ChatView({
         </div>
         )}
         </>
-        )}
       </div>
 
       {tipPickerOpen && (
