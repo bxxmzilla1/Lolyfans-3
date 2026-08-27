@@ -743,6 +743,9 @@ export default function ChatView({
     openWalletGuardRef.current = now;
     setWalletNote(note ?? null);
     setWalletOpen(true);
+    // Preload Stripe.js now, so a first purchase transitions straight into
+    // the card wizard with its fields already able to mount instantly.
+    if (elementsEnabled()) void getStripe();
   }
 
   /** Dismissing the sheet without paying forgets the pending auto-accept. */

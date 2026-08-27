@@ -60,6 +60,9 @@ function CardWizard({
   const elements = useElements();
 
   const [step, setStep] = useState(1);
+  // Stripe's card-field iframes take a moment to mount — a spinner covers
+  // them until then so the wizard never flashes empty/white.
+  const [fieldsReady, setFieldsReady] = useState(false);
   const [cardOk, setCardOk] = useState({ num: false, exp: false, cvc: false });
   const [name, setName] = useState("");
   const [country, setCountry] = useState(
@@ -331,10 +334,11 @@ function CardWizard({
 
       {/* Step 1: card fields. Kept mounted (hidden) on later steps so the
           entered card data survives navigating back and forth. */}
-      <div className={step === 1 ? "space-y-2" : "hidden"}>
+      <div className={step === 1 ? "relative space-y-2" : "hidden"}>
         <div className={fieldBox}>
           <CardNumberElement
             options={{ ...fieldStyle, showIcon: true }}
+            onReady={() => setFieldsReady(true)}
             onChange={(e) => setCardOk((s) => ({ ...s, num: e.complete }))}
           />
         </div>
@@ -360,6 +364,14 @@ function CardWizard({
         >
           Next
         </button>
+        {!fieldsReady && (
+          <div className="absolute -inset-1 rounded-xl bg-card2/95 flex items-center justify-center">
+            <span
+              className="w-6 h-6 rounded-full border-2 border-accent border-t-transparent animate-spin"
+              aria-label="Loading payment form"
+            />
+          </div>
+        )}
       </div>
 
       {/* Step 2: cardholder name */}
