@@ -16,7 +16,6 @@ import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import IncomingMediaGate from "./IncomingMediaGate";
 import BlurDrainerEditor from "./BlurDrainerEditor";
 import BlurDrainerPlayer from "./BlurDrainerPlayer";
-import { VaultPicker } from "./MassMessage";
 import { elementsEnabled, getStripe } from "@/lib/stripeClient";
 import { parseBlurDrainer, type BlurDrainerConfig } from "@/lib/blurDrainer";
 import {
@@ -36,7 +35,6 @@ import {
   IconChevronRight,
   IconEye,
   IconEyeOff,
-  IconFolder,
   IconLink,
   IconMic,
   IconPlus,
@@ -72,7 +70,6 @@ export default function ChatView({
   const [labelPresets, setLabelPresets] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [attachments, setAttachments] = useState<{ path: string; type: MediaKind }[]>([]);
-  const [vaultPickerOpen, setVaultPickerOpen] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   // Owner media send mode: normal chat bubble, or a full-screen notification
   // (the incoming-media gate takes over the fan's screen).
@@ -1919,21 +1916,6 @@ export default function ChatView({
           />
           {role === "owner" && (
             <button
-              type="button"
-              onClick={() => {
-                setTipTokens(null);
-                setVaultPickerOpen(true);
-              }}
-              disabled={uploading || tipping}
-              className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center bg-transparent border border-line text-muted hover:text-fg disabled:opacity-50"
-              aria-label="Pick from vault"
-              title="Pick from vault (albums, photos & videos)"
-            >
-              <IconFolder className="w-4.5 h-4.5" />
-            </button>
-          )}
-          {role === "owner" && (
-            <button
               onClick={() => {
                 setMsgSelectMode((v) => !v);
                 setSelectedMsgs(new Set());
@@ -2568,27 +2550,6 @@ export default function ChatView({
                 </button>
               </div>
             </div>
-          </div>
-        </Portal>
-      )}
-
-      {vaultPickerOpen && (
-        <Portal>
-          <div className="fixed inset-0 z-[70]">
-            <VaultPicker
-              onPick={(item) => {
-                setAttachments((prev) => {
-                  if (prev.some((a) => a.path === item.media_path)) return prev;
-                  if (prev.length >= MAX_ATTACHMENTS) return prev;
-                  return [
-                    ...prev,
-                    { path: item.media_path, type: item.media_type },
-                  ];
-                });
-                setVaultPickerOpen(false);
-              }}
-              onClose={() => setVaultPickerOpen(false)}
-            />
           </div>
         </Portal>
       )}
