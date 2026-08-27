@@ -552,7 +552,7 @@ export function VaultPicker({
               <button
                 key={item.id}
                 onClick={() => onPick(item)}
-                className="relative aspect-square bg-card2 overflow-hidden rounded-md group"
+                className="relative aspect-[9/16] bg-card2 overflow-hidden rounded-md group"
               >
                 {/* Thumbnails only — videos get a server frame-grab; the
                     real file loads after picking. Keeps big vaults fast. */}
@@ -567,9 +567,15 @@ export function VaultPicker({
                     if (item.media_type === "image" && !img.dataset.fallback) {
                       img.dataset.fallback = "1";
                       img.src = mediaUrl(item.media_path);
-                    } else {
-                      img.style.visibility = "hidden";
+                      return;
                     }
+                    const video = document.createElement("video");
+                    video.src = `${mediaUrl(item.media_path)}#t=0.001`;
+                    video.muted = true;
+                    video.playsInline = true;
+                    video.preload = "metadata";
+                    video.className = img.className;
+                    img.replaceWith(video);
                   }}
                 />
                 {item.media_type === "video" && (

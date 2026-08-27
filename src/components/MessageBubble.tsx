@@ -33,6 +33,20 @@ import VoiceNote from "./VoiceNote";
 // Token tips ("💸 Tip · 100 Tokens") and legacy dollar tips ("💸 Tip · $10").
 const TIP_LINE_RE = /^💸 Tip · (\$[\d.]+|[\d,]+ Tokens?)(?:\n([\s\S]*))?$/i;
 
+/**
+ * Thumb-service failure fallback: swap the broken <img> for a muted <video>
+ * that paints its own first frame browser-side (metadata-only load).
+ */
+function swapToVideoFrame(img: HTMLImageElement, path: string) {
+  const video = document.createElement("video");
+  video.src = `${mediaUrl(path)}#t=0.001`;
+  video.muted = true;
+  video.playsInline = true;
+  video.preload = "metadata";
+  video.className = img.className;
+  img.replaceWith(video);
+}
+
 export type Message = {
   id: string;
   chat_id: string;
@@ -455,6 +469,7 @@ function MessageBubble({
         alt="Locked video"
         className={`w-full object-cover ${dimShape} blur-2xl scale-110 pointer-events-none select-none`}
         draggable={false}
+        onError={(e) => swapToVideoFrame(e.currentTarget, item.path)}
       />
     );
   }
@@ -480,6 +495,7 @@ function MessageBubble({
             className={`w-full max-h-80 object-contain pointer-events-none ${
               drainIncomplete ? "blur-2xl scale-110 select-none" : ""
             }`}
+            onError={(e) => swapToVideoFrame(e.currentTarget, item.path)}
           />
           <span className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-accent text-white glow-accent flex items-center justify-center active:scale-95 transition-transform">
             <IconPlay className="w-6 h-6 translate-x-0.5" />

@@ -16,6 +16,7 @@ const VIDEO_EXT = /\.(mp4|mov|m4v|webm|mkv|avi)$/i;
  */
 export async function GET(req: NextRequest) {
   const path = req.nextUrl.searchParams.get("path")?.trim() || "";
+  const debug = req.nextUrl.searchParams.get("debug") === "1";
   const w = Math.min(
     640,
     Math.max(64, Number(req.nextUrl.searchParams.get("w")) || 320)
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
 
   if (VIDEO_EXT.test(path)) {
     return (
-      (await videoThumb(path, w)) ??
+      (await videoThumb(path, w, debug)) ??
       NextResponse.json({ error: "Could not build thumb" }, { status: 500 })
     );
   }
@@ -47,6 +48,9 @@ export async function GET(req: NextRequest) {
     return thumbResponse(out);
   } catch (err) {
     console.error("thumb: image resize failed", path, err);
+    if (debug) {
+      return NextResponse.json({ error: `sharp: ${String(err)}` }, { status: 500 });
+    }
     // Not an image (e.g. a video with an odd extension) — try a frame grab;
     // failing that, serve the original file so the tile never breaks.
     return (
@@ -58,7 +62,11 @@ export async function GET(req: NextRequest) {
   }
 }
 
-async function videoThumb(path: string, w: number): Promise<NextResponse | null> {
+async function videoThumb(
+  path: string,
+  w: number,
+  debug = false
+): Promise<NextResponse | null> {
   // Served straight from storage after the first request.
   const cachePath = `thumbs/w${w}/${path}.webp`;
   const cached = await fetch(mediaUrl(cachePath), { method: "HEAD" }).catch(
@@ -88,6 +96,9 @@ async function videoThumb(path: string, w: number): Promise<NextResponse | null>
     return thumbResponse(out);
   } catch (err) {
     console.error("thumb: video frame grab failed", path, err);
+    if (debug) {
+      return NextResponse.json({ error: `ffmpeg: ${String(err)}` }, { status: 500 });
+    }
     return null;
   }
 }

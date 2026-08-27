@@ -761,7 +761,7 @@ export default function VaultManager() {
                   ? "Tap to select"
                   : "Click to view · drag into a chat to send"
               }
-              className={`relative aspect-square bg-card2 overflow-hidden rounded-md group ${
+              className={`relative aspect-[9/16] bg-card2 overflow-hidden rounded-md group ${
                 selectMode
                   ? "cursor-pointer"
                   : "cursor-grab active:cursor-grabbing"
@@ -781,14 +781,21 @@ export default function VaultManager() {
                 loading="lazy"
                 onError={(e) => {
                   // Thumb service failed: images fall back to the original
-                  // file; broken video frames hide behind the play tile.
+                  // file; videos swap to a browser-side frame (the <video>
+                  // element loads just enough to paint its first frame).
                   const img = e.currentTarget;
                   if (item.media_type === "image" && !img.dataset.fallback) {
                     img.dataset.fallback = "1";
                     img.src = mediaUrl(item.media_path);
-                  } else {
-                    img.style.visibility = "hidden";
+                    return;
                   }
+                  const video = document.createElement("video");
+                  video.src = `${mediaUrl(item.media_path)}#t=0.001`;
+                  video.muted = true;
+                  video.playsInline = true;
+                  video.preload = "metadata";
+                  video.className = img.className;
+                  img.replaceWith(video);
                 }}
               />
               {item.media_type === "video" && (
