@@ -1,9 +1,27 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+// Real top-level pages — everything else at the root is treated as a pretty
+// invite slug (lolyfans.com/amayaxo internally serves /i/amayaxo).
+const ROOT_PAGES = new Set([
+  "home", "chat", "chats", "profile", "login", "creator", "inbox", "invites",
+  "vault", "call", "payment", "watch", "i", "p", "u", "api", "auth",
+]);
+
 /** Keeps the Supabase auth session fresh on every request. */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Pretty invite links: one path segment that isn't a known page rewrites
+  // to the invite route (unknown codes get its standard "unavailable" page).
+  const seg = pathname.slice(1);
+  if (
+    seg &&
+    /^[a-zA-Z0-9_-]+$/.test(seg) &&
+    !ROOT_PAGES.has(seg.toLowerCase())
+  ) {
+    return NextResponse.rewrite(new URL(`/i/${seg}`, request.url));
+  }
 
   // Guest-facing pages never carry an owner session — skip the auth work
   // entirely so invite links respond as fast as possible.

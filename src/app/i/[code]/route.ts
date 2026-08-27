@@ -25,11 +25,19 @@ export async function GET(
   const { code } = await params;
   const db = supabaseAdmin();
 
-  const { data: invite } = await db
+  let { data: invite } = await db
     .from("invites")
     .select("*")
     .eq("code", code)
     .maybeSingle<Invite>();
+  // Custom slugs are stored lowercase — a typed-in URL may differ in case.
+  if (!invite && code !== code.toLowerCase()) {
+    ({ data: invite } = await db
+      .from("invites")
+      .select("*")
+      .eq("code", code.toLowerCase())
+      .maybeSingle<Invite>());
+  }
 
   const country = req.headers.get("x-vercel-ip-country")?.toUpperCase() || null;
   const visitorIp = ipFromHeaders(req.headers);

@@ -115,6 +115,38 @@ function countryCodes(raw: unknown): string[] {
     : [];
 }
 
+// Custom slug for pretty links ("lolyfans.com/amayaxo"). Lowercase letters,
+// numbers, dashes and underscores; must not shadow a real app route.
+const SLUG_RE = /^[a-z0-9_-]{2,32}$/;
+const RESERVED_SLUGS = new Set([
+  "api", "auth", "call", "chat", "chats", "creator", "home", "i", "inbox",
+  "invites", "login", "p", "payment", "profile", "u", "vault", "watch",
+  "icons", "admin", "settings", "signup", "join", "index", "assets",
+  "static", "media",
+]);
+
+/** Empty input → null (keep/generate a random code); invalid → error text. */
+function normalizeSlug(raw: unknown): { slug: string | null; error?: string } {
+  const s = String(raw ?? "").trim().replace(/^\/+/, "").toLowerCase();
+  if (!s) return { slug: null };
+  if (!SLUG_RE.test(s)) {
+    return {
+      slug: null,
+      error:
+        "Link names can use 2–32 lowercase letters, numbers, dashes and underscores",
+    };
+  }
+  if (RESERVED_SLUGS.has(s)) {
+    return { slug: null, error: "That link name is reserved — pick another" };
+  }
+  return { slug: s };
+}
+
+/** Postgres unique-violation on invites.code (the slug is already taken). */
+function isDuplicateCode(error: { code?: string } | null): boolean {
+  return error?.code === "23505";
+}
+
 /**
  * Bare domains get https://; invalid input becomes null. The literal
  * PROFILE_DESTINATION ("profile") passes through — it means "send visitors
@@ -148,11 +180,15 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // Optional custom slug — the link becomes lolyfans.com/<slug>.
+  const { slug, error: slugError } = normalizeSlug(body.slug);
+  if (slugError) return NextResponse.json({ error: slugError }, { status: 400 });
+
   const { data, error } = await supabaseAdmin()
     .from("invites")
     .insert({
       owner_id: ownerId,
-      code: nanoid(10),
+      code: slug ?? nanoid(10),
       label: body.label?.trim() || null,
       allowed_countries: allowedCountries.length > 0 ? allowedCountries : null,
       max_uses: body.maxUses ? Number(body.maxUses) : null,
@@ -162,6 +198,12 @@ export async function POST(req: NextRequest) {
     .select()
     .single();
 
+  if (isDuplicateCode(error)) {
+    return NextResponse.json(
+      { error: "That link name is already taken — pick another" },
+      { status: 409 }
+    );
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ invite: data });
 }
@@ -178,6 +220,7 @@ export async function PATCH(req: NextRequest) {
     label?: string | null;
     allowed_countries?: string[] | null;
     redirect_url?: string;
+    code?: string;
   } = {};
   if (typeof active === "boolean") updates.active = active;
   if (label !== undefined) updates.label = String(label).trim() || null;
@@ -196,6 +239,14 @@ export async function PATCH(req: NextRequest) {
     }
     updates.redirect_url = url;
   }
+  // Custom slug edit — single link only (codes are unique).
+  if (body.slug !== undefined && id) {
+    const { slug, error: slugError } = normalizeSlug(body.slug);
+    if (slugError) {
+      return NextResponse.json({ error: slugError }, { status: 400 });
+    }
+    if (slug) updates.code = slug;
+  }
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: "Nothing to update" }, { status: 400 });
   }
@@ -211,6 +262,12 @@ export async function PATCH(req: NextRequest) {
     .update(updates)
     .in("id", targetIds)
     .eq("owner_id", ownerId);
+  if (isDuplicateCode(error)) {
+    return NextResponse.json(
+      { error: "That link name is already taken — pick another" },
+      { status: 409 }
+    );
+  }
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

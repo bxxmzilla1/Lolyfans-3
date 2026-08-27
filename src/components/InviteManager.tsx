@@ -15,6 +15,17 @@ type InviteWithStats = Invite & {
 // while the fresh data loads in the background.
 let invitesCache: InviteWithStats[] | null = null;
 
+/** The site host without www — shown as the prefix of pretty links. */
+function siteHost(): string {
+  if (typeof window === "undefined") return "";
+  return window.location.host.replace(/^www\./, "");
+}
+
+/** Keep only characters a slug can contain while the owner types. */
+function cleanSlugInput(raw: string): string {
+  return raw.toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 32);
+}
+
 /** Short display form of a redirect URL (hostname, or raw text if unparsable). */
 function redirectHost(url: string): string {
   if (url === PROFILE_DESTINATION) return "My profile page";
@@ -128,7 +139,7 @@ function VisitorsModal({
                   Visitors — {invite.label || "Invite link"}
                 </p>
                 <p className="text-muted text-xs truncate">
-                  /i/{invite.code}
+                  /{invite.code}
                   {visits ? ` · ${visits.length} unique IP${visits.length === 1 ? "" : "s"}` : ""}
                 </p>
               </div>
@@ -212,6 +223,7 @@ export default function InviteManager() {
   const [loading, setLoading] = useState(invitesCache === null);
   const [showForm, setShowForm] = useState(false);
   const [label, setLabel] = useState("");
+  const [slug, setSlug] = useState("");
   const [countries, setCountries] = useState<string[]>([]);
   const [redirectUrl, setRedirectUrl] = useState("");
   // Destination: false = custom URL, true = the creator's own profile page.
@@ -222,6 +234,8 @@ export default function InviteManager() {
   const [deleting, setDeleting] = useState<Invite | null>(null);
   const [renaming, setRenaming] = useState<InviteWithStats | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [editSlug, setEditSlug] = useState("");
+  const [editError, setEditError] = useState("");
   const [editRedirectUrl, setEditRedirectUrl] = useState("");
   const [editToProfile, setEditToProfile] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -265,6 +279,7 @@ export default function InviteManager() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         label,
+        slug,
         allowedCountries: countries,
         redirectUrl: toProfile ? PROFILE_DESTINATION : redirectUrl,
       }),
@@ -272,6 +287,7 @@ export default function InviteManager() {
     setCreating(false);
     if (res?.ok) {
       setLabel("");
+      setSlug("");
       setCountries([]);
       setRedirectUrl("");
       setToProfile(false);
@@ -303,7 +319,8 @@ export default function InviteManager() {
   }
 
   function copy(invite: Invite) {
-    const url = `${window.location.origin}/i/${invite.code}`;
+    // Pretty root form — the middleware serves it as the invite link.
+    const url = `${window.location.origin}/${invite.code}`;
     navigator.clipboard.writeText(url);
     setCopied(invite.id);
     setTimeout(() => setCopied(null), 1500);
@@ -349,18 +366,24 @@ export default function InviteManager() {
       ? PROFILE_DESTINATION
       : editRedirectUrl.trim();
     if (!newRedirectUrl) return; // the redirect link is mandatory
-    const id = renaming.id;
-    const newLabel = renameValue.trim();
-    setRenaming(null);
-    await fetch("/api/invites", {
+    setEditError("");
+    const res = await fetch("/api/invites", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        id,
-        label: newLabel,
+        id: renaming.id,
+        label: renameValue.trim(),
+        // Only send a changed slug — an untouched (or cleared) field keeps it.
+        ...(editSlug && editSlug !== renaming.code ? { slug: editSlug } : {}),
         redirectUrl: newRedirectUrl,
       }),
-    });
+    }).catch(() => null);
+    if (!res?.ok) {
+      const data = await res?.json().catch(() => null);
+      setEditError(data?.error || "Could not save — try again");
+      return;
+    }
+    setRenaming(null);
     load();
   }
 
@@ -418,6 +441,27 @@ export default function InviteManager() {
             placeholder="Label (e.g. Twitter bio)"
             className="w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors"
           />
+
+          <div className="space-y-1.5">
+            <p className="text-sm font-semibold">
+              Custom link name{" "}
+              <span className="text-muted font-normal text-xs">(optional)</span>
+            </p>
+            <div className="flex items-center bg-card2 border border-line rounded-xl focus-within:border-accent transition-colors">
+              <span className="pl-4 text-muted text-[15px] select-none shrink-0">
+                {siteHost() || "lolyfans.com"}/
+              </span>
+              <input
+                value={slug}
+                onChange={(e) => setSlug(cleanSlugInput(e.target.value))}
+                placeholder="amayaxo"
+                className="flex-1 min-w-0 bg-transparent py-3 pr-4 text-[15px] outline-none placeholder:text-muted"
+              />
+            </div>
+            <p className="text-xs text-muted">
+              Letters, numbers, dashes and underscores. Empty = a random code.
+            </p>
+          </div>
 
           <div className="space-y-1.5">
             <p className="text-sm font-semibold">
@@ -575,6 +619,8 @@ export default function InviteManager() {
                     onClick={() => {
                       setRenaming(invite);
                       setRenameValue(invite.label ?? "");
+                      setEditSlug(invite.code);
+                      setEditError("");
                       const isProfile =
                         invite.redirect_url === PROFILE_DESTINATION;
                       setEditToProfile(isProfile);
@@ -589,7 +635,9 @@ export default function InviteManager() {
                 )}
               </div>
             </div>
-            <p className="text-muted text-xs mt-0.5 break-all">/i/{invite.code}</p>
+            <p className="text-muted text-xs mt-0.5 break-all">
+              {siteHost() || "lolyfans.com"}/{invite.code}
+            </p>
             {invite.redirect_url ? (
               <p
                 className="text-xs mt-1 truncate"
@@ -706,7 +754,9 @@ export default function InviteManager() {
               </div>
               <div className="min-w-0">
                 <p className="font-bold">Edit link</p>
-                <p className="text-muted text-xs truncate">/i/{renaming.code}</p>
+                <p className="text-muted text-xs truncate">
+                  {siteHost() || "lolyfans.com"}/{renaming.code}
+                </p>
               </div>
             </div>
             <input
@@ -717,6 +767,24 @@ export default function InviteManager() {
               placeholder="Link name (e.g. Twitter bio)"
               className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent outline-none"
             />
+            <div className="space-y-1.5">
+              <p className="text-sm font-semibold">Custom link name</p>
+              <div className="flex items-center bg-card2 border border-line rounded-xl focus-within:border-accent transition-colors">
+                <span className="pl-3 text-muted text-sm select-none shrink-0">
+                  {siteHost() || "lolyfans.com"}/
+                </span>
+                <input
+                  value={editSlug}
+                  onChange={(e) => setEditSlug(cleanSlugInput(e.target.value))}
+                  placeholder={renaming.code}
+                  className="flex-1 min-w-0 bg-transparent py-2.5 pr-3 text-sm outline-none placeholder:text-muted"
+                />
+              </div>
+              <p className="text-xs text-muted">
+                Changing this breaks the previous URL — update it wherever the
+                old link is posted.
+              </p>
+            </div>
             <div className="space-y-1.5 border-t border-line pt-3">
               <p className="text-sm font-semibold">
                 Destination <span className="text-red-400">*</span>
@@ -743,6 +811,7 @@ export default function InviteManager() {
                 />
               )}
             </div>
+            {editError && <p className="text-sm text-red-400">{editError}</p>}
             <div className="flex gap-2">
               <button
                 onClick={() => setRenaming(null)}
