@@ -243,6 +243,7 @@ export default function GuestShell() {
 
   useEffect(() => {
     router.prefetch("/home");
+    router.prefetch("/chat");
     router.prefetch("/profile");
   }, [router]);
 

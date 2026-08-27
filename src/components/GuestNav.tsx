@@ -4,16 +4,17 @@ import { useEffect, useRef, useTransition } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import GuestAppPresence from "./GuestAppPresence";
 import Logo from "./Logo";
-import { IconHome, IconUser } from "./Icons";
+import { useGuestShell } from "./GuestShellContext";
+import { IconHome, IconChat, IconUser } from "./Icons";
 
 /**
- * Guest navigation: Home and Profile only — there's no in-app chat tab.
- * Soft-pushes the URL so the fan shell can keep panels mounted and switch
- * instantly.
+ * Guest navigation: Home, Chat and Profile. Soft-pushes the URL so the fan
+ * shell can keep panels mounted and switch instantly.
  */
 export default function GuestNav() {
   const pathname = usePathname();
   const router = useRouter();
+  const { unread } = useGuestShell();
   const [, startTransition] = useTransition();
   const mobileNavRef = useRef<HTMLElement>(null);
 
@@ -42,8 +43,9 @@ export default function GuestNav() {
   }
 
   const tabs = [
-    { href: "/home", label: "Home", icon: IconHome },
-    { href: "/profile", label: "Profile", icon: IconUser },
+    { href: "/home", label: "Home", icon: IconHome, badge: 0 },
+    { href: "/chat", label: "Chat", icon: IconChat, badge: unread },
+    { href: "/profile", label: "Profile", icon: IconUser, badge: 0 },
   ];
 
   return (
@@ -59,7 +61,7 @@ export default function GuestNav() {
           </p>
         </div>
         <nav className="flex-1 px-3 space-y-1">
-          {tabs.map(({ href, label, icon: Icon }) => {
+          {tabs.map(({ href, label, icon: Icon, badge }) => {
             const active = pathname === href;
             return (
               <button
@@ -74,6 +76,11 @@ export default function GuestNav() {
               >
                 <Icon className="w-5.5 h-5.5" />
                 {label}
+                {badge > 0 && (
+                  <span className="ml-auto min-w-5 h-5 px-1.5 rounded-full bg-accent text-white text-[11px] font-bold flex items-center justify-center">
+                    {badge > 99 ? "99+" : badge}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -84,8 +91,8 @@ export default function GuestNav() {
         ref={mobileNavRef}
         className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-line2 bg-card/90 backdrop-blur-lg pb-[env(safe-area-inset-bottom)]"
       >
-        <div className="max-w-lg mx-auto grid grid-cols-2">
-          {tabs.map(({ href, label, icon: Icon }) => {
+        <div className="max-w-lg mx-auto grid grid-cols-3">
+          {tabs.map(({ href, label, icon: Icon, badge }) => {
             const active = pathname === href;
             return (
               <button
@@ -99,6 +106,11 @@ export default function GuestNav() {
               >
                 <span className="relative">
                   <Icon className="w-6 h-6" />
+                  {badge > 0 && (
+                    <span className="absolute -top-1.5 -right-2.5 min-w-4.5 h-4.5 px-1 rounded-full bg-accent text-white text-[10px] font-bold flex items-center justify-center">
+                      {badge > 99 ? "99+" : badge}
+                    </span>
+                  )}
                 </span>
               </button>
             );
