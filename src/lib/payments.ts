@@ -312,17 +312,77 @@ export async function chargeChatDollars(opts: {
   };
 }
 
+/** Wallet level at/under which a background auto refill kicks in. */
+export const AUTO_REFILL_AT_TOKENS = 10;
+
 /**
- * Auto refill (on by default): when a fan is short on tokens but has a saved
- * card, silently charge the smallest pack that covers the shortfall and
- * credit it. Returns the new balance, or null when there's no saved card or
- * the charge failed (caller falls back to the top-up sheet).
+ * The fan's auto-refill preference and last bought pack live in Stripe
+ * customer metadata (no DB column needed). Absent metadata = refill on.
+ */
+async function autoRefillPrefs(
+  customerId: string
+): Promise<{ enabled: boolean; lastPackId: string | null }> {
+  try {
+    const customer = await stripe().customers.retrieve(customerId);
+    if (customer.deleted) return { enabled: true, lastPackId: null };
+    return {
+      enabled: customer.metadata?.auto_refill !== "0",
+      lastPackId: customer.metadata?.last_pack_id || null,
+    };
+  } catch {
+    return { enabled: true, lastPackId: null };
+  }
+}
+
+/** Remember the last token pack a fan bought — auto refill reuses it. */
+export async function recordLastPackPurchase(
+  customerId: string | null | undefined,
+  packId: string | null | undefined
+) {
+  if (!customerId || !packId) return;
+  const { packById } = await import("@/lib/tokens");
+  if (!packById(packId)) return; // skip "coupon", "custom-link", …
+  try {
+    await stripe().customers.update(customerId, {
+      metadata: { last_pack_id: packId },
+    });
+  } catch {
+    // non-critical
+  }
+}
+
+/** Read the fan's auto-refill switch (Profile tab). Defaults to on. */
+export async function getAutoRefillEnabled(chatId: string): Promise<boolean> {
+  const { data: chat } = await supabaseAdmin()
+    .from("chats")
+    .select("stripe_customer_id")
+    .eq("id", chatId)
+    .maybeSingle();
+  if (!chat?.stripe_customer_id) return true;
+  return (await autoRefillPrefs(chat.stripe_customer_id)).enabled;
+}
+
+/** Flip the fan's auto-refill switch (Profile tab). */
+export async function setAutoRefillEnabled(chatId: string, enabled: boolean) {
+  const customerId = await ensureStripeCustomer(chatId);
+  await stripe().customers.update(customerId, {
+    metadata: { auto_refill: enabled ? "1" : "0" },
+  });
+}
+
+/**
+ * Auto refill (on by default; fans can turn it off in their Profile tab):
+ * silently charge the saved card for the last pack the fan bought and credit
+ * it. When covering an immediate shortfall that the last pack is too small
+ * for, the smallest covering pack is used instead. Returns the new balance,
+ * or null when refill is off / no saved card / the charge failed (caller
+ * falls back to the top-up sheet).
  */
 export async function autoRefillTokens(
   chatId: string,
-  shortfallTokens: number
+  shortfallTokens = 0
 ): Promise<number | null> {
-  const { TOKEN_PACKS, packTotalTokens } = await import("@/lib/tokens");
+  const { TOKEN_PACKS, packById, packTotalTokens } = await import("@/lib/tokens");
 
   const db = supabaseAdmin();
   const { data: chat } = await db
@@ -332,10 +392,17 @@ export async function autoRefillTokens(
     .maybeSingle();
   if (!chat?.stripe_customer_id || !chat?.stripe_payment_method_id) return null;
 
-  const pack =
-    TOKEN_PACKS.find((p) => packTotalTokens(p) >= shortfallTokens) ??
-    TOKEN_PACKS[TOKEN_PACKS.length - 1];
-  if (packTotalTokens(pack) < shortfallTokens) return null;
+  const prefs = await autoRefillPrefs(chat.stripe_customer_id);
+  if (!prefs.enabled) return null;
+
+  let pack =
+    (prefs.lastPackId ? packById(prefs.lastPackId) : null) ?? TOKEN_PACKS[0];
+  if (shortfallTokens > 0 && packTotalTokens(pack) < shortfallTokens) {
+    pack =
+      TOKEN_PACKS.find((p) => packTotalTokens(p) >= shortfallTokens) ??
+      TOKEN_PACKS[TOKEN_PACKS.length - 1];
+    if (packTotalTokens(pack) < shortfallTokens) return null;
+  }
 
   try {
     const pi = await stripe().paymentIntents.create({
@@ -357,6 +424,24 @@ export async function autoRefillTokens(
   } catch {
     return null;
   }
+}
+
+/**
+ * Background refill once a spend leaves the wallet at or under
+ * AUTO_REFILL_AT_TOKENS, so the next purchase never stalls. A top-up in the
+ * last minute skips the refill (double-charge guard for rapid spends).
+ */
+export async function maybeAutoRefillLowBalance(chatId: string, balance: number) {
+  if (balance > AUTO_REFILL_AT_TOKENS) return;
+  const { data: recent } = await supabaseAdmin()
+    .from("token_transactions")
+    .select("id")
+    .eq("chat_id", chatId)
+    .eq("kind", "topup")
+    .gte("created_at", new Date(Date.now() - 60_000).toISOString())
+    .limit(1);
+  if (recent?.length) return;
+  await autoRefillTokens(chatId);
 }
 
 /**

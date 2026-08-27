@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
   autoRefillTokens,
+  maybeAutoRefillLowBalance,
   recordUnlock,
   spendTokens,
   tokenBalance,
@@ -61,8 +62,8 @@ export async function POST(req: NextRequest) {
     messageId: message.id,
   });
 
-  // Short on tokens: auto refill (on by default) charges the saved card for
-  // the smallest covering pack, then the spend is retried — true one-tap.
+  // Short on tokens: auto refill charges the saved card for the last pack
+  // the fan bought, then the spend is retried — true one-tap.
   if (balance === null) {
     const current = await tokenBalance(message.chat_id);
     const refilled = await autoRefillTokens(message.chat_id, tokens - current);
@@ -93,6 +94,10 @@ export async function POST(req: NextRequest) {
     chatId: message.chat_id,
     priceCents: price,
   });
+
+  // Wallet running low (≤10 Tokens)? Refill in the background.
+  const newBalance = balance;
+  after(() => maybeAutoRefillLowBalance(message.chat_id, newBalance));
 
   return NextResponse.json({
     ok: true,

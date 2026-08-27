@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
   autoRefillTokens,
   ensureStripeCustomer,
+  maybeAutoRefillLowBalance,
   recordBlurDrainTap,
   saveStripePaymentMethod,
   spendTokens,
@@ -170,7 +171,7 @@ export async function POST(req: NextRequest) {
     kind: "unlock",
     messageId: message.id,
   });
-  // Auto refill (default on): saved card silently buys the covering pack.
+  // Auto refill (default on): saved card silently rebuys the last pack.
   if (balance === null) {
     const current = await tokenBalance(message.chat_id);
     const refilled = await autoRefillTokens(message.chat_id, tokens - current);
@@ -201,6 +202,11 @@ export async function POST(req: NextRequest) {
       .toString(36)
       .slice(2, 8)}`,
   });
+
+  // Wallet running low (≤10 Tokens)? Refill in the background.
+  const newBalance = balance;
+  after(() => maybeAutoRefillLowBalance(message.chat_id, newBalance));
+
   return NextResponse.json({
     ok: true,
     layersCleared,

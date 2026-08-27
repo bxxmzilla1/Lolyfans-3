@@ -1,8 +1,9 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
   autoRefillTokens,
+  maybeAutoRefillLowBalance,
   postTipMessage,
   spendTokens,
   tokenBalance,
@@ -41,7 +42,7 @@ export async function POST(req: NextRequest) {
   if (!chat) return NextResponse.json({ error: "Chat not found" }, { status: 404 });
 
   let balance = await spendTokens({ chatId, tokens, kind: "tip" });
-  // Auto refill (default on): saved card silently buys the covering pack.
+  // Auto refill (default on): saved card silently rebuys the last pack.
   if (balance === null) {
     const current = await tokenBalance(chatId);
     const refilled = await autoRefillTokens(chatId, tokens - current);
@@ -65,6 +66,10 @@ export async function POST(req: NextRequest) {
     content: tokenTipMessageContent(tokens, note),
     ownerId: chat.owner_id,
   });
+
+  // Wallet running low (≤10 Tokens)? Refill in the background.
+  const newBalance = balance;
+  after(() => maybeAutoRefillLowBalance(chatId, newBalance));
 
   return NextResponse.json({
     ok: true,

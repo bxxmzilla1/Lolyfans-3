@@ -4,6 +4,7 @@ import {
   creditTokens,
   fulfillCheckout,
   recordBlurDrainTap,
+  recordLastPackPurchase,
   recordLifetimeSubscription,
   recordUnlock,
   saveStripePaymentMethod,
@@ -70,6 +71,10 @@ export async function POST(req: NextRequest) {
       if (tokens > 0) {
         await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
         await creditTokens({ chatId, tokens, paymentIntentId: pi.id });
+        // Not for auto refills themselves — keep the fan's own last choice.
+        if (pi.metadata.auto !== "1") {
+          await recordLastPackPurchase(customerId, pi.metadata.packId);
+        }
       }
     } else if (pi.metadata?.kind === "unlock" && pi.metadata.messageId) {
       await saveStripePaymentMethod(chatId, customerId, paymentMethodId);

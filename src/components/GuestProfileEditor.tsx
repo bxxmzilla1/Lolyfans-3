@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
@@ -24,6 +24,35 @@ export default function GuestProfileEditor({
   const [loggingOut, setLoggingOut] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+  // null = still loading the saved value.
+  const [autoRefill, setAutoRefill] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/guest/profile")
+      .then((r) => r.json())
+      .then((d) => {
+        if (alive) setAutoRefill(d?.autoRefill !== false);
+      })
+      .catch(() => {
+        if (alive) setAutoRefill(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  async function toggleAutoRefill() {
+    if (autoRefill === null) return;
+    const next = !autoRefill;
+    setAutoRefill(next);
+    const res = await fetch("/api/guest/profile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ autoRefill: next }),
+    }).catch(() => null);
+    if (!res?.ok) setAutoRefill(!next); // revert on failure
+  }
 
   async function logout() {
     if (loggingOut) return;
@@ -150,6 +179,38 @@ export default function GuestProfileEditor({
             className="px-5 rounded-xl bg-accent text-white text-sm font-semibold disabled:opacity-40"
           >
             {saving ? "..." : saved ? "Saved" : "Save"}
+          </button>
+        </div>
+      </div>
+
+      {/* Auto refill: rebuys the last token pack when the wallet runs low */}
+      <div className="space-y-2">
+        <label className="text-xs font-semibold text-muted uppercase tracking-wide">
+          Tokens
+        </label>
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-card border border-line2 px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Auto refill</p>
+            <p className="text-xs text-muted">
+              When your balance drops to 10 Tokens, your last package is
+              bought again automatically.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoRefill === true}
+            onClick={toggleAutoRefill}
+            disabled={autoRefill === null}
+            className={`relative shrink-0 w-12 h-7 rounded-full transition-colors disabled:opacity-50 ${
+              autoRefill ? "bg-accent" : "bg-line"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-all ${
+                autoRefill ? "left-[calc(100%-1.625rem)]" : "left-0.5"
+              }`}
+            />
           </button>
         </div>
       </div>

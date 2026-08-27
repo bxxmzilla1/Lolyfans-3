@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
   creditTokens,
+  recordLastPackPurchase,
   saveStripePaymentMethod,
   tokenBalance,
 } from "@/lib/payments";
@@ -51,6 +52,7 @@ export async function POST(req: NextRequest) {
       : pi.payment_method?.id ?? null;
   const customerId = typeof pi.customer === "string" ? pi.customer : null;
   await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
+  await recordLastPackPurchase(customerId, pi.metadata?.packId);
 
   const couponMessageId =
     typeof pi.metadata?.couponMessageId === "string"

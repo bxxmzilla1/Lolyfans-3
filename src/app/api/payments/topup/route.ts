@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
-import { creditTokens, ensureStripeCustomer, tokenBalance } from "@/lib/payments";
+import {
+  creditTokens,
+  ensureStripeCustomer,
+  recordLastPackPurchase,
+  tokenBalance,
+} from "@/lib/payments";
 import { packById, packTotalTokens, formatTokens } from "@/lib/tokens";
 import { parseCouponMessage } from "@/lib/coupon";
 import { stripe, stripeConfigured } from "@/lib/stripe";
@@ -118,6 +123,8 @@ export async function POST(req: NextRequest) {
         paymentIntentId: pi.id,
         messageId: couponMsgId,
       });
+      // Auto refill reuses the pack the fan picked last.
+      await recordLastPackPurchase(chat.stripe_customer_id, pack?.id);
       return NextResponse.json({
         ok: true,
         topped: true,
