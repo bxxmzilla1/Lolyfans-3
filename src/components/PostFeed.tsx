@@ -10,6 +10,7 @@ import {
   IconChat,
   IconHeart,
   IconHeartFilled,
+  IconLock,
   IconPlay,
   IconSend,
   IconUser,
@@ -29,6 +30,8 @@ export type FeedPost = {
   likes: number;
   comments: number;
   liked: boolean;
+  /** Visitor without an account + creator's "blur posts" option on. */
+  blurred?: boolean;
 };
 
 type Comment = {
@@ -266,15 +269,13 @@ export default function PostFeed({
                 {post.verified && <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />}
               </span>
             </Link>
-            {canInteract && (
-              <button
-                onClick={() => message(post)}
-                disabled={messaging === post.id}
-                className="shrink-0 px-3.5 py-1.5 rounded-full bg-accent text-white text-xs font-semibold disabled:opacity-60 active:opacity-80 transition-opacity"
-              >
-                {messaging === post.id ? "Opening…" : "Message"}
-              </button>
-            )}
+            <button
+              onClick={() => message(post)}
+              disabled={messaging === post.id}
+              className="shrink-0 px-3.5 py-1.5 rounded-full bg-accent text-white text-xs font-semibold disabled:opacity-60 active:opacity-80 transition-opacity"
+            >
+              {messaging === post.id ? "Opening…" : "Message"}
+            </button>
           </div>
 
           {/* Caption sits above the media, under the creator's name */}
@@ -287,8 +288,8 @@ export default function PostFeed({
           {/* Media is never cropped: it fits the column (capped at 70% of the
               screen) over a blurred copy of itself. Tapping opens fullscreen. */}
           <button
-            onClick={() => setViewer(post)}
-            aria-label="View full screen"
+            onClick={() => !post.blurred && setViewer(post)}
+            aria-label={post.blurred ? "Subscribe to see this post" : "View full screen"}
             className="relative block w-full overflow-hidden"
           >
             {post.type === "video" ? (
@@ -317,19 +318,35 @@ export default function PostFeed({
                   playsInline
                   preload="metadata"
                   tabIndex={-1}
-                  className="relative w-full h-auto max-h-[70vh] object-contain pointer-events-none"
+                  className={`relative w-full h-auto max-h-[70vh] object-contain pointer-events-none ${
+                    post.blurred ? "blur-2xl scale-105" : ""
+                  }`}
                 />
-                <span className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-accent text-white glow-accent flex items-center justify-center">
-                  <IconPlay className="w-6 h-6 translate-x-0.5" />
-                </span>
+                {!post.blurred && (
+                  <span className="absolute inset-0 m-auto w-14 h-14 rounded-full bg-accent text-white glow-accent flex items-center justify-center">
+                    <IconPlay className="w-6 h-6 translate-x-0.5" />
+                  </span>
+                )}
               </>
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={post.url}
                 alt={post.caption || "Post"}
-                className="relative w-full h-auto max-h-[70vh] object-contain"
+                className={`relative w-full h-auto max-h-[70vh] object-contain ${
+                  post.blurred ? "blur-2xl scale-105" : ""
+                }`}
               />
+            )}
+            {post.blurred && (
+              <span className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/25">
+                <span className="w-12 h-12 rounded-full bg-white/15 backdrop-blur flex items-center justify-center">
+                  <IconLock className="w-5.5 h-5.5 text-white" />
+                </span>
+                <span className="text-white text-sm font-semibold drop-shadow">
+                  Subscribe to see this post
+                </span>
+              </span>
             )}
           </button>
 

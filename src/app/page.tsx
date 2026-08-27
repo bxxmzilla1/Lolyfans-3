@@ -91,6 +91,9 @@ export default async function Home({
       likes: (post.like_count ?? 0) + (stats.likes.get(post.id) ?? 0),
       comments: stats.comments.get(post.id) ?? 0,
       liked: false,
+      // This feed only renders for visitors without an account, so the
+      // creator's "blur posts for visitors" option applies directly.
+      blurred: !!profile?.blurPosts,
     };
   });
 

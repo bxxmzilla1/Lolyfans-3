@@ -25,6 +25,7 @@ function ProfileSection() {
   const [displayName, setDisplayName] = useState("");
   const [bio, setBio] = useState("");
   const [showLocation, setShowLocation] = useState(false);
+  const [blurPosts, setBlurPosts] = useState(false);
   const [email, setEmail] = useState("");
   const [avatarPath, setAvatarPath] = useState<string | null>(null);
   const [bannerPath, setBannerPath] = useState<string | null>(null);
@@ -44,6 +45,7 @@ function ProfileSection() {
         setDisplayName((user.user_metadata?.display_name as string) ?? "");
         setBio((user.user_metadata?.profile_bio as string) ?? "");
         setShowLocation(!!user.user_metadata?.profile_show_location);
+        setBlurPosts(!!user.user_metadata?.profile_blur_posts);
         setAvatarPath((user.user_metadata?.avatar_path as string) ?? null);
         setBannerPath((user.user_metadata?.banner_path as string) ?? null);
       });
@@ -120,6 +122,7 @@ function ProfileSection() {
           display_name: displayName.trim(),
           profile_bio: bio.trim().slice(0, 300),
           profile_show_location: showLocation,
+          profile_blur_posts: blurPosts,
         },
       });
       setSaved(true);
@@ -261,6 +264,28 @@ function ProfileSection() {
             <span
               className={`absolute top-1 w-4.5 h-4.5 rounded-full transition-all ${
                 showLocation ? "left-6.5 bg-accent" : "left-1 bg-muted"
+              }`}
+            />
+          </button>
+        </div>
+
+        <div className="flex items-center justify-between rounded-xl border border-line bg-card2 px-3 py-2.5">
+          <div>
+            <p className="text-sm font-semibold">Blur posts for visitors</p>
+            <p className="text-xs text-muted">
+              People without an account see your posts blurred with a
+              Subscribe prompt. Signed-up fans see them normally.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBlurPosts((s) => !s)}
+            aria-label={blurPosts ? "Show posts to visitors" : "Blur posts for visitors"}
+            className="relative shrink-0 w-12 h-7 rounded-full bg-bg border border-line transition-colors"
+          >
+            <span
+              className={`absolute top-1 w-4.5 h-4.5 rounded-full transition-all ${
+                blurPosts ? "left-6.5 bg-accent" : "left-1 bg-muted"
               }`}
             />
           </button>

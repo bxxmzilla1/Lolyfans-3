@@ -99,6 +99,9 @@ export default async function CreatorProfilePage({
   for (const n of stats.likes.values()) realLikes += n;
   const likes = profile.likesBase + realLikes;
 
+  // Creator option: visitors without an account see the media blurred.
+  const blurForVisitor = profile.blurPosts && chats.length === 0;
+
   const feedPosts: FeedPost[] = (posts ?? []).map((post) => ({
     id: post.id,
     ownerId,
@@ -112,6 +115,7 @@ export default async function CreatorProfilePage({
     likes: (post.like_count ?? 0) + (stats.likes.get(post.id) ?? 0),
     comments: stats.comments.get(post.id) ?? 0,
     liked: stats.likedByMe.has(post.id),
+    blurred: blurForVisitor,
   }));
 
   return (

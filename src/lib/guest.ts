@@ -65,6 +65,8 @@ export type OwnerProfile = {
   bio: string | null;
   /** Show a location line (the visitor's own city) under the bio. */
   showLocation: boolean;
+  /** Blur profile posts for visitors without an account. */
+  blurPosts: boolean;
   /** Profile-subscription plan (price 0 = free). */
   plan: SubPlan;
 };
@@ -87,6 +89,7 @@ export async function ownerProfiles(
         social_followers?: number;
         profile_bio?: string;
         profile_show_location?: boolean;
+        profile_blur_posts?: boolean;
       };
       return [
         id,
@@ -98,6 +101,7 @@ export async function ownerProfiles(
           likesBase: Number(meta.social_followers) || 0,
           bio: meta.profile_bio?.trim() || null,
           showLocation: !!meta.profile_show_location,
+          blurPosts: !!meta.profile_blur_posts,
           plan: subPlanFromMetadata(meta as Record<string, unknown>),
         },
       ] as const;
