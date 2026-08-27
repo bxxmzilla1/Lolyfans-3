@@ -180,9 +180,10 @@ export async function POST(req: NextRequest) {
       : 0;
   // Send mode for owner media: "full screen notification" leaves fan_decision
   // null so the incoming-media gate takes over the fan's screen; a plain
-  // "message" is pre-accepted and lands as a normal bubble. Locked/priced,
-  // timed and BlurDrainer media always need the gate.
-  const gateRequired = isLocked || price > 0 || decide > 0 || !!drain;
+  // "message" is pre-accepted and lands as a normal bubble (locked media
+  // shows blurred with an Unlock pill). Only timed and BlurDrainer media
+  // require the gate — the countdown/accept flow lives there.
+  const gateRequired = decide > 0 || !!drain;
   const plainBubble =
     auth.role === "owner" && hasVisualMedia && !gateRequired && fullscreen !== true;
 

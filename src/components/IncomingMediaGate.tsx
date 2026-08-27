@@ -1,13 +1,10 @@
 "use client";
 
 import Portal from "./Portal";
-import { mediaUrl, mediaItemsFromMessage } from "@/lib/utils";
+import { thumbUrl, mediaItemsFromMessage } from "@/lib/utils";
+import { formatTokens, tokensForCents } from "@/lib/tokens";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
 import type { Message } from "./MessageBubble";
-
-function priceLabel(cents: number): string {
-  return `$${(cents / 100).toFixed(2).replace(/\.00$/, "")}`;
-}
 
 /**
  * Incoming-media gate: a creator photo/video takes over the whole screen,
@@ -53,37 +50,14 @@ export default function IncomingMediaGate({
   return (
     <Portal>
       <div className="fixed inset-0 z-[80] bg-black fade-up">
-        {/* The media itself, full screen and blurred */}
-        {first.type === "image" ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={mediaUrl(first.path)}
-            alt=""
-            className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
-          />
-        ) : (
-          <video
-            src={mediaUrl(first.path)}
-            muted
-            autoPlay
-            loop
-            playsInline
-            // React sets `muted` as a JS property, not an HTML attribute, so
-            // the browser can refuse muted autoplay on first load. Force the
-            // attribute and kick playback explicitly.
-            ref={(v) => {
-              if (!v) return;
-              v.defaultMuted = true;
-              v.muted = true;
-              v.play().catch(() => {});
-            }}
-            onCanPlay={(e) => {
-              const v = e.currentTarget;
-              if (v.paused) v.play().catch(() => {});
-            }}
-            className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
-          />
-        )}
+        {/* Blurred backdrop: a lightweight thumbnail (videos get a server
+            frame-grab) — the full file never downloads on this screen. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={thumbUrl(first.path, 640)}
+          alt=""
+          className="absolute inset-0 w-full h-full object-cover blur-2xl scale-110"
+        />
         <div className="absolute inset-0 bg-black/40" />
 
         {wizard ? (
@@ -144,7 +118,7 @@ export default function IncomingMediaGate({
               {/* Unlock price only (BlurDrainer pricing shows after Accept). */}
               {!drain && price > 0 && (
                 <p className="text-white/45 font-thin text-2xl tracking-widest tabular-nums drop-shadow">
-                  {priceLabel(price)}
+                  {formatTokens(tokensForCents(price))}
                 </p>
               )}
             </div>

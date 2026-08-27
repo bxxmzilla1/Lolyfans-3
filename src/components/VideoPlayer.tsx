@@ -16,12 +16,15 @@ type VideoWithNativeFullscreen = HTMLVideoElement & {
 
 export default function VideoPlayer({
   src,
+  poster,
   className = "",
   videoClassName = "",
   fullscreenOnPlay = false,
   autoPlay = false,
 }: {
   src: string;
+  /** Lightweight preview image; when set, the video file loads only on play. */
+  poster?: string;
   className?: string;
   videoClassName?: string;
   /** Chat mode: show only a play button; playing opens fullscreen with the full controls. */
@@ -115,8 +118,9 @@ export default function VideoPlayer({
       {/* #t=0.001 makes browsers render the first frame as the thumbnail instead of black */}
       <video
         ref={videoRef}
-        src={`${src}#t=0.001`}
-        preload="metadata"
+        src={poster ? src : `${src}#t=0.001`}
+        poster={poster}
+        preload={poster ? "none" : "metadata"}
         playsInline
         className={`w-full object-contain cursor-pointer ${videoClassName}`}
         onClick={handlePlayClick}

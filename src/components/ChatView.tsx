@@ -1687,13 +1687,12 @@ export default function ChatView({
           </div>
           {role === "owner" ? (
             <div className="space-y-1.5">
-              {/* Send mode: normal bubble vs full-screen notification. Locked,
-                  priced, timed and BlurDrainer media always go full screen. */}
+              {/* Send mode: normal bubble vs full-screen notification. Timed
+                  and BlurDrainer media always go full screen (the countdown /
+                  accept flow lives there); locked media works either way. */}
               {(() => {
                 const gateForced =
-                  (parseInt(lockPrice, 10) || 0) > 0 ||
-                  (parseInt(decideTimer, 10) || 0) > 0 ||
-                  !!blurDrainer;
+                  (parseInt(decideTimer, 10) || 0) > 0 || !!blurDrainer;
                 const mode = gateForced ? "fullscreen" : sendMode;
                 const pill = (active: boolean) =>
                   `text-xs font-bold px-2.5 py-1 rounded-lg border transition-colors ${
@@ -1722,7 +1721,7 @@ export default function ChatView({
                     </button>
                     <span className="text-[11px] text-muted">
                       {gateForced
-                        ? "locked media always shows full screen"
+                        ? "timed & BlurDrainer media always show full screen"
                         : mode === "fullscreen"
                           ? "takes over their screen"
                           : "normal chat bubble"}

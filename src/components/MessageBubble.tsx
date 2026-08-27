@@ -3,6 +3,7 @@
 import { memo, useEffect, useState } from "react";
 import {
   mediaUrl,
+  thumbUrl,
   formatTime,
   messagePreviewText,
   firstLinkIn,
@@ -416,7 +417,7 @@ function MessageBubble({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={mediaUrl(item.path)}
+              src={thumbUrl(item.path, 640)}
               alt=""
               className="w-full object-cover max-h-80 blur-2xl scale-110 pointer-events-none select-none"
               draggable={false}
@@ -427,32 +428,36 @@ function MessageBubble({
           </button>
         );
       }
-      return (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={mediaUrl(item.path)}
-          alt={dim ? "Locked photo" : "Photo"}
-          className={`w-full object-cover ${dimShape} ${
-            dim
-              ? "blur-2xl scale-110 pointer-events-none select-none"
-              : "cursor-pointer"
-          }`}
-          onClick={dim ? undefined : () => onMediaClick(message, slide)}
-          draggable={false}
-        />
-      );
-    }
-    if (dim) {
-      return (
-        <video
-          src={`${mediaUrl(item.path)}#t=0.001`}
-          muted
-          playsInline
-          preload="metadata"
-          className={`w-full object-cover ${dimShape} blur-2xl scale-110 pointer-events-none select-none`}
-        />
-      );
-    }
+    return (
+      // Bubbles render a light thumbnail; the full-res file loads only when
+      // the fan taps into the viewer.
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={thumbUrl(item.path, 640)}
+        alt={dim ? "Locked photo" : "Photo"}
+        className={`w-full object-cover ${dimShape} ${
+          dim
+            ? "blur-2xl scale-110 pointer-events-none select-none"
+            : "cursor-pointer"
+        }`}
+        onClick={dim ? undefined : () => onMediaClick(message, slide)}
+        draggable={false}
+      />
+    );
+  }
+  if (dim) {
+    return (
+      // Blurred locked video: a frame-grab thumbnail — the video file itself
+      // never downloads until it's unlocked.
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={thumbUrl(item.path, 640)}
+        alt="Locked video"
+        className={`w-full object-cover ${dimShape} blur-2xl scale-110 pointer-events-none select-none`}
+        draggable={false}
+      />
+    );
+  }
     // BlurDrainer for the fan: blue play button, thumbnail stays blurred
     // until every layer is cleared. Tap opens the BlurDrainer screen.
     if (drainCfg && !mine && onOpenBlurDrainer) {
@@ -466,11 +471,12 @@ function MessageBubble({
           aria-label="Play video"
           className="relative w-full block overflow-hidden"
         >
-          <video
-            src={`${mediaUrl(item.path)}#t=0.001`}
-            muted
-            playsInline
-            preload="metadata"
+          {/* Frame-grab thumbnail only — the video loads inside the player. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={thumbUrl(item.path, 640)}
+            alt=""
+            draggable={false}
             className={`w-full max-h-80 object-contain pointer-events-none ${
               drainIncomplete ? "blur-2xl scale-110 select-none" : ""
             }`}
@@ -484,6 +490,7 @@ function MessageBubble({
     return (
       <VideoPlayer
         src={mediaUrl(item.path)}
+        poster={thumbUrl(item.path, 640)}
         videoClassName="max-h-80"
         fullscreenOnPlay
       />
