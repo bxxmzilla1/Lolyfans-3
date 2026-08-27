@@ -33,12 +33,6 @@ alter table invite_visits enable row level security;
 -- before this column existed (those count as allowed).
 alter table invite_visits add column if not exists country text;
 
--- Visitor geolocation from ipinfo.io — shown in the per-link Visitors popup.
-alter table invite_visits add column if not exists city text;
-alter table invite_visits add column if not exists region text;
-alter table invite_visits add column if not exists org text;
-alter table invite_visits add column if not exists last_seen_at timestamptz;
-
 -- One chat per guest that joined through an invite
 create table if not exists chats (
   id uuid primary key default gen_random_uuid(),
@@ -58,8 +52,6 @@ create table if not exists chats (
 alter table invites add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 alter table chats add column if not exists owner_id uuid references auth.users(id) on delete cascade;
 alter table chats add column if not exists guest_ip text;
--- Visitor's city captured at signup/payment (country lives in guest_country).
-alter table chats add column if not exists guest_city text;
 alter table chats add column if not exists last_read_at timestamptz not null default now();
 -- Owner-chosen display name (the guest's original name stays visible subtly)
 alter table chats add column if not exists custom_name text;
@@ -156,12 +148,6 @@ create table if not exists messages (
 
 alter table messages add column if not exists locked boolean not null default false;
 alter table messages add column if not exists hidden boolean not null default false;
-
--- Multi-media messages: [{ "path": "...", "type": "image"|"video" }, ...].
--- media_path / media_type stay as the first item for older clients & previews.
--- (Added here because owner_chat_stats below reads it — SQL functions are
--- validated at creation time, so the column must exist first.)
-alter table messages add column if not exists media_items jsonb not null default '[]'::jsonb;
 
 create index if not exists messages_chat_created_idx on messages (chat_id, created_at);
 
@@ -504,15 +490,13 @@ create index if not exists post_comments_post_idx on post_comments (post_id, cre
 -- stats keep working either way.
 alter table invites add column if not exists skip_landing boolean not null default false;
 
--- Invite links are pure redirect links: allowed visitors get an instant
--- redirect to this URL (mandatory when creating/editing links in the app).
-alter table invites add column if not exists redirect_url text;
--- Cleanup (optional, only if the earlier redirect_countries column was added):
---   alter table invites drop column if exists redirect_countries;
-
 -- Unlock price of a locked media message, in cents. 0 = manual lock only
 -- (owner blur toggle). A positive price makes it pay-to-unlock via Stripe.
 alter table messages add column if not exists price_cents int not null default 0;
+
+-- Multi-media messages: [{ "path": "...", "type": "image"|"video" }, ...].
+-- media_path / media_type stay as the first item for older clients & previews.
+alter table messages add column if not exists media_items jsonb not null default '[]'::jsonb;
 
 -- Which fan has unlocked which locked message (one row = revealed for them).
 create table if not exists message_unlocks (
@@ -731,129 +715,6 @@ create table if not exists telegram_unlocks (
 alter table telegram_unlocks enable row level security;
 create index if not exists telegram_unlocks_owner_idx
   on telegram_unlocks (owner_id, created_at desc);
-
--- Short pay-link token (lolyfans.com/payment/<code>) and the Telegram ids of
--- the teaser / Saved Messages copies (see migration-telegram.sql).
-alter table telegram_unlocks add column if not exists short_code text unique;
-alter table telegram_unlocks add column if not exists tg_message_id bigint;
-alter table telegram_unlocks add column if not exists tg_cached_message_id bigint;
-
--- Vault media pre-uploaded to Telegram: one Saved Messages copy per file plus
--- a pre-rendered blurred teaser clip for videos, with resumable-upload state.
-create table if not exists telegram_media_cache (
-  id uuid primary key default gen_random_uuid(),
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  media_path text not null,
-  media_type text not null, -- image | video
-  tg_message_id bigint,     -- clear copy in Saved Messages
-  teaser_path text,         -- storage path of the badge-less blurred clip
-  caching_at timestamptz,   -- in-flight claim (prevents duplicate uploads)
-  progress int,             -- 0–100 upload progress for the vault UI
-  upload_file_id text,      -- Telegram chunked-upload id (resume across invocations)
-  upload_parts_done int,
-  upload_size bigint,
-  created_at timestamptz not null default now(),
-  unique (owner_id, media_path)
-);
-alter table telegram_media_cache enable row level security;
-
--- ---------------------------------------------------------------------------
--- Telegram Stars PPV bot: the creator DMs their bot, activates it with the
--- private code, sends a photo/video + Stars price, and gets a forwardable
--- invoice. After a fan pays, the bot hands the creator the unlocked media
--- plus who to forward it to. Earnings land as Telegram Stars on the bot.
--- ---------------------------------------------------------------------------
-create table if not exists telegram_bots (
-  owner_id uuid primary key references auth.users(id) on delete cascade,
-  bot_token text not null,
-  bot_username text,
-  bot_id bigint,
-  webhook_secret text not null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-alter table telegram_bots enable row level security;
-
--- Telegram users who unlocked the bot with the private activation code.
-create table if not exists bot_operators (
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  tg_user_id bigint not null,
-  username text,
-  first_name text,
-  -- Unlock waiting for a price reply ("How many Stars?").
-  pending_unlock_id uuid,
-  activated_at timestamptz not null default now(),
-  primary key (owner_id, tg_user_id)
-);
-alter table bot_operators enable row level security;
-
-create table if not exists stars_unlocks (
-  id uuid primary key default gen_random_uuid(),
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  -- Creator's Telegram id — where the paid/unlocked copy is sent back.
-  creator_tg_id bigint,
-  -- Telegram file id of the original upload (best-quality resend).
-  tg_file_id text,
-  -- Copy in Supabase storage — used for the blurred invoice teaser.
-  media_path text,
-  media_type text not null,
-  caption text,
-  price_stars int not null default 0,
-  status text not null default 'draft'
-    check (status in ('draft', 'pending', 'paid', 'delivered', 'refunded')),
-  telegram_payment_charge_id text,
-  paid_at timestamptz,
-  delivered_at timestamptz,
-  created_at timestamptz not null default now()
-);
-create index if not exists stars_unlocks_owner_idx
-  on stars_unlocks (owner_id, created_at desc);
-alter table stars_unlocks enable row level security;
-
--- Chat per minute was removed. Cleanup (run once, optional):
---   drop table if exists cpm_sessions;
---   drop table if exists cpm_links;
---   alter table chats drop column if exists cpm;
-
--- Site-wide settings (e.g. main Telegram channel for lolyfans.com redirects).
--- Invite links keep their own redirect_url and never read from here.
-create table if not exists site_settings (
-  key text primary key,
-  value text not null,
-  updated_at timestamptz not null default now()
-);
-alter table site_settings enable row level security;
-
--- ---------------------------------------------------------------------------
--- AI voice calls: fans call the creator's chatbot from the web at $1/minute.
--- Each thing the fan says is a "turn"; the connected chatbot (Orion) answers
--- turns through /api/external/calls and the reply is spoken with ElevenLabs.
--- ---------------------------------------------------------------------------
-create table if not exists voice_calls (
-  id uuid primary key default gen_random_uuid(),
-  owner_id uuid not null references auth.users(id) on delete cascade,
-  chat_id uuid not null references chats(id) on delete cascade,
-  status text not null default 'active' check (status in ('active', 'ended')),
-  price_cents_per_min int not null default 100,
-  minutes_charged int not null default 0,
-  started_at timestamptz not null default now(),
-  last_active_at timestamptz not null default now(),
-  ended_at timestamptz
-);
-create index if not exists voice_calls_owner_idx on voice_calls (owner_id, started_at desc);
-create index if not exists voice_calls_chat_idx on voice_calls (chat_id, started_at desc);
-alter table voice_calls enable row level security;
-
-create table if not exists voice_call_turns (
-  id uuid primary key default gen_random_uuid(),
-  call_id uuid not null references voice_calls(id) on delete cascade,
-  text text not null,   -- the fan's transcript
-  reply text,           -- the chatbot's answer (null until answered)
-  created_at timestamptz not null default now(),
-  answered_at timestamptz
-);
-create index if not exists voice_call_turns_call_idx on voice_call_turns (call_id, created_at);
-alter table voice_call_turns enable row level security;
 
 -- Public storage bucket for chat media and vault files.
 -- file_size_limit null = no per-bucket cap (project global Storage limit applies).

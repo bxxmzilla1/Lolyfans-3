@@ -9,9 +9,7 @@ export function generateApiToken(): string {
 
 /**
  * Resolve the owner behind an API key sent by an external app (like Orion).
- * The token can arrive as `Authorization: Bearer <token>`, `x-api-key`, or a
- * `?key=` query param (the last is for bare <img>/<video>/fetch URLs that
- * can't set a header — e.g. Telegram media streamed to Orion).
+ * The token can arrive as `Authorization: Bearer <token>` or `x-api-key`.
  * Returns the owner's user id, or null when the key is missing/invalid.
  */
 export async function ownerFromApiKey(req: NextRequest): Promise<string | null> {
@@ -19,11 +17,7 @@ export async function ownerFromApiKey(req: NextRequest): Promise<string | null> 
   const bearer = header.toLowerCase().startsWith("bearer ")
     ? header.slice(7).trim()
     : "";
-  const token =
-    bearer ||
-    req.headers.get("x-api-key")?.trim() ||
-    req.nextUrl.searchParams.get("key")?.trim() ||
-    "";
+  const token = bearer || req.headers.get("x-api-key")?.trim() || "";
   if (!token) return null;
 
   const db = supabaseAdmin();
