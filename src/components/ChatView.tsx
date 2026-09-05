@@ -17,7 +17,7 @@ import IncomingMediaGate from "./IncomingMediaGate";
 import BlurDrainerEditor from "./BlurDrainerEditor";
 import BlurDrainerPlayer from "./BlurDrainerPlayer";
 import { elementsEnabled, getStripe } from "@/lib/stripeClient";
-import { trackPpvPurchase } from "@/lib/metaPixel";
+import { trackTopup } from "@/lib/metaPixel";
 import { parseBlurDrainer, type BlurDrainerConfig } from "@/lib/blurDrainer";
 import {
   CENTS_PER_TOKEN,
@@ -668,11 +668,15 @@ export default function ChatView({
     window.history.replaceState({}, "", "/chat");
     (async () => {
       if (sessionId) {
-        await fetch("/api/payments/confirm", {
+        const res = await fetch("/api/payments/confirm", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ sessionId }),
-        }).catch(() => {});
+        }).catch(() => null);
+        const data = await res?.json().catch(() => null);
+        if (res?.ok && data?.kind === "topup") {
+          trackTopup({ ...data, source: "checkout" });
+        }
       }
       await Promise.all([load(), refreshWallet()]);
       let pendingId: string | null = null;
@@ -769,6 +773,7 @@ export default function ChatView({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.topped) {
+        trackTopup({ ...data, source: "one_tap" });
         if (typeof data.balance === "number") setBalance(data.balance);
         setToppingUp(null);
         const pendingId = pendingUnlockIdRef.current;
@@ -810,7 +815,12 @@ export default function ChatView({
   }
 
   async function completeCardTopup(paymentIntentId: string) {
-    let data: { balance?: number; tokens?: number } = {};
+    let data: {
+      balance?: number;
+      tokens?: number;
+      amountCents?: number;
+      packId?: string | null;
+    } = {};
     try {
       const res = await fetch("/api/payments/topup/complete", {
         method: "POST",
@@ -821,6 +831,14 @@ export default function ChatView({
     } catch {
       // The webhook still credits the payment; the balance catches up.
     }
+    // The card was charged even if /complete failed — the wizard only calls
+    // this after Stripe confirmed. Fall back to the wizard's own amount.
+    trackTopup({
+      amountCents: data.amountCents ?? cardTopup?.amountCents,
+      tokens: data.tokens ?? cardTopup?.tokens,
+      packId: data.packId,
+      source: "card_wizard",
+    });
     setCardTopup(null);
     if (typeof data.balance === "number") setBalance(data.balance);
     let couponId: string | null = null;
@@ -900,6 +918,7 @@ export default function ChatView({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.topped) {
+        trackTopup({ ...data, source: "coupon" });
         if (typeof data.balance === "number") setBalance(data.balance);
         setRedeemedCoupons((prev) => new Set(prev).add(messageId));
         setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
@@ -1258,9 +1277,6 @@ export default function ChatView({
         );
         if (typeof data.balance === "number") setBalance(data.balance);
         pendingUnlockIdRef.current = null;
-        // `tokens` is only present when Tokens were actually spent (not on a
-        // repeat unlock of already-paid content).
-        if (typeof data.tokens === "number") trackPpvPurchase(data.tokens, messageId);
         try {
           localStorage.removeItem(`lf-decide-left:${messageId}`);
         } catch {}

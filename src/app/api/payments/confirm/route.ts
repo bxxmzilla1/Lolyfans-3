@@ -35,5 +35,9 @@ export async function POST(req: NextRequest) {
     ok: true,
     kind: result.kind,
     messageId: result.messageId ?? null,
+    // Lets the client report the purchase to the ad pixel.
+    amountCents: session.amount_total ?? null,
+    tokens: Number(session.metadata?.tokens) || null,
+    packId: session.metadata?.packId ?? null,
   });
 }

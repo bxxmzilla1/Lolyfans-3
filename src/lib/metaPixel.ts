@@ -38,15 +38,28 @@ export function trackSignup(source: string) {
   trackPixel("CompleteRegistration", { content_name: source, status: true });
 }
 
-/** Fan paid Tokens to unlock a PPV — reported at its USD equivalent. */
-export function trackPpvPurchase(tokens: number, messageId: string) {
-  if (!(tokens > 0)) return;
+/**
+ * Fan bought a Token pack (real money). `amountCents` is what Stripe charged;
+ * when a response lacks it, the pack's Token count gives the USD equivalent.
+ */
+export function trackTopup(opts: {
+  amountCents?: number | null;
+  tokens?: number | null;
+  packId?: string | null;
+  source: string;
+}) {
+  const cents =
+    opts.amountCents && opts.amountCents > 0
+      ? opts.amountCents
+      : (opts.tokens ?? 0) * CENTS_PER_TOKEN;
+  if (!(cents > 0)) return;
   trackPixel("Purchase", {
-    value: Number(((tokens * CENTS_PER_TOKEN) / 100).toFixed(2)),
+    value: Number((cents / 100).toFixed(2)),
     currency: "USD",
     content_type: "product",
-    content_ids: [messageId],
-    content_name: "PPV unlock",
+    content_ids: [opts.packId || "tokens"],
+    content_name: "Token top-up",
+    content_category: opts.source,
     num_items: 1,
   });
 }

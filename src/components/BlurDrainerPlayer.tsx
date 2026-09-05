@@ -7,6 +7,7 @@ import { mediaUrl } from "@/lib/utils";
 import { useVideoContentBox } from "@/lib/useVideoContentBox";
 import { elementsEnabled } from "@/lib/stripeClient";
 import { TOKEN_PACKS, packTotalTokens, formatTokens } from "@/lib/tokens";
+import { trackTopup } from "@/lib/metaPixel";
 import {
   blurDrainPriceLabel,
   type BlurDrainerConfig,
@@ -217,6 +218,7 @@ export default function BlurDrainerPlayer({
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.topped) {
         // One-tap charge went through — pay for the stuck layer and continue.
+        trackTopup({ ...data, source: "blur_drainer_one_tap" });
         needTopupRef.current = false;
         setNeedTopup(null);
         checkingRef.current = false;
@@ -249,20 +251,29 @@ export default function BlurDrainerPlayer({
 
   async function completeCard(intentId: string) {
     const mode = card?.mode ?? "setup";
+    const chargedCents = card?.amountCents ?? 0;
     setCard(null);
     setCardNote(null);
     if (mode === "payment") {
       // Card top-up finished: credit the tokens, then automatically pay for
       // the layer the fan was stuck on and let them continue tapping.
+      let data: { amountCents?: number; tokens?: number; packId?: string | null } = {};
       try {
-        await fetch("/api/payments/topup/complete", {
+        const res = await fetch("/api/payments/topup/complete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ chatId, paymentIntentId: intentId }),
         });
+        if (res.ok) data = await res.json().catch(() => ({}));
       } catch {
         // the webhook still credits the payment
       }
+      trackTopup({
+        amountCents: data.amountCents ?? chargedCents,
+        tokens: data.tokens,
+        packId: data.packId,
+        source: "blur_drainer_card_wizard",
+      });
       needTopupRef.current = false;
       setNeedTopup(null);
       if (videoEl) videoEl.play().catch(() => {});

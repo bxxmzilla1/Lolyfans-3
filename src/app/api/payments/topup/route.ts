@@ -129,6 +129,8 @@ export async function POST(req: NextRequest) {
         ok: true,
         topped: true,
         tokens,
+        amountCents: priceCents,
+        packId: pack?.id ?? "coupon",
         balance: balance ?? (await tokenBalance(chatId)),
       });
     } catch (err) {

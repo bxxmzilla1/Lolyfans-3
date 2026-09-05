@@ -73,6 +73,8 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     tokens,
+    amountCents: pi.amount_received || pi.amount,
+    packId: pi.metadata?.packId ?? null,
     balance: balance ?? (await tokenBalance(chatId)),
   });
 }
