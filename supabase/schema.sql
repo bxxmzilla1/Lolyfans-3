@@ -19,6 +19,15 @@ create table if not exists invites (
   created_at timestamptz not null default now()
 );
 
+-- Site-wide key/value settings (e.g. home_redirect_invite_id: the invite the
+-- bare domain redirects to — Settings → Main Page Redirect).
+create table if not exists site_settings (
+  key text primary key,
+  value text,
+  updated_at timestamptz not null default now()
+);
+alter table site_settings enable row level security;
+
 -- Unique-IP visits of an invite link page (drives the "clicks" stat)
 create table if not exists invite_visits (
   invite_id uuid not null references invites(id) on delete cascade,

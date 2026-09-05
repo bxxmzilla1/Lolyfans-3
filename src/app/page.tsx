@@ -5,6 +5,7 @@ import { getOwnerId, getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { ownerProfiles } from "@/lib/guest";
+import { homeRedirectInviteCode } from "@/lib/siteSettings";
 import { postStats } from "@/lib/posts";
 import { shuffleFeedByCreator } from "@/lib/feedOrder";
 import { mediaUrl } from "@/lib/utils";
@@ -36,6 +37,12 @@ export default async function Home({
       .maybeSingle();
     if (existing) redirect("/home");
   }
+
+  // "Main Page Redirect" (Settings): the bare domain sends everyone without
+  // an account straight to the chosen invite link — the invite route counts
+  // the click and forwards to its destination.
+  const homeRedirect = await homeRedirectInviteCode();
+  if (homeRedirect) redirect(`/i/${homeRedirect}`);
 
   // Returning guest without a usable cookie (none at all, or one pointing at a
   // deleted chat)? The device is remembered by IP — match it to a previous

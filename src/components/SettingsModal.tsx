@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
 import InviteManager from "./InviteManager";
+import HomeRedirectManager from "./HomeRedirectManager";
 import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
@@ -12,13 +13,14 @@ import Portal from "./Portal";
 import {
   IconGrid,
   IconHeart,
+  IconHome,
   IconKey,
   IconLink,
   IconLogout,
   IconUser,
 } from "./Icons";
 
-type Section = "profile" | "posts" | "social" | "links" | "apikey";
+type Section = "profile" | "posts" | "social" | "links" | "redirect" | "apikey";
 
 /** Public profile settings: banner, avatar, display name, bio, location. */
 function ProfileSection() {
@@ -387,6 +389,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <IconLink className="w-3.5 h-3.5" /> Invite links
           </button>
           <button
+            onClick={() => setSection("redirect")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+              section === "redirect"
+                ? "bg-accent text-white"
+                : "bg-card2 border border-line text-muted hover:text-fg"
+            }`}
+          >
+            <IconHome className="w-3.5 h-3.5" /> Main Page Redirect
+          </button>
+          <button
             onClick={() => setSection("apikey")}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
               section === "apikey"
@@ -416,6 +428,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               <SocialProofManager />
             ) : section === "apikey" ? (
               <ApiKeyManager />
+            ) : section === "redirect" ? (
+              <HomeRedirectManager />
             ) : (
               <InviteManager />
             )}
