@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import IncomingMediaGate from "./IncomingMediaGate";
 import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
+import { trackPpvPurchase } from "@/lib/metaPixel";
 import { useInboxSignals, type ChatOwnerPair } from "@/lib/useInboxSignals";
 import type { Message } from "./MessageBubble";
 
@@ -139,6 +140,7 @@ export default function GuestIncomingMediaGate({
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.unlocked) {
+        if (typeof data.tokens === "number") trackPpvPurchase(data.tokens, messageId);
         try {
           localStorage.removeItem(`lf-decide-left:${messageId}`);
         } catch {}

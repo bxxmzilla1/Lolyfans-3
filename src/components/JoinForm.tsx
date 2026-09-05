@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SubPlan } from "@/lib/subscriptionPlan";
+import { trackSignup } from "@/lib/metaPixel";
 import { IconEye, IconEyeOff } from "./Icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -70,6 +71,7 @@ export default function JoinForm({
       setError(data?.error || "Could not join");
       return;
     }
+    if (data?.created) trackSignup("invite_signup");
     await afterJoined();
   }
 

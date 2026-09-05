@@ -17,6 +17,7 @@ import IncomingMediaGate from "./IncomingMediaGate";
 import BlurDrainerEditor from "./BlurDrainerEditor";
 import BlurDrainerPlayer from "./BlurDrainerPlayer";
 import { elementsEnabled, getStripe } from "@/lib/stripeClient";
+import { trackPpvPurchase } from "@/lib/metaPixel";
 import { parseBlurDrainer, type BlurDrainerConfig } from "@/lib/blurDrainer";
 import {
   CENTS_PER_TOKEN,
@@ -1257,6 +1258,9 @@ export default function ChatView({
         );
         if (typeof data.balance === "number") setBalance(data.balance);
         pendingUnlockIdRef.current = null;
+        // `tokens` is only present when Tokens were actually spent (not on a
+        // repeat unlock of already-paid content).
+        if (typeof data.tokens === "number") trackPpvPurchase(data.tokens, messageId);
         try {
           localStorage.removeItem(`lf-decide-left:${messageId}`);
         } catch {}

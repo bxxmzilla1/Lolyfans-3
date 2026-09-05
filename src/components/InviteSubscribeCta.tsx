@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Portal from "./Portal";
+import { trackSignup } from "@/lib/metaPixel";
 import { IconEye, IconEyeOff } from "./Icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -58,6 +59,7 @@ export function JoinChannelSheet({
       setError(data?.error || "Could not sign up");
       return;
     }
+    if (data?.created) trackSignup("subscribe_sheet");
     window.location.href = "/chat";
   }
 

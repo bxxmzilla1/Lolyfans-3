@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
     });
     const res = NextResponse.json({
       ok: true,
+      created: false, // returning fan — not a new registration
       chatId: existing.id,
       ownerId: invite!.owner_id,
     });
@@ -177,6 +178,7 @@ export async function POST(req: NextRequest) {
 
   const res = NextResponse.json({
     ok: true,
+    created: true, // brand-new account → conversion pixel fires
     chatId,
     ownerId: invite!.owner_id,
   });
