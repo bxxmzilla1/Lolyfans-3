@@ -70,7 +70,6 @@ function render() {
       li.appendChild(badge);
     }
 
-    // Shortcut number stays in the tooltip only (Ctrl+N) — no visible index.
     if (renamingId === a.id) li.appendChild(renameBox(a));
     list.appendChild(li);
   }

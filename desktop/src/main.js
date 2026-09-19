@@ -308,6 +308,8 @@ async function pollAccount(id) {
     // session.fetch sends this account's own cookies — no API key needed.
     const res = await view.webContents.session.fetch(`${BASE_URL}/api/desktop/status`, {
       headers: { accept: "application/json" },
+      credentials: "include",
+      cache: "no-store",
     });
     if (res.status === 401) {
       if (s.loggedIn !== false) {
