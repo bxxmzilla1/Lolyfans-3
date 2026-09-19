@@ -120,6 +120,37 @@ body::before {
   border-radius: 9999px;
 }
 
+/* 12-petal loading wheel (NavLoadingOverlay). Each petal is a rounded bar
+   pinned to the wheel's center and rotated into place; a staggered opacity
+   pulse makes the "wave" run around the wheel. */
+.petal-spinner-petal {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 12%;
+  height: 50%;
+  margin-left: -6%;
+  transform-origin: 50% 100%;
+}
+.petal-spinner-petal::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 52%;
+  border-radius: 9999px;
+  background: var(--accent);
+  animation: petal-pulse 1.1s linear infinite;
+  animation-delay: inherit;
+}
+@keyframes petal-pulse {
+  0% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0.12;
+  }
+}
+
 /* Chat bubble for own messages */
 .bubble-own {
   background: linear-gradient(135deg, #0098d4, #29bdff);

@@ -2,10 +2,15 @@
 
 import { useNavPending } from "@/lib/navPending";
 
+const PETALS = 12;
+
 /**
  * Subtle full-screen loading veil shown while a section change is in flight.
  * Fades in only after ~120ms so instant tab switches never flash it, and
  * lets clicks through so nothing feels blocked.
+ *
+ * The spinner is the classic 12-petal wheel: each petal pulses in turn, in
+ * the site's accent color, with a small "LOADING" caption in the middle.
  */
 export default function NavLoadingOverlay() {
   const pending = useNavPending();
@@ -16,8 +21,20 @@ export default function NavLoadingOverlay() {
         pending ? "opacity-100 duration-200 delay-[120ms]" : "opacity-0 duration-150"
       }`}
     >
-      <div className="relative w-11 h-11">
-        <div className="absolute inset-0 rounded-full ig-gradient opacity-90 animate-spin [mask:radial-gradient(farthest-side,transparent_calc(100%-3px),#000_calc(100%-2.5px))]" />
+      <div className="relative w-36 h-36">
+        {Array.from({ length: PETALS }, (_, i) => (
+          <span
+            key={i}
+            className="petal-spinner-petal"
+            style={{
+              transform: `rotate(${(360 / PETALS) * i}deg)`,
+              animationDelay: `${(i / PETALS) * -1.1}s`,
+            }}
+          />
+        ))}
+        <span className="absolute inset-0 flex items-center justify-center text-[10px] font-semibold tracking-[0.15em] text-accent/70 select-none">
+          LOADING
+        </span>
       </div>
     </div>
   );
