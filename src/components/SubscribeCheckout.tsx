@@ -112,8 +112,7 @@ function PayForm({
             <p className="text-sm font-semibold">Cancel before the trial ends</p>
             <p className="text-xs text-muted">
               Your card won&apos;t be charged {subDollars(plan.priceCents)} when
-              the {plan.trialDays}-day trial ends. You keep full access to the
-              chat either way.
+              the {plan.trialDays}-day trial ends.
             </p>
           </div>
           <button
