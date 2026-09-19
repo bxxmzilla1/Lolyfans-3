@@ -68,6 +68,21 @@ export function subCtaLabel(plan: SubPlan): string {
 }
 
 /**
+ * Both halves of the profile bar. Trial plans lead with the trial instead of
+ * the price ("FREE TRIAL · 30 DAYS"); the caption below still shows the
+ * price that follows.
+ */
+export function subButtonLabels(plan: SubPlan): { left: string; right: string } {
+  if (plan.priceCents > 0 && plan.trialDays > 0) {
+    return {
+      left: "FREE TRIAL",
+      right: `${plan.trialDays} ${plan.trialDays === 1 ? "DAY" : "DAYS"}`,
+    };
+  }
+  return { left: "SUBSCRIBE", right: subCtaLabel(plan) };
+}
+
+/**
  * Small print under the SUBSCRIBE button: the trial (if any), the normal
  * recurring price, and "Cancel anytime". The button itself stays price-free.
  */

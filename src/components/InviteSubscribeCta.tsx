@@ -5,6 +5,7 @@ import Portal from "./Portal";
 import SubscribeCheckout from "./SubscribeCheckout";
 import { trackSignup, trackSubscribe } from "@/lib/metaPixel";
 import {
+  subButtonLabels,
   subCaption,
   subCtaLabel,
   type SubPlan,
@@ -234,6 +235,11 @@ export default function InviteSubscribeCta({
   const effectivePlan = plan ?? FREE_PLAN;
   const paid = effectivePlan.priceCents > 0;
   const caption = paid ? subCaption(effectivePlan) : "Free to join";
+  // Paid plans use the same wording as the public profile bar; free links
+  // keep "JOIN MY PRIVATE CHAT · FREE".
+  const labels = paid
+    ? subButtonLabels(effectivePlan)
+    : { left: "JOIN MY PRIVATE CHAT", right: subCtaLabel(effectivePlan) };
 
   return (
     <>
@@ -243,8 +249,8 @@ export default function InviteSubscribeCta({
           onClick={() => setOpen(true)}
           className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity flex items-center justify-between"
         >
-          <span>{alreadyJoined && paid ? "SUBSCRIBE" : "JOIN MY PRIVATE CHAT"}</span>
-          <span>{subCtaLabel(effectivePlan)}</span>
+          <span>{labels.left}</span>
+          <span>{labels.right}</span>
         </button>
         {caption && <p className="text-xs text-muted text-center">{caption}</p>}
       </div>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { JoinChannelSheet } from "./InviteSubscribeCta";
-import { subCaption, subCtaLabel, type SubPlan } from "@/lib/subscriptionPlan";
+import { subButtonLabels, subCaption, type SubPlan } from "@/lib/subscriptionPlan";
 
 /**
  * Profile-page "SUBSCRIBE" bar. Visitors get the sign-up sheet (name, email,
@@ -28,6 +28,7 @@ export default function ProfileSubscribeCta({
   const [open, setOpen] = useState(autoOpen);
   const paid = !!plan && plan.priceCents > 0;
   const caption = paid && plan ? subCaption(plan) : null;
+  const labels = plan ? subButtonLabels(plan) : { left: "SUBSCRIBE", right: "FREE" };
 
   return (
     <div className="space-y-1.5">
@@ -36,8 +37,8 @@ export default function ProfileSubscribeCta({
         onClick={() => setOpen(true)}
         className="w-full px-5 py-3 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity flex items-center justify-between"
       >
-        <span>SUBSCRIBE</span>
-        <span>{plan ? subCtaLabel(plan) : "FREE"}</span>
+        <span>{labels.left}</span>
+        <span>{labels.right}</span>
       </button>
       {caption && <p className="text-xs text-muted text-center">{caption}</p>}
 
