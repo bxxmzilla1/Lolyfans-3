@@ -133,7 +133,7 @@ export default function SubscribeCheckout({
   onSuccess,
 }: {
   ownerId: string;
-  /** Kept for callers; the summary is site-wide ("Lolyfans Unlimited"). */
+  /** Kept for callers; the summary is site-wide ("Lolyfans Subscription"). */
   ownerName?: string;
   plan: SubPlan;
   onSuccess: () => void;

@@ -139,8 +139,9 @@ export default async function CreatorProfilePage({
   const finishing = !!(returnSubId || returnPiId) && !!chatWithOwner;
 
   return (
-    // Visitors without an account get no footer menu — nothing to navigate to.
-    <GuestPage hideHeader hideNav={chats.length === 0}>
+    // No footer menu until the fan can actually get in: visitors without an
+    // account, and signed-up fans who still owe the card step.
+    <GuestPage hideHeader hideNav={chats.length === 0 || needsCard}>
         {finishing && (
           <SubscribeReturn
             ownerId={ownerId}

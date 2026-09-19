@@ -13,7 +13,7 @@ export type SubPlan = {
 };
 
 /** Card-step summary title: one subscription covers the whole site. */
-export const SUB_UNLIMITED_TITLE = "Lolyfans Unlimited Subscription";
+export const SUB_UNLIMITED_TITLE = "Lolyfans Subscription";
 
 /** Card-step explanation shown under the sheet title. */
 export const SUB_UNLIMITED_BLURB =
