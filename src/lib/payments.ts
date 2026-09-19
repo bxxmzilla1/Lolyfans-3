@@ -1,6 +1,7 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
 import { stripe } from "@/lib/stripe";
+import { clearChatCard, dropCardIfStale, isStaleStripeIdError } from "@/lib/stripeCards";
 import type Stripe from "stripe";
 
 /** Advance BlurDrainer layer(s) for this fan (idempotent per PaymentIntent).
@@ -216,13 +217,16 @@ export async function ensureStripeCustomer(chatId: string): Promise<string> {
 
   if (chat.stripe_customer_id) {
     // Backfill contact info onto customers created before we passed it, so
-    // their Checkout email is prefilled too.
-    if (email || name) {
-      await stripe()
-        .customers.update(chat.stripe_customer_id, { email, name })
-        .catch(() => {});
+    // their Checkout email is prefilled too. This doubles as an existence
+    // check: a customer from a previous Stripe account isn't reachable here,
+    // so it's forgotten (card included) and a fresh one is created below.
+    try {
+      await stripe().customers.update(chat.stripe_customer_id, { email, name });
+      return chat.stripe_customer_id as string;
+    } catch (err) {
+      if (!isStaleStripeIdError(err)) return chat.stripe_customer_id as string;
+      await clearChatCard(chatId);
     }
-    return chat.stripe_customer_id as string;
   }
 
   const customer = await stripe().customers.create({
@@ -291,8 +295,9 @@ export async function chargeChatDollars(opts: {
       if (pi.status === "succeeded") {
         return { paid: true, paymentIntentId: pi.id };
       }
-    } catch {
-      // fall through to the card wizard
+    } catch (err) {
+      // Declined → card wizard. Card from another Stripe account → forget it.
+      await dropCardIfStale(opts.chatId, err);
     }
   }
 
@@ -421,7 +426,8 @@ export async function autoRefillTokens(
       tokens: packTotalTokens(pack),
       paymentIntentId: pi.id,
     });
-  } catch {
+  } catch (err) {
+    await dropCardIfStale(chatId, err);
     return null;
   }
 }

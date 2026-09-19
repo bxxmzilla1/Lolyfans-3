@@ -219,6 +219,112 @@ export default function SubscriptionSettings() {
       >
         {saving ? "Saving…" : saved ? "Saved!" : "Save"}
       </button>
+
+      <CardCleanup />
+    </div>
+  );
+}
+
+type CleanupTotals = { checked: number; cleared: number; subscriptionsClosed: number };
+
+/**
+ * Removes saved cards that live in a previous Stripe account: they can't be
+ * charged from the connected one, yet still count as "verified". Pages
+ * through every chat so large fan bases finish within serverless limits.
+ */
+function CardCleanup() {
+  const [running, setRunning] = useState(false);
+  const [totals, setTotals] = useState<CleanupTotals | null>(null);
+  const [done, setDone] = useState(false);
+  const [error, setError] = useState("");
+
+  async function run() {
+    if (running) return;
+    setRunning(true);
+    setDone(false);
+    setError("");
+    const sum: CleanupTotals = { checked: 0, cleared: 0, subscriptionsClosed: 0 };
+    setTotals({ ...sum });
+    let cursor: string | null = null;
+    try {
+      do {
+        const res: Response = await fetch("/api/payments/cards/cleanup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cursor }),
+        });
+        const data: Partial<CleanupTotals> & { nextCursor?: string | null; error?: string } =
+          await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Cleanup failed");
+        sum.checked += data.checked ?? 0;
+        sum.cleared += data.cleared ?? 0;
+        sum.subscriptionsClosed += data.subscriptionsClosed ?? 0;
+        setTotals({ ...sum });
+        cursor = data.nextCursor ?? null;
+      } while (cursor);
+      setDone(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Cleanup failed");
+    }
+    setRunning(false);
+  }
+
+  return (
+    <div className="rounded-2xl border border-line bg-card p-4 space-y-3">
+      <div>
+        <p className="text-sm font-semibold">Saved cards</p>
+        <p className="text-xs text-muted">
+          Cards saved under a previous Stripe account can&apos;t be charged
+          from the one connected now. This checks every fan&apos;s saved card
+          against your current Stripe account and removes the ones that
+          aren&apos;t there, so those fans are asked for a card again on their
+          next purchase. Cards in the current account are kept.
+        </p>
+      </div>
+
+      {totals && (
+        <div className="rounded-xl bg-card2 border border-line px-3.5 py-3 text-xs space-y-1">
+          <div className="flex justify-between gap-3">
+            <span className="text-muted">Fans checked</span>
+            <span className="font-semibold">{totals.checked}</span>
+          </div>
+          <div className="flex justify-between gap-3">
+            <span className="text-muted">Stale cards removed</span>
+            <span className="font-semibold">{totals.cleared}</span>
+          </div>
+          {totals.subscriptionsClosed > 0 && (
+            <div className="flex justify-between gap-3">
+              <span className="text-muted">Old-account subscriptions closed</span>
+              <span className="font-semibold">{totals.subscriptionsClosed}</span>
+            </div>
+          )}
+          {done && (
+            <p className="text-accent font-semibold pt-1">
+              Done — only cards from your current Stripe account remain.
+            </p>
+          )}
+        </div>
+      )}
+
+      {error && <p className="text-xs text-red-400">{error}</p>}
+
+      <button
+        type="button"
+        onClick={() => void run()}
+        disabled={running}
+        className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-line2 bg-card2 text-sm font-semibold hover:bg-card transition-colors disabled:opacity-50"
+      >
+        {running ? (
+          <span className="inline-flex items-center gap-2">
+            <span className="w-4 h-4 rounded-full border-2 border-line border-t-accent animate-spin" />
+            Checking cards…
+          </span>
+        ) : done ? (
+          "Run again"
+        ) : (
+          "Clean up saved cards"
+        )}
+      </button>
     </div>
   );
 }

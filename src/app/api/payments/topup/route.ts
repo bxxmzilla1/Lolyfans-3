@@ -10,6 +10,7 @@ import {
 import { packById, packTotalTokens, formatTokens } from "@/lib/tokens";
 import { parseCouponMessage } from "@/lib/coupon";
 import { stripe, stripeConfigured } from "@/lib/stripe";
+import { dropCardIfStale } from "@/lib/stripeCards";
 import { requestOrigin } from "@/lib/smsNotify";
 import { visitorCountryCode } from "@/lib/geo";
 import Stripe from "stripe";
@@ -140,7 +141,9 @@ export async function POST(req: NextRequest) {
         (err instanceof Stripe.errors.StripeInvalidRequestError &&
           err.code === "authentication_required");
       if (!recoverable) {
-        // Unexpected Stripe error — still offer Checkout as a recovery path.
+        // Card saved under a previous Stripe account: forget it so the fan
+        // is asked for a card (below) instead of failing on every one-tap.
+        await dropCardIfStale(chatId, err);
       }
     }
   }
