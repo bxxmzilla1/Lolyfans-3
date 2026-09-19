@@ -2,9 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { subDollars, type SubPlan } from "@/lib/subscriptionPlan";
+import { SUB_UNLIMITED_BLURB, type SubPlan } from "@/lib/subscriptionPlan";
 import { trackSignup, trackSubscribe } from "@/lib/metaPixel";
 import SubscribeCheckout from "./SubscribeCheckout";
+import { cardTitle } from "./InviteSubscribeCta";
 import { IconEye, IconEyeOff } from "./Icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -94,14 +95,8 @@ export default function JoinForm({
     return (
       <div className="w-full space-y-3">
         <div>
-          <p className="font-bold">
-            {plan.trialDays > 0 ? "Start your free trial" : "Add your card"}
-          </p>
-          <p className="text-xs text-muted">
-            {plan.trialDays > 0
-              ? `Verify your card — $0 today. ${subDollars(plan.priceCents)} / ${plan.interval} after ${plan.trialDays} ${plan.trialDays === 1 ? "day" : "days"} unless you cancel.`
-              : `${subDollars(plan.priceCents)} / ${plan.interval} · Cancel anytime`}
-          </p>
+          <p className="font-bold">{cardTitle(plan)}</p>
+          <p className="text-xs text-muted">{SUB_UNLIMITED_BLURB}</p>
         </div>
         <SubscribeCheckout
           ownerId={cardStep.ownerId}

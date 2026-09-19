@@ -9,6 +9,7 @@ import {
   subDollars,
   subFirstPeriodCents,
   subPriceLabel,
+  SUB_UNLIMITED_TITLE,
   type SubPlan,
 } from "@/lib/subscriptionPlan";
 
@@ -128,11 +129,11 @@ function PayForm({
  */
 export default function SubscribeCheckout({
   ownerId,
-  ownerName,
   plan,
   onSuccess,
 }: {
   ownerId: string;
+  /** Kept for callers; the summary is site-wide ("Lolyfans Unlimited"). */
   ownerName?: string;
   plan: SubPlan;
   onSuccess: () => void;
@@ -172,11 +173,7 @@ export default function SubscribeCheckout({
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3 rounded-xl bg-card2 border border-line px-3.5 py-3">
         <div className="min-w-0">
-          <p className="text-sm font-semibold truncate">
-            {ownerName
-              ? `Join ${ownerName}'s private chat`
-              : "Join the private chat"}
-          </p>
+          <p className="text-sm font-semibold truncate">{SUB_UNLIMITED_TITLE}</p>
           {subCaption(plan) && (
             <p className="text-xs text-muted">{subCaption(plan)}</p>
           )}

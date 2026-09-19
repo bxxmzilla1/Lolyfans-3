@@ -8,15 +8,24 @@ import GuestNav from "./GuestNav";
 export default function GuestPage({
   title,
   hideHeader = false,
+  hideNav = false,
   children,
 }: {
   title?: React.ReactNode;
   /** Skip the sticky/desktop page title (e.g. creator profiles that already show the name). */
   hideHeader?: boolean;
+  /** No footer menu / sidebar — visitors without an account have nowhere to navigate to. */
+  hideNav?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-dvh pb-[calc(88px+env(safe-area-inset-bottom))] lg:pb-10 lg:pl-60">
+    <div
+      className={`min-h-dvh ${
+        hideNav
+          ? "pb-10"
+          : "pb-[calc(88px+env(safe-area-inset-bottom))] lg:pb-10 lg:pl-60"
+      }`}
+    >
       {!hideHeader && (
         <header className="lg:hidden sticky top-0 z-30 border-b border-line2 bg-card/80 backdrop-blur-lg px-4 py-3">
           <h1 className="max-w-lg mx-auto font-bold text-lg flex items-center gap-1">
@@ -36,7 +45,7 @@ export default function GuestPage({
         </div>
       </main>
 
-      <GuestNav />
+      {!hideNav && <GuestNav />}
     </div>
   );
 }

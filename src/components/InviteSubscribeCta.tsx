@@ -7,7 +7,7 @@ import { trackSignup, trackSubscribe } from "@/lib/metaPixel";
 import {
   subCaption,
   subCtaLabel,
-  subDollars,
+  SUB_UNLIMITED_BLURB,
   type SubPlan,
 } from "@/lib/subscriptionPlan";
 import { IconEye, IconEyeOff } from "./Icons";
@@ -22,16 +22,8 @@ const FREE_PLAN: SubPlan = {
 };
 
 /** Headline for the card step. */
-function cardTitle(plan: SubPlan): string {
+export function cardTitle(plan: SubPlan): string {
   return plan.trialDays > 0 ? "Start your free trial" : "Add your card";
-}
-
-/** Sub-line for the card step: what happens to the card today. */
-function cardSubtitle(plan: SubPlan): string {
-  if (plan.trialDays > 0) {
-    return `Verify your card — $0 today. ${subDollars(plan.priceCents)} / ${plan.interval} after ${plan.trialDays} ${plan.trialDays === 1 ? "day" : "days"} unless you cancel.`;
-  }
-  return `${subDollars(plan.priceCents)} / ${plan.interval} · Cancel anytime`;
 }
 
 /**
@@ -145,7 +137,9 @@ export function JoinChannelSheet({
 
           {step === "card" ? (
             <div className="space-y-3">
-              <p className="text-xs text-muted">{cardSubtitle(plan)}</p>
+              {/* Price/trial details live in the checkout summary below —
+                  this line only explains what the subscription covers. */}
+              <p className="text-xs text-muted">{SUB_UNLIMITED_BLURB}</p>
               <SubscribeCheckout
                 ownerId={ownerId}
                 ownerName={ownerName}

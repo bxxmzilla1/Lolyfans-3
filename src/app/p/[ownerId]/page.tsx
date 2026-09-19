@@ -139,7 +139,8 @@ export default async function CreatorProfilePage({
   const finishing = !!(returnSubId || returnPiId) && !!chatWithOwner;
 
   return (
-    <GuestPage hideHeader>
+    // Visitors without an account get no footer menu — nothing to navigate to.
+    <GuestPage hideHeader hideNav={chats.length === 0}>
         {finishing && (
           <SubscribeReturn
             ownerId={ownerId}
