@@ -2,6 +2,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
 import { stripe } from "@/lib/stripe";
 import { clearChatCard, dropCardIfStale, isStaleStripeIdError } from "@/lib/stripeCards";
+import { notifyCardVerified } from "@/lib/adminTelegram";
+import { after } from "next/server";
 import type Stripe from "stripe";
 
 /** Advance BlurDrainer layer(s) for this fan (idempotent per PaymentIntent).
@@ -248,7 +250,24 @@ export async function saveStripePaymentMethod(
   if (customerId) patch.stripe_customer_id = customerId;
   if (paymentMethodId) patch.stripe_payment_method_id = paymentMethodId;
   if (!Object.keys(patch).length) return;
-  await supabaseAdmin().from("chats").update(patch).eq("id", chatId);
+  const db = supabaseAdmin();
+
+  if (patch.stripe_payment_method_id) {
+    // First card on this chat? Claim it atomically (only the update that
+    // flips null → card matches) so double deliveries notify the admin once.
+    const { data: first } = await db
+      .from("chats")
+      .update(patch)
+      .eq("id", chatId)
+      .is("stripe_payment_method_id", null)
+      .select("owner_id");
+    if (first?.length) {
+      const ownerId = first[0].owner_id as string;
+      after(() => notifyCardVerified(chatId, ownerId));
+      return;
+    }
+  }
+  await db.from("chats").update(patch).eq("id", chatId);
 }
 
 /**

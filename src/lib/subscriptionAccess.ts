@@ -1,5 +1,7 @@
+import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { subPlanFromMetadata, type SubPlan } from "@/lib/subscriptionPlan";
+import { notifyCrossCreatorSubscribe } from "@/lib/adminTelegram";
 
 export const ACTIVE_SUB_STATUSES = ["trialing", "active", "past_due", "canceling"];
 
@@ -46,28 +48,48 @@ export async function chatHasPaidAccess(
     .maybeSingle();
   if (sub) return true;
 
-  if (chat.guest_email) {
-    const { data: other } = await db
-      .from("chats")
-      .select("stripe_customer_id, stripe_payment_method_id")
-      .eq("guest_email", chat.guest_email)
-      .neq("id", chatId)
-      .not("stripe_payment_method_id", "is", null)
-      .order("last_message_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (other?.stripe_payment_method_id) {
-      await db
-        .from("chats")
-        .update({
-          stripe_customer_id: other.stripe_customer_id,
-          stripe_payment_method_id: other.stripe_payment_method_id,
-        })
-        .eq("id", chatId);
-      return true;
-    }
-  }
-  return false;
+  return inheritVerifiedCard(chatId, chat.guest_email);
+}
+
+/**
+ * Copy a verified card from another chat with the same email onto this chat
+ * (one-tap works with every creator once a card is verified anywhere).
+ * Returns true if a card was copied. Notifies the admin bot: a verified fan
+ * just subscribed to another creator.
+ */
+export async function inheritVerifiedCard(
+  chatId: string,
+  guestEmail: string | null | undefined
+): Promise<boolean> {
+  if (!guestEmail) return false;
+  const db = supabaseAdmin();
+  const { data: other } = await db
+    .from("chats")
+    .select("owner_id, stripe_customer_id, stripe_payment_method_id")
+    .eq("guest_email", guestEmail)
+    .neq("id", chatId)
+    .not("stripe_payment_method_id", "is", null)
+    .order("last_message_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!other?.stripe_payment_method_id) return false;
+
+  // Only the update that flips null → card matches, so a race can't copy
+  // (or notify) twice.
+  const { data: copied } = await db
+    .from("chats")
+    .update({
+      stripe_customer_id: other.stripe_customer_id,
+      stripe_payment_method_id: other.stripe_payment_method_id,
+    })
+    .eq("id", chatId)
+    .is("stripe_payment_method_id", null)
+    .select("owner_id");
+  if (!copied?.length) return true; // someone else already copied it
+
+  const ownerId = copied[0].owner_id as string;
+  after(() => notifyCrossCreatorSubscribe(chatId, ownerId, other.owner_id as string));
+  return true;
 }
 
 export async function inviteCodeForChat(chatId: string): Promise<string | null> {
