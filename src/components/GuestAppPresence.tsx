@@ -86,7 +86,8 @@ export default function GuestAppPresence() {
       }).catch(() => {});
     };
     ping();
-    const interval = setInterval(ping, 45_000);
+    // 10s keeps the creator's heartbeat-based online check (25s window) accurate.
+    const interval = setInterval(ping, 10_000);
     document.addEventListener("visibilitychange", ping);
     return () => {
       clearInterval(interval);

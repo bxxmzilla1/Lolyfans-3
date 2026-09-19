@@ -13,18 +13,71 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 
 let channel: RealtimeChannel | null = null;
 let channelOwner: string | null = null;
+/** Fans announced on the realtime channel. */
+let presenceIds = new Set<string>();
+/** Fans whose heartbeat the server saw in the last few seconds (1s poll). */
+let heartbeatIds = new Set<string>();
+/** Merged view handed to listeners. */
 let onlineIds = new Set<string>();
 const listeners = new Set<(ids: Set<string>) => void>();
 let ownerRetry: ReturnType<typeof setTimeout> | null = null;
 let ownerWired = false;
+let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollInflight = false;
+
+const POLL_MS = 1000;
 
 function topicFor(ownerId: string) {
   return `presence:owner:${ownerId}:guests`;
 }
 
-function emit() {
+function sameSet(a: Set<string>, b: Set<string>) {
+  if (a.size !== b.size) return false;
+  for (const id of a) if (!b.has(id)) return false;
+  return true;
+}
+
+/** Recompute the merged set; notify only when something actually changed. */
+function recompute() {
+  const merged = new Set<string>([...presenceIds, ...heartbeatIds]);
+  if (sameSet(merged, onlineIds)) return;
+  onlineIds = merged;
   const snapshot = new Set(onlineIds);
   listeners.forEach((l) => l(snapshot));
+}
+
+/**
+ * Background check every second: asks the server which fans heart-beated
+ * recently. Runs whether or not the tab is visible (the desktop app keeps
+ * several inboxes mounted off-screen), and touches React only on change.
+ */
+async function pollOnline() {
+  if (pollInflight || listeners.size === 0) return;
+  pollInflight = true;
+  try {
+    const res = await fetch("/api/chats/online", { cache: "no-store" });
+    if (res.ok) {
+      const data = (await res.json()) as { ids?: string[] };
+      heartbeatIds = new Set(Array.isArray(data.ids) ? data.ids : []);
+      recompute();
+    }
+  } catch {
+    // Offline / hiccup: keep the last known state.
+  } finally {
+    pollInflight = false;
+  }
+}
+
+function ensurePolling() {
+  if (pollTimer || typeof window === "undefined") return;
+  pollTimer = setInterval(pollOnline, POLL_MS);
+  void pollOnline();
+}
+
+function stopPollingIfIdle() {
+  if (listeners.size > 0 || !pollTimer) return;
+  clearInterval(pollTimer);
+  pollTimer = null;
 }
 
 function connectOwnerChannel() {
@@ -44,8 +97,8 @@ function connectOwnerChannel() {
         if (entry.chatId) ids.add(entry.chatId);
       }
     }
-    onlineIds = ids;
-    emit();
+    presenceIds = ids;
+    recompute();
   };
 
   ch.on("presence", { event: "sync" }, refresh)
@@ -89,9 +142,11 @@ export function subscribeGuestPresence(
 ): () => void {
   ensureChannel(ownerId);
   listeners.add(cb);
+  ensurePolling();
   cb(new Set(onlineIds));
   return () => {
     listeners.delete(cb);
+    stopPollingIfIdle();
   };
 }
 
