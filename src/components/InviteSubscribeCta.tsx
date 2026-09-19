@@ -7,7 +7,6 @@ import { trackSignup, trackSubscribe } from "@/lib/metaPixel";
 import {
   subCaption,
   subCtaLabel,
-  SUB_UNLIMITED_BLURB,
   type SubPlan,
 } from "@/lib/subscriptionPlan";
 import { IconEye, IconEyeOff } from "./Icons";
@@ -137,9 +136,6 @@ export function JoinChannelSheet({
 
           {step === "card" ? (
             <div className="space-y-3">
-              {/* Price/trial details live in the checkout summary below —
-                  this line only explains what the subscription covers. */}
-              <p className="text-xs text-muted">{SUB_UNLIMITED_BLURB}</p>
               <SubscribeCheckout
                 ownerId={ownerId}
                 ownerName={ownerName}

@@ -21,7 +21,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Payments are not configured" }, { status: 503 });
   }
 
-  const { ownerId, subscriptionId, paymentIntentId } = await req.json();
+  const { ownerId, subscriptionId, paymentIntentId, cancelAtTrialEnd } = await req.json();
   if (!ownerId || typeof ownerId !== "string") {
     return NextResponse.json({ error: "ownerId required" }, { status: 400 });
   }
@@ -101,6 +101,13 @@ export async function POST(req: NextRequest) {
     typeof sub.customer === "string" ? sub.customer : sub.customer?.id,
     pmId
   );
+
+  // Fan chose "cancel before the trial ends": the subscription stops at the
+  // trial end, so Stripe never bills the monthly price. The card stays saved
+  // — that's what keeps the chat open and one-tap purchases working.
+  if (cancelAtTrialEnd === true && sub.status === "trialing") {
+    sub = await s.subscriptions.update(sub.id, { cancel_at_period_end: true });
+  }
   await syncSubscription(sub);
   return NextResponse.json({ ok: true, subscribed: true });
 }

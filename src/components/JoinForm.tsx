@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { SUB_UNLIMITED_BLURB, type SubPlan } from "@/lib/subscriptionPlan";
+import type { SubPlan } from "@/lib/subscriptionPlan";
 import { trackSignup, trackSubscribe } from "@/lib/metaPixel";
 import SubscribeCheckout from "./SubscribeCheckout";
 import { cardTitle } from "./InviteSubscribeCta";
@@ -94,10 +94,7 @@ export default function JoinForm({
     const { plan } = cardStep;
     return (
       <div className="w-full space-y-3">
-        <div>
-          <p className="font-bold">{cardTitle(plan)}</p>
-          <p className="text-xs text-muted">{SUB_UNLIMITED_BLURB}</p>
-        </div>
+        <p className="font-bold">{cardTitle(plan)}</p>
         <SubscribeCheckout
           ownerId={cardStep.ownerId}
           ownerName={ownerName}

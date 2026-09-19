@@ -15,10 +15,6 @@ export type SubPlan = {
 /** Card-step summary title: one subscription covers the whole site. */
 export const SUB_UNLIMITED_TITLE = "Lolyfans Subscription";
 
-/** Card-step explanation shown under the sheet title. */
-export const SUB_UNLIMITED_BLURB =
-  "One subscription unlocks all of Lolyfans: once you subscribe, you get unlimited access to every other creator on Lolyfans at no extra cost.";
-
 export const SUB_INTERVAL_LABEL: Record<SubInterval, string> = {
   day: "daily",
   week: "weekly",

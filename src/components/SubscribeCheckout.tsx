@@ -45,6 +45,11 @@ function PayForm({
   const [ready, setReady] = useState(false);
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState("");
+  // Trial plans: end the subscription automatically when the trial ends so
+  // the card is never charged monthly. Access doesn't depend on it — the
+  // verified card is what unlocks the chat and one-tap purchases.
+  const [autoCancel, setAutoCancel] = useState(true);
+  const trial = plan.trialDays > 0 && intent.mode === "setup";
 
   async function pay() {
     if (!stripeJs || !elements || paying) return;
@@ -82,6 +87,7 @@ function PayForm({
         ownerId,
         subscriptionId: intent.subscriptionId,
         paymentIntentId: intent.paymentIntentId,
+        cancelAtTrialEnd: trial && autoCancel,
       }),
     }).catch(() => null);
     if (res?.ok) {
@@ -99,6 +105,35 @@ function PayForm({
         onReady={() => setReady(true)}
         options={{ wallets: { link: "never" } }}
       />
+
+      {trial && (
+        <div className="flex items-center justify-between gap-3 rounded-xl bg-card2 border border-line px-3.5 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold">Cancel before the trial ends</p>
+            <p className="text-xs text-muted">
+              Your card won&apos;t be charged {subDollars(plan.priceCents)} when
+              the {plan.trialDays}-day trial ends. You keep full access to the
+              chat either way.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={autoCancel}
+            onClick={() => setAutoCancel((v) => !v)}
+            className={`relative shrink-0 w-12 h-7 rounded-full transition-colors ${
+              autoCancel ? "bg-accent" : "bg-line"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-all ${
+                autoCancel ? "left-[calc(100%-1.625rem)]" : "left-0.5"
+              }`}
+            />
+          </button>
+        </div>
+      )}
+
       {error && <p className="text-red-400 text-sm">{error}</p>}
       <button
         onClick={pay}
@@ -117,7 +152,9 @@ function PayForm({
       <p className="text-[11px] text-muted text-center">
         {plan.interval === "lifetime"
           ? "One-time payment · lifetime access · card saved for one-tap unlocks"
-          : "Cancel anytime · card saved for one-tap unlocks"}
+          : trial && autoCancel
+            ? "$0 today · nothing charged after the trial · card saved for one-tap unlocks"
+            : "Cancel anytime · card saved for one-tap unlocks"}
       </p>
     </div>
   );
