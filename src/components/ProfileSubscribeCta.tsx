@@ -36,7 +36,7 @@ export default function ProfileSubscribeCta({
         onClick={() => setOpen(true)}
         className="w-full px-5 py-3 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity flex items-center justify-between"
       >
-        <span>{cardOnly ? "ADD YOUR CARD" : "SUBSCRIBE"}</span>
+        <span>SUBSCRIBE</span>
         <span>{plan ? subCtaLabel(plan) : "FREE"}</span>
       </button>
       {caption && <p className="text-xs text-muted text-center">{caption}</p>}

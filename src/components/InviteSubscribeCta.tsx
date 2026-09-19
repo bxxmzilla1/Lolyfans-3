@@ -243,7 +243,7 @@ export default function InviteSubscribeCta({
           onClick={() => setOpen(true)}
           className="w-full py-3 px-5 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity flex items-center justify-between"
         >
-          <span>{alreadyJoined && paid ? "ADD YOUR CARD" : "JOIN MY PRIVATE CHAT"}</span>
+          <span>{alreadyJoined && paid ? "SUBSCRIBE" : "JOIN MY PRIVATE CHAT"}</span>
           <span>{subCtaLabel(effectivePlan)}</span>
         </button>
         {caption && <p className="text-xs text-muted text-center">{caption}</p>}
