@@ -6,12 +6,34 @@ import { hashPassword, verifyPassword } from "@/lib/password";
 import { broadcast } from "@/lib/realtime";
 import { recordInviteEvent } from "@/lib/inviteEvents";
 import { lookupIp } from "@/lib/ipinfo";
+import { guestAccessDestination, ownerSubPlan } from "@/lib/subscriptionAccess";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /**
- * Creates (or resumes) a guest chat after sign-up. Name + email + password —
- * no channel subscription payment. The account works right away.
+ * Paid profile and no verified card yet? The client shows the card step
+ * next. A card verified with any other creator (same email) counts and is
+ * copied over, so those fans go straight to the chat.
+ */
+async function cardStep(chatId: string, ownerId: string) {
+  const [plan, access] = await Promise.all([
+    ownerSubPlan(ownerId),
+    guestAccessDestination(chatId, ownerId),
+  ]);
+  return {
+    requiresCard: !access.allowed,
+    plan: {
+      priceCents: plan.priceCents,
+      interval: plan.interval,
+      trialDays: plan.trialDays,
+      discountPct: plan.discountPct,
+    },
+  };
+}
+
+/**
+ * Creates (or resumes) a guest chat after sign-up. Name + email + password;
+ * paid profiles then collect a card (see cardStep) before the chat opens.
  */
 export async function POST(req: NextRequest) {
   const { code, name, email, password } = await req.json();
@@ -102,6 +124,7 @@ export async function POST(req: NextRequest) {
       created: false, // returning fan — not a new registration
       chatId: existing.id,
       ownerId: invite!.owner_id,
+      ...(await cardStep(existing.id, invite!.owner_id)),
     });
     res.cookies.set(
       GUEST_COOKIE,
@@ -181,6 +204,7 @@ export async function POST(req: NextRequest) {
     created: true, // brand-new account → conversion pixel fires
     chatId,
     ownerId: invite!.owner_id,
+    ...(await cardStep(chatId, invite!.owner_id)),
   });
   res.cookies.set(GUEST_COOKIE, createToken({ chatId, name: guestName }), cookieOptions);
   return res;

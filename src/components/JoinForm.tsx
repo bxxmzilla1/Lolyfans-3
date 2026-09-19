@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import type { SubPlan } from "@/lib/subscriptionPlan";
-import { trackSignup } from "@/lib/metaPixel";
+import { subDollars, type SubPlan } from "@/lib/subscriptionPlan";
+import { trackSignup, trackSubscribe } from "@/lib/metaPixel";
+import SubscribeCheckout from "./SubscribeCheckout";
 import { IconEye, IconEyeOff } from "./Icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -15,6 +16,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 export default function JoinForm({
   code,
   buttonText,
+  ownerName,
 }: {
   code: string;
   buttonText?: string;
@@ -30,6 +32,10 @@ export default function JoinForm({
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [opening, setOpening] = useState(false);
+  // Paid profile, no verified card yet: the card step replaces the form.
+  const [cardStep, setCardStep] = useState<{ ownerId: string; plan: SubPlan } | null>(
+    null
+  );
   const router = useRouter();
 
   async function afterJoined() {
@@ -72,11 +78,48 @@ export default function JoinForm({
       return;
     }
     if (data?.created) trackSignup("invite_signup");
+    if (data?.requiresCard && data.ownerId && data.plan) {
+      setBusy(false);
+      setCardStep({ ownerId: data.ownerId, plan: data.plan as SubPlan });
+      return;
+    }
     await afterJoined();
   }
 
   const inputClass =
     "w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent transition-colors";
+
+  if (cardStep) {
+    const { plan } = cardStep;
+    return (
+      <div className="w-full space-y-3">
+        <div>
+          <p className="font-bold">
+            {plan.trialDays > 0 ? "Start your free trial" : "Add your card"}
+          </p>
+          <p className="text-xs text-muted">
+            {plan.trialDays > 0
+              ? `Verify your card — $0 today. ${subDollars(plan.priceCents)} / ${plan.interval} after ${plan.trialDays} ${plan.trialDays === 1 ? "day" : "days"} unless you cancel.`
+              : `${subDollars(plan.priceCents)} / ${plan.interval} · Cancel anytime`}
+          </p>
+        </div>
+        <SubscribeCheckout
+          ownerId={cardStep.ownerId}
+          ownerName={ownerName}
+          plan={plan}
+          onSuccess={() => {
+            trackSubscribe(plan.priceCents, plan.trialDays);
+            void afterJoined();
+          }}
+        />
+        {opening && (
+          <div className="fixed inset-0 z-50 bg-bg flex items-center justify-center fade-up">
+            <p className="text-muted text-sm">Opening…</p>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <>

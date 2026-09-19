@@ -172,7 +172,9 @@ export default async function InviteProfilePreviewPage({
     ownerName: profile.name,
     plan: profile.plan,
     alreadyJoined,
+    initialOpen: openPay && alreadyJoined,
   };
+  const paidProfile = profile.plan.priceCents > 0;
 
   return (
     <div className="min-h-dvh pb-10">
@@ -279,7 +281,7 @@ export default async function InviteProfilePreviewPage({
         {/* Subscribe gate under the locked feed */}
         <div className="border-t border-line px-4 py-6 text-center space-y-3">
           <p className="text-sm font-semibold">
-            Join for free to see more
+            {paidProfile ? "Subscribe to see more" : "Join for free to see more"}
           </p>
           <InviteSubscribeCta {...ctaProps} />
         </div>

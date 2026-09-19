@@ -174,8 +174,8 @@ export default function SubscribeCheckout({
         <div className="min-w-0">
           <p className="text-sm font-semibold truncate">
             {ownerName
-              ? `Join ${ownerName}'s private channel`
-              : "Join the private channel"}
+              ? `Join ${ownerName}'s private chat`
+              : "Join the private chat"}
           </p>
           {subCaption(plan) && (
             <p className="text-xs text-muted">{subCaption(plan)}</p>

@@ -224,8 +224,10 @@ export default function GuestSubscriptions() {
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted">
                       {sheetSub.status === "canceling"
-                        ? "Access until"
-                        : "Next charge"}
+                        ? "Subscription ends"
+                        : sheetSub.status === "trialing"
+                          ? "Trial ends · first charge"
+                          : "Next charge"}
                     </span>
                     <span className="font-semibold">{periodEnd}</span>
                   </div>
@@ -246,8 +248,8 @@ export default function GuestSubscriptions() {
 
               {sheetSub.status === "canceling" ? (
                 <p className="text-xs text-muted text-center">
-                  This subscription is already cancelled and won&apos;t be
-                  charged again.
+                  This subscription is cancelled and won&apos;t be charged
+                  again. You still have access to the chat.
                 </p>
               ) : sheetSub.interval === "lifetime" ? (
                 <p className="text-xs text-muted text-center">
@@ -256,11 +258,9 @@ export default function GuestSubscriptions() {
               ) : confirming ? (
                 <div className="space-y-2">
                   <p className="text-sm text-muted">
-                    Cancel your{" "}
-                    {INTERVAL_ADVERB[sheetSub.interval] ?? "recurring"}{" "}
-                    subscription to {sheetSub.name}? You keep access
-                    {periodEnd ? ` until ${periodEnd}` : " until the end of the period you paid for"}
-                    , and your card won&apos;t be charged again.
+                    {sheetSub.status === "trialing"
+                      ? `Cancel your free trial with ${sheetSub.name}? Your card won't be charged${periodEnd ? ` on ${periodEnd}` : ""}, and you keep access to the chat.`
+                      : `Cancel your ${INTERVAL_ADVERB[sheetSub.interval] ?? "recurring"} subscription to ${sheetSub.name}? Your card won't be charged again${periodEnd ? ` after ${periodEnd}` : ""}, and you keep access to the chat.`}
                   </p>
                   <div className="flex gap-2">
                     <button

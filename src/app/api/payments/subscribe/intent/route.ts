@@ -4,6 +4,7 @@ import { guestChats } from "@/lib/guest";
 import { ensureStripeCustomer } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
 import { subPlanFromMetadata, SUB_INTERVAL_LABEL } from "@/lib/subscriptionPlan";
+import { chatHasPaidAccess } from "@/lib/subscriptionAccess";
 import type Stripe from "stripe";
 
 const ACTIVE_STATUSES = ["trialing", "active", "past_due", "canceling"];
@@ -38,6 +39,10 @@ export async function POST(req: NextRequest) {
     .eq("owner_id", ownerId)
     .maybeSingle();
   if (existing && ACTIVE_STATUSES.includes(existing.status)) {
+    return NextResponse.json({ alreadySubscribed: true });
+  }
+  // Card already verified (here or with another creator) → nothing to collect.
+  if (await chatHasPaidAccess(chat.id, ownerId)) {
     return NextResponse.json({ alreadySubscribed: true });
   }
 
@@ -76,8 +81,13 @@ export async function POST(req: NextRequest) {
   }
 
   // Recurring: prices are created ad hoc against one reusable product per
-  // creator (cached in their auth metadata so the dashboard stays tidy).
+  // creator (cached in their auth metadata so the dashboard stays tidy). A
+  // cached id from a previous Stripe account no longer resolves — recreate.
   let productId = (meta.stripe_product_id as string) || "";
+  if (productId) {
+    const exists = await s.products.retrieve(productId).catch(() => null);
+    if (!exists || exists.deleted) productId = "";
+  }
   if (!productId) {
     const product = await s.products.create({
       name: `${ownerName} — profile subscription`,

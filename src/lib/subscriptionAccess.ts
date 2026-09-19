@@ -3,24 +3,71 @@ import { subPlanFromMetadata, type SubPlan } from "@/lib/subscriptionPlan";
 
 export const ACTIVE_SUB_STATUSES = ["trialing", "active", "past_due", "canceling"];
 
-/** Load a creator's (legacy) plan metadata — price is ignored; channel is free. */
+/** Load a creator's subscription plan from their auth metadata. */
 export async function ownerSubPlan(ownerId: string): Promise<SubPlan> {
   const { data } = await supabaseAdmin().auth.admin.getUserById(ownerId);
   const meta = (data?.user?.user_metadata ?? {}) as Record<string, unknown>;
   return subPlanFromMetadata(meta);
 }
 
-/** Channel access is free — kept for callers that still check the old gate. */
-export async function ownerRequiresPaidSub(_ownerId: string): Promise<boolean> {
-  return false;
+/** Paid profile (Settings → Subscription set to PAID with a price). */
+export async function ownerRequiresPaidSub(ownerId: string): Promise<boolean> {
+  return (await ownerSubPlan(ownerId)).priceCents > 0;
 }
 
-/** Always true now — channel subscriptions are removed. */
+/**
+ * Does this chat get into a paid creator's chat? Yes when the fan has a
+ * verified card saved (the whole point of the paywall is card-on-file for
+ * one-tap purchases) or an active/trialing subscription with this creator.
+ *
+ * A card verified with ANY creator counts: the same email's other chats are
+ * checked and the card is copied onto this chat so one-tap works here too.
+ * Canceling a subscription never removes access — the card stays.
+ */
 export async function chatHasPaidAccess(
-  _chatId: string,
-  _ownerId: string
+  chatId: string,
+  ownerId: string
 ): Promise<boolean> {
-  return true;
+  const db = supabaseAdmin();
+  const { data: chat } = await db
+    .from("chats")
+    .select("id, guest_email, stripe_payment_method_id")
+    .eq("id", chatId)
+    .maybeSingle();
+  if (!chat) return false;
+  if (chat.stripe_payment_method_id) return true;
+
+  const { data: sub } = await db
+    .from("subscriptions")
+    .select("status")
+    .eq("chat_id", chatId)
+    .eq("owner_id", ownerId)
+    .in("status", ACTIVE_SUB_STATUSES)
+    .maybeSingle();
+  if (sub) return true;
+
+  if (chat.guest_email) {
+    const { data: other } = await db
+      .from("chats")
+      .select("stripe_customer_id, stripe_payment_method_id")
+      .eq("guest_email", chat.guest_email)
+      .neq("id", chatId)
+      .not("stripe_payment_method_id", "is", null)
+      .order("last_message_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (other?.stripe_payment_method_id) {
+      await db
+        .from("chats")
+        .update({
+          stripe_customer_id: other.stripe_customer_id,
+          stripe_payment_method_id: other.stripe_payment_method_id,
+        })
+        .eq("id", chatId);
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function inviteCodeForChat(chatId: string): Promise<string | null> {
@@ -52,15 +99,22 @@ export async function inviteCodeForChat(chatId: string): Promise<string | null> 
   return (fallback?.code as string) || null;
 }
 
+/** The profile page with the card sheet auto-opened. */
+export function subscribeHref(ownerId: string): string {
+  return `/p/${ownerId}?subscribe=1`;
+}
+
 /**
- * Where a returning guest should land. Channel subscriptions are gone — every
- * signed-up fan is allowed into the Home feed.
+ * Where a signed-up guest should land: the app when allowed, otherwise the
+ * creator's profile with the card step open (paid profile, no card yet).
  */
 export async function guestAccessDestination(
-  _chatId: string,
-  _ownerId: string
+  chatId: string,
+  ownerId: string
 ): Promise<{ allowed: boolean; href: string }> {
-  return { allowed: true, href: "/home" };
+  if (!(await ownerRequiresPaidSub(ownerId))) return { allowed: true, href: "/home" };
+  if (await chatHasPaidAccess(chatId, ownerId)) return { allowed: true, href: "/home" };
+  return { allowed: false, href: subscribeHref(ownerId) };
 }
 
 /**
@@ -75,5 +129,7 @@ export async function guestChatAccessDestination(
     .eq("id", chatId)
     .maybeSingle();
   if (!chat) return { allowed: false, href: "/api/guest/gone", ownerId: null };
-  return { allowed: true, href: "/home", ownerId: chat.owner_id as string };
+  const ownerId = chat.owner_id as string;
+  const access = await guestAccessDestination(chatId, ownerId);
+  return { ...access, ownerId };
 }

@@ -33,6 +33,16 @@ export function trackPixel(event: string, params?: Record<string, unknown>) {
   }
 }
 
+/** Fan added a card for a paid profile (trial started or first charge). */
+export function trackSubscribe(priceCents: number, trialDays: number) {
+  trackPixel("Subscribe", {
+    value: Number((priceCents / 100).toFixed(2)),
+    currency: "USD",
+    predicted_ltv: Number(((priceCents * 3) / 100).toFixed(2)),
+    content_name: trialDays > 0 ? "free_trial" : "paid",
+  });
+}
+
 /** Fan finished creating an account (not a returning login). */
 export function trackSignup(source: string) {
   trackPixel("CompleteRegistration", { content_name: source, status: true });

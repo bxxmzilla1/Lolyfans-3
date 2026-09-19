@@ -1,5 +1,5 @@
 import { headers } from "next/headers";
-import { notFound, redirect } from "next/navigation";
+import { notFound } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
@@ -9,6 +9,7 @@ import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
 import ProfileSubscribeCta from "@/components/ProfileSubscribeCta";
+import SubscribeReturn from "@/components/SubscribeReturn";
 import MessageCreatorButton from "@/components/MessageCreatorButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
@@ -21,10 +22,21 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /** A creator's public profile: OnlyFans-style feed with likes and comments. */
 export default async function CreatorProfilePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ ownerId: string }>;
+  searchParams: Promise<{
+    subscribe?: string;
+    subscribed?: string;
+    sub?: string;
+    pi?: string;
+  }>;
 }) {
-  const { ownerId } = await params;
+  const [{ ownerId }, query] = await Promise.all([params, searchParams]);
+  const openCardSheet = query.subscribe === "1";
+  // Ids Stripe appends to the return URL after a 3-D Secure redirect.
+  const returnSubId = query.subscribed === "1" ? query.sub : undefined;
+  const returnPiId = query.subscribed === "1" ? query.pi : undefined;
   if (!UUID_RE.test(ownerId)) notFound();
 
   const requestHeaders = await headers();
@@ -88,12 +100,14 @@ export default async function CreatorProfilePage({
     subscribed = !!sub;
   }
   const chatWithOwner = chats.find((c) => c.owner_id === ownerId);
-  // Signed up but unpaid → back to the card step, not the open profile.
+  // Signed up with this creator but no verified card yet (paid profile):
+  // the SUBSCRIBE bar becomes "Add your card" and opens the Stripe sheet.
+  let needsCard = false;
   if (chatWithOwner) {
     const access = await guestAccessDestination(chatWithOwner.id, ownerId);
-    if (!access.allowed) redirect(access.href);
+    needsCard = !access.allowed;
   }
-  const hasChatWithOwner = !!chatWithOwner;
+  const hasChatWithOwner = !!chatWithOwner && !needsCard;
   // Profile-level like count: owner-set base + real guest likes on posts.
   let realLikes = 0;
   for (const n of stats.likes.values()) realLikes += n;
@@ -101,8 +115,9 @@ export default async function CreatorProfilePage({
   // Displayed post count: owner-set override (Social proof tab) or the real one.
   const postCount = profile.postsBase > 0 ? profile.postsBase : (posts ?? []).length;
 
-  // Creator option: visitors without an account see the media blurred.
-  const blurForVisitor = profile.blurPosts && chats.length === 0;
+  // Creator option: visitors without an account (or without the card a paid
+  // profile requires) see the media blurred.
+  const blurForVisitor = profile.blurPosts && (chats.length === 0 || needsCard);
 
   const feedPosts: FeedPost[] = (posts ?? []).map((post) => ({
     id: post.id,
@@ -120,8 +135,18 @@ export default async function CreatorProfilePage({
     blurred: blurForVisitor,
   }));
 
+  // Back from a bank (3-D Secure) redirect mid card step: finish activation.
+  const finishing = !!(returnSubId || returnPiId) && !!chatWithOwner;
+
   return (
     <GuestPage hideHeader>
+        {finishing && (
+          <SubscribeReturn
+            ownerId={ownerId}
+            subscriptionId={returnSubId}
+            paymentIntentId={returnPiId}
+          />
+        )}
         <section className="pb-4">
           {/* OnlyFans structure: banner, avatar left with actions on the right */}
           <CreatorBanner
@@ -172,7 +197,18 @@ export default async function CreatorProfilePage({
 
             {/* Full-width subscription bar under the bio, like OnlyFans:
                 visitors get SUBSCRIBE (register), signed-up fans get Follow. */}
-            {chats.length > 0 ? (
+            {needsCard && invite?.code ? (
+              <div className="pt-1">
+                <ProfileSubscribeCta
+                  code={invite.code}
+                  ownerId={ownerId}
+                  ownerName={profile.name}
+                  plan={profile.plan}
+                  cardOnly
+                  autoOpen={openCardSheet}
+                />
+              </div>
+            ) : chats.length > 0 ? (
               <div className="pt-1">
                 <FollowButton
                   ownerId={ownerId}
@@ -185,14 +221,19 @@ export default async function CreatorProfilePage({
               </div>
             ) : invite?.code ? (
               <div className="pt-1">
-                <ProfileSubscribeCta code={invite.code} ownerId={ownerId} />
+                <ProfileSubscribeCta
+                  code={invite.code}
+                  ownerId={ownerId}
+                  ownerName={profile.name}
+                  plan={profile.plan}
+                />
               </div>
             ) : null}
           </div>
         </section>
 
         <div className="border-t border-line">
-          <PostFeed posts={feedPosts} canInteract={chats.length > 0} />
+          <PostFeed posts={feedPosts} canInteract={chats.length > 0 && !needsCard} />
         </div>
     </GuestPage>
   );

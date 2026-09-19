@@ -6,11 +6,13 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { mediaUrl, resizeImage } from "@/lib/utils";
 import InviteManager from "./InviteManager";
 import HomeRedirectManager from "./HomeRedirectManager";
+import SubscriptionSettings from "./SubscriptionSettings";
 import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import Portal from "./Portal";
 import {
+  IconCard,
   IconGrid,
   IconHeart,
   IconHome,
@@ -20,7 +22,14 @@ import {
   IconUser,
 } from "./Icons";
 
-type Section = "profile" | "posts" | "social" | "links" | "redirect" | "apikey";
+type Section =
+  | "profile"
+  | "posts"
+  | "social"
+  | "subscription"
+  | "links"
+  | "redirect"
+  | "apikey";
 
 /** Public profile settings: banner, avatar, display name, bio, location. */
 function ProfileSection() {
@@ -379,6 +388,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <IconHeart className="w-3.5 h-3.5" /> Social proof
           </button>
           <button
+            onClick={() => setSection("subscription")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+              section === "subscription"
+                ? "bg-accent text-white"
+                : "bg-card2 border border-line text-muted hover:text-fg"
+            }`}
+          >
+            <IconCard className="w-3.5 h-3.5" /> Subscription
+          </button>
+          <button
             onClick={() => setSection("links")}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
               section === "links"
@@ -430,6 +449,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
               <ApiKeyManager />
             ) : section === "redirect" ? (
               <HomeRedirectManager />
+            ) : section === "subscription" ? (
+              <SubscriptionSettings />
             ) : (
               <InviteManager />
             )}
