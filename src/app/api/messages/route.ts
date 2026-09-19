@@ -173,7 +173,9 @@ export async function POST(req: NextRequest) {
   const drain =
     auth.role === "owner" && hasVideo ? parseBlurDrainer(blurDrainer) : null;
 
-  const isLocked = !!locked && mediaItems.length > 0;
+  // Locked (blurred, pay-to-unlock) media is creator-only — a fan's media
+  // always lands as a plain, visible bubble.
+  const isLocked = auth.role === "owner" && !!locked && mediaItems.length > 0;
   const price =
     auth.role === "owner" && mediaItems.length > 0 && Number.isFinite(priceCents)
       ? Math.max(0, Math.round(Number(priceCents)))
@@ -234,7 +236,7 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ message });
 }
 
-/** Toggle the blur lock on a media message. Only the sender may do this. */
+/** Toggle the blur lock on a media message. Creator-only, on their own media. */
 export async function PATCH(req: NextRequest) {
   const { messageId, locked } = await req.json();
   if (!messageId) return NextResponse.json({ error: "messageId required" }, { status: 400 });
@@ -248,7 +250,7 @@ export async function PATCH(req: NextRequest) {
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const auth = await authorizeChat(existing.chat_id);
-  if (!auth || auth.role !== existing.sender) {
+  if (!auth || auth.role !== "owner" || existing.sender !== "owner") {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
   const hasMedia =

@@ -22,7 +22,13 @@ export async function getSiteSetting(
 
 /** Upserts the value; null clears it. Returns the DB error, if any. */
 export async function setSiteSetting(key: string, value: string | null) {
-  const { error } = await supabaseAdmin()
+  const db = supabaseAdmin();
+  if (value === null) {
+    // "Off" removes the row — works even when the column was created NOT NULL.
+    const { error } = await db.from("site_settings").delete().eq("key", key);
+    return error;
+  }
+  const { error } = await db
     .from("site_settings")
     .upsert(
       { key, value, updated_at: new Date().toISOString() },

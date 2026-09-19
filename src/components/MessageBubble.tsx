@@ -296,8 +296,9 @@ function MessageBubble({
         : "Video";
   })();
 
-  // Once the fan paid, locking is irrelevant — hide the switch.
-  const lockToggle = mine && hasMedia && !soldByMe && (
+  // Creator-only: fans can't blur their own media. Once the fan paid, locking
+  // is irrelevant — hide the switch.
+  const lockToggle = mine && message.sender === "owner" && hasMedia && !soldByMe && (
     <button
       onClick={(e) => {
         e.stopPropagation();
