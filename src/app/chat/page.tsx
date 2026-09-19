@@ -5,6 +5,7 @@ import { getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { visitorLocation } from "@/lib/geo";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { guestChats } from "@/lib/guest";
 import { guestChatAccessDestination } from "@/lib/subscriptionAccess";
 import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
@@ -25,8 +26,9 @@ export default async function GuestChatPage() {
   const db = supabaseAdmin();
   const requestHeaders = await headers();
 
-  // Messages, chat, unlocks, and the guest's location all load at the same time.
-  const [{ data: messages }, { data: chat }, { data: unlocks }, location] =
+  // Messages, chat, unlocks, the guest's other chats, and their location all
+  // load at the same time.
+  const [{ data: messages }, { data: chat }, { data: unlocks }, location, allChats] =
     await Promise.all([
       // Newest 500, flipped to chronological below — ascending+limit would
       // freeze the view at the oldest 500 once a chat grows past that.
@@ -42,7 +44,11 @@ export default async function GuestChatPage() {
       db.from("chats").select("*").eq("id", chatId).maybeSingle(),
       db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
       visitorLocation(requestHeaders),
+      // Several creators → the header gets a back arrow to the chat list and
+      // the footer's Chat tab points at the list.
+      guestChats(requestHeaders),
     ]);
+  const chatCount = allChats.length;
   // Chat was deleted by the creator: clear the dead session and send them to
   // the public home page.
   if (!chat) redirect("/api/guest/gone");
@@ -88,6 +94,7 @@ export default async function GuestChatPage() {
       initialOnline={!chat.owner_appears_offline}
       // Voice calls only exist once the creator saved an ElevenLabs voice.
       callHref={(meta.eleven_voice_id || "").trim() ? "/call" : undefined}
+      backHref={chatCount > 1 ? "/chats" : undefined}
     />
   );
 
@@ -106,7 +113,7 @@ export default async function GuestChatPage() {
         ownerId={chat.owner_id}
         peerName={meta.display_name || "Lolyfans"}
       />
-      <GuestNav />
+      <GuestNav chatCount={chatCount} />
     </div>
   );
 }

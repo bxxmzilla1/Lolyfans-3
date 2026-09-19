@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { mediaUrl } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { IconMapPin, IconPhone, IconUser, IconVerified } from "./Icons";
+import { IconBack, IconMapPin, IconPhone, IconUser, IconVerified } from "./Icons";
 
 /**
  * Guest-side chat header: the owner's profile. Shown as online unless the
@@ -19,6 +19,7 @@ export default function GuestChatHeader({
   verified = false,
   initialOnline = true,
   callHref,
+  backHref,
 }: {
   chatId?: string;
   name: string;
@@ -28,6 +29,8 @@ export default function GuestChatHeader({
   initialOnline?: boolean;
   /** Link to the voice-call page (shown as a phone button when set). */
   callHref?: string;
+  /** Back arrow to the fan's chat list (fans with several creators). */
+  backHref?: string;
 }) {
   const [online, setOnline] = useState(initialOnline);
 
@@ -48,6 +51,15 @@ export default function GuestChatHeader({
 
   return (
     <header className="relative z-40 border-b border-line2 px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
+      {backHref && (
+        <Link
+          href={backHref}
+          aria-label="All chats"
+          className="shrink-0 -ml-2 w-9 h-9 rounded-full hover:bg-card2 flex items-center justify-center text-fg transition-colors"
+        >
+          <IconBack className="w-6 h-6" />
+        </Link>
+      )}
       <div className="relative shrink-0">
         <div className="ig-ring">
           {avatarPath ? (

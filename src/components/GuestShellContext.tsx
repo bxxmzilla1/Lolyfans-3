@@ -5,12 +5,15 @@ import { createContext, useContext } from "react";
 export type GuestShellCtx = {
   hasShell: boolean;
   unread: number;
+  /** How many creators the fan has a chat with (>1 → the Chat tab is a list). */
+  chatCount: number;
   refresh: () => void;
 };
 
 const Ctx = createContext<GuestShellCtx>({
   hasShell: false,
   unread: 0,
+  chatCount: 0,
   refresh: () => {},
 });
 

@@ -7,6 +7,7 @@ import GuestNav from "./GuestNav";
 import { GuestShellProvider } from "./GuestShellContext";
 import { useInboxSignals } from "@/lib/useInboxSignals";
 import GuestProfileEditor from "./GuestProfileEditor";
+import GuestChatList from "./GuestChatList";
 import FollowButton from "./FollowButton";
 import PostFeed from "./PostFeed";
 import {
@@ -132,6 +133,12 @@ function HomePanel({ data }: { data: Bootstrap["home"] }) {
   );
 }
 
+function tabFor(pathname: string): "home" | "chats" | "profile" {
+  if (pathname === "/profile") return "profile";
+  if (pathname === "/chats") return "chats";
+  return "home";
+}
+
 /**
  * Persistent fan shell: Home, Chats and Profile stay mounted and only toggle
  * visibility, so footer/sidebar switches are instant after the first load.
@@ -143,18 +150,22 @@ export default function GuestShell() {
   const [loading, setLoading] = useState(() => !getGuestBootstrapCache());
   // Track visited tabs in state so React re-renders when a new tab mounts.
   const [visited, setVisited] = useState<Set<string>>(() => {
-    const t = pathname === "/profile" ? "profile" : "home";
-    return new Set([t]);
+    return new Set([tabFor(pathname)]);
   });
 
-  // Fans only have Home and Profile now — everything else falls back to Home.
-  const tab = pathname === "/profile" ? "profile" : "home";
+  const tab = tabFor(pathname);
 
   // Once bootstrap lands, mount every tab so later switches are pure show/hide.
   useEffect(() => {
     if (!data) return;
-    setVisited(new Set(["home", "profile"]));
+    setVisited(new Set(["home", "chats", "profile"]));
   }, [data]);
+
+  // A fan with a single creator has no list to show — the Chat tab is the
+  // conversation itself.
+  useEffect(() => {
+    if (tab === "chats" && data && data.chats.length <= 1) router.replace("/chat");
+  }, [tab, data, router]);
 
   const refresh = useCallback(() => {
     loadBootstrap({ force: true }).then((next) => {
@@ -244,6 +255,7 @@ export default function GuestShell() {
   useEffect(() => {
     router.prefetch("/home");
     router.prefetch("/chat");
+    router.prefetch("/chats");
     router.prefetch("/profile");
   }, [router]);
 
@@ -252,6 +264,7 @@ export default function GuestShell() {
       value={{
         hasShell: true,
         unread: data?.unread ?? 0,
+        chatCount: data?.chats.length ?? 0,
         refresh,
       }}
     >
@@ -269,6 +282,16 @@ export default function GuestShell() {
                 aria-hidden={tab !== "home"}
               >
                 <HomePanel data={data.home} />
+              </div>
+            )}
+            {visited.has("chats") && (
+              <div
+                className={tab === "chats" ? "block" : "hidden"}
+                aria-hidden={tab !== "chats"}
+              >
+                <PanelShell title="Chats">
+                  <GuestChatList chats={data.chats} />
+                </PanelShell>
               </div>
             )}
             {visited.has("profile") && (

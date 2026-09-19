@@ -11,10 +11,17 @@ import { IconHome, IconChat, IconUser } from "./Icons";
  * Guest navigation: Home, Chat and Profile. Soft-pushes the URL so the fan
  * shell can keep panels mounted and switch instantly.
  */
-export default function GuestNav() {
+export default function GuestNav({
+  chatCount: chatCountProp,
+}: {
+  /** Pages outside the shell (the /chat room) pass the fan's chat count. */
+  chatCount?: number;
+} = {}) {
   const pathname = usePathname();
   const router = useRouter();
-  const { unread } = useGuestShell();
+  const shell = useGuestShell();
+  const unread = shell.unread;
+  const chatCount = chatCountProp ?? shell.chatCount;
   const [, startTransition] = useTransition();
   const mobileNavRef = useRef<HTMLElement>(null);
 
@@ -42,10 +49,12 @@ export default function GuestNav() {
     });
   }
 
+  // One creator → the tab opens the conversation; several → the chat list.
+  const chatHref = chatCount > 1 ? "/chats" : "/chat";
   const tabs = [
-    { href: "/home", label: "Home", icon: IconHome, badge: 0 },
-    { href: "/chat", label: "Chat", icon: IconChat, badge: unread },
-    { href: "/profile", label: "Profile", icon: IconUser, badge: 0 },
+    { href: "/home", label: "Home", icon: IconHome, badge: 0, match: ["/home"] },
+    { href: chatHref, label: "Chat", icon: IconChat, badge: unread, match: ["/chat", "/chats"] },
+    { href: "/profile", label: "Profile", icon: IconUser, badge: 0, match: ["/profile"] },
   ];
 
   return (
@@ -61,11 +70,11 @@ export default function GuestNav() {
           </p>
         </div>
         <nav className="flex-1 px-3 space-y-1">
-          {tabs.map(({ href, label, icon: Icon, badge }) => {
-            const active = pathname === href;
+          {tabs.map(({ href, label, icon: Icon, badge, match }) => {
+            const active = match.includes(pathname);
             return (
               <button
-                key={href}
+                key={label}
                 type="button"
                 onClick={() => go(href)}
                 className={`w-full flex items-center gap-3 px-3.5 py-3 rounded-xl text-sm font-semibold transition-colors ${
@@ -92,11 +101,11 @@ export default function GuestNav() {
         className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-line2 bg-card/90 backdrop-blur-lg pb-[env(safe-area-inset-bottom)]"
       >
         <div className="max-w-lg mx-auto grid grid-cols-3">
-          {tabs.map(({ href, label, icon: Icon, badge }) => {
-            const active = pathname === href;
+          {tabs.map(({ href, label, icon: Icon, badge, match }) => {
+            const active = match.includes(pathname);
             return (
               <button
-                key={href}
+                key={label}
                 type="button"
                 onClick={() => go(href)}
                 aria-label={label}

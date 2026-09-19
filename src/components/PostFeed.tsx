@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Portal from "./Portal";
 import VideoPlayer from "./VideoPlayer";
 import { formatCount, formatTime, mediaUrl } from "@/lib/utils";
+import { openCreatorChat } from "@/lib/openCreatorChat";
 import {
   IconChat,
   IconHeart,
@@ -203,10 +204,15 @@ export default function PostFeed({
    * "Message" → the fan's private chat when they have an account, otherwise
    * the creator's profile page (where they can join).
    */
-  function message(post: FeedPost) {
+  async function message(post: FeedPost) {
     if (messaging) return;
     setMessaging(post.id);
-    router.push(canInteract ? "/chat" : `/p/${post.ownerId}`);
+    if (!canInteract) {
+      router.push(`/p/${post.ownerId}`);
+      return;
+    }
+    // Switch the session to the chat with THIS creator first.
+    router.push(await openCreatorChat(post.ownerId));
   }
 
   async function toggleLike(post: FeedPost) {
