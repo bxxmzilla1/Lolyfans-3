@@ -1,0 +1,204 @@
+:root {
+  --bg: #0b0f14;
+  --bg2: #141a22;
+  --line: #222b36;
+  --fg: #e8edf3;
+  --muted: #8b98a5;
+  --accent: #0ea5e9;
+  --danger: #ef4444;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  user-select: none;
+  overflow: hidden;
+}
+
+.rail {
+  height: 100%;
+  width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 12px 0;
+  gap: 10px;
+  border-right: 1px solid var(--line);
+}
+
+.logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #0ea5e9, #6366f1);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+  font-size: 20px;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.accounts {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  overflow-y: auto;
+  flex: 1;
+}
+.accounts::-webkit-scrollbar {
+  width: 0;
+}
+
+.account {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.account button {
+  all: unset;
+  cursor: pointer;
+  position: relative;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--bg2);
+  color: var(--fg);
+  font-weight: 700;
+  font-size: 15px;
+  overflow: hidden;
+  border: 2px solid transparent;
+  transition:
+    border-radius 0.15s,
+    border-color 0.15s,
+    transform 0.1s;
+}
+.account button:hover {
+  border-radius: 16px;
+}
+.account button:active {
+  transform: scale(0.96);
+}
+.account.active button {
+  border-radius: 16px;
+  border-color: var(--accent);
+}
+.account.signed-out button {
+  color: var(--muted);
+  border-style: dashed;
+  border-color: var(--line);
+}
+
+.account img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.account.signed-out img {
+  filter: grayscale(1);
+  opacity: 0.6;
+}
+
+/* Active pill on the far left, like Discord/Slack */
+.account::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  translate: 0 -50%;
+  width: 4px;
+  height: 0;
+  border-radius: 0 4px 4px 0;
+  background: var(--fg);
+  transition: height 0.15s;
+}
+.account:hover::before {
+  height: 18px;
+}
+.account.active::before {
+  height: 34px;
+}
+
+.badge {
+  position: absolute;
+  right: 6px;
+  bottom: -2px;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--bg);
+  pointer-events: none;
+}
+.badge.warn {
+  background: #f59e0b;
+}
+
+.rename {
+  position: absolute;
+  left: 4px;
+  right: 4px;
+  top: 50%;
+  translate: 0 -50%;
+  z-index: 2;
+}
+.rename input {
+  width: 100%;
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: var(--bg2);
+  color: var(--fg);
+  outline: none;
+}
+
+.add {
+  all: unset;
+  cursor: pointer;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: var(--bg2);
+  color: #22c55e;
+  font-size: 26px;
+  font-weight: 500;
+  line-height: 1;
+  transition:
+    border-radius 0.15s,
+    background 0.15s,
+    color 0.15s;
+}
+.add:hover {
+  border-radius: 16px;
+  background: #22c55e;
+  color: #fff;
+}

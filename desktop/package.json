@@ -1,0 +1,47 @@
+{
+  "name": "lolyfans-desktop",
+  "productName": "Lolyfans",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lolyfans desktop — run several creator accounts side by side and switch instantly.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --win --dir",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.lolyfans.desktop",
+    "productName": "Lolyfans",
+    "artifactName": "Lolyfans-Setup-${version}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "shortcutName": "Lolyfans"
+    }
+  }
+}
