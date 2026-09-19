@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import Portal from "./Portal";
 import VideoPlayer from "./VideoPlayer";
 import { formatCount, formatTime, mediaUrl } from "@/lib/utils";
 import { openCreatorChat } from "@/lib/openCreatorChat";
+import { useNavigate } from "@/lib/navPending";
 import {
   IconChat,
   IconHeart,
@@ -198,7 +198,7 @@ export default function PostFeed({
   const [commentsFor, setCommentsFor] = useState<FeedPost | null>(null);
   const [viewer, setViewer] = useState<FeedPost | null>(null);
   const [messaging, setMessaging] = useState<string | null>(null);
-  const router = useRouter();
+  const nav = useNavigate();
 
   /**
    * "Message" → the fan's private chat when they have an account, otherwise
@@ -208,11 +208,11 @@ export default function PostFeed({
     if (messaging) return;
     setMessaging(post.id);
     if (!canInteract) {
-      router.push(`/p/${post.ownerId}`);
+      nav.go(`/p/${post.ownerId}`);
       return;
     }
     // Switch the session to the chat with THIS creator first.
-    router.push(await openCreatorChat(post.ownerId));
+    await nav.run(() => openCreatorChat(post.ownerId));
   }
 
   async function toggleLike(post: FeedPost) {

@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useTransition } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
 import GuestAppPresence from "./GuestAppPresence";
 import Logo from "./Logo";
+import NavLoadingOverlay from "./NavLoadingOverlay";
+import { useNavigate } from "@/lib/navPending";
 import { useGuestShell } from "./GuestShellContext";
 import { IconHome, IconChat, IconUser } from "./Icons";
 
@@ -18,11 +20,10 @@ export default function GuestNav({
   chatCount?: number;
 } = {}) {
   const pathname = usePathname();
-  const router = useRouter();
   const shell = useGuestShell();
   const unread = shell.unread;
   const chatCount = chatCountProp ?? shell.chatCount;
-  const [, startTransition] = useTransition();
+  const { go } = useNavigate();
   const mobileNavRef = useRef<HTMLElement>(null);
 
   // Publish the footer's real rendered height (incl. safe-area inset) as a
@@ -43,12 +44,6 @@ export default function GuestNav({
     };
   }, []);
 
-  function go(href: string) {
-    startTransition(() => {
-      router.push(href);
-    });
-  }
-
   // One creator → the tab opens the conversation; several → the chat list.
   const chatHref = chatCount > 1 ? "/chats" : "/chat";
   const tabs = [
@@ -61,6 +56,8 @@ export default function GuestNav({
     <>
       {/* Fan counts as online anywhere in the app, not just inside a chat */}
       <GuestAppPresence />
+      {/* Subtle veil while a section change is loading */}
+      <NavLoadingOverlay />
 
       <aside className="hidden lg:flex fixed inset-y-0 left-0 z-40 w-60 flex-col border-r border-line bg-card/70 backdrop-blur-lg">
         <div className="px-6 py-6 flex items-center gap-2.5">

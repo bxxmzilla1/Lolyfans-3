@@ -4,18 +4,18 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { mediaUrl } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/browser";
-import { IconBack, IconMapPin, IconPhone, IconUser, IconVerified } from "./Icons";
+import { useNavigate } from "@/lib/navPending";
+import { IconBack, IconPhone, IconUser, IconVerified } from "./Icons";
 
 /**
- * Guest-side chat header: the owner's profile. Shown as online unless the
- * creator flipped this chat's switch to "appear offline" — changes arrive
- * live over the chat's realtime channel.
+ * Guest-side chat header: the owner's profile with an online / offline
+ * status. Shown as online unless the creator flipped this chat's switch to
+ * "appear offline" — changes arrive live over the chat's realtime channel.
  */
 export default function GuestChatHeader({
   chatId,
   name,
   avatarPath,
-  location,
   verified = false,
   initialOnline = true,
   callHref,
@@ -24,7 +24,6 @@ export default function GuestChatHeader({
   chatId?: string;
   name: string;
   avatarPath: string | null;
-  location?: string | null;
   verified?: boolean;
   initialOnline?: boolean;
   /** Link to the voice-call page (shown as a phone button when set). */
@@ -33,6 +32,7 @@ export default function GuestChatHeader({
   backHref?: string;
 }) {
   const [online, setOnline] = useState(initialOnline);
+  const { go } = useNavigate();
 
   useEffect(() => {
     if (!chatId) return;
@@ -52,13 +52,14 @@ export default function GuestChatHeader({
   return (
     <header className="relative z-40 border-b border-line2 px-4 py-3 flex items-center gap-3 bg-card/60 backdrop-blur-lg">
       {backHref && (
-        <Link
-          href={backHref}
+        <button
+          type="button"
+          onClick={() => go(backHref)}
           aria-label="All chats"
           className="shrink-0 -ml-2 w-9 h-9 rounded-full hover:bg-card2 flex items-center justify-center text-fg transition-colors"
         >
           <IconBack className="w-6 h-6" />
-        </Link>
+        </button>
       )}
       <div className="relative shrink-0">
         <div className="ig-ring">
@@ -93,21 +94,16 @@ export default function GuestChatHeader({
             </span>
           )}
         </p>
-        <div className="flex items-center gap-2">
-          <p
-            className={`hidden lg:block text-xs ${
-              online ? "text-green-400" : "text-muted"
-            }`}
-          >
-            {online ? "Online Now" : "Offline"}
-          </p>
-          {location && (
-            <span className="inline-flex items-center gap-0.5 text-xs text-muted truncate">
-              <IconMapPin className="w-3 h-3 text-accent shrink-0" />
-              {location}
-            </span>
-          )}
-        </div>
+        <p
+          className={`flex items-center gap-1.5 text-xs ${
+            online ? "text-green-400" : "text-muted"
+          }`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${online ? "bg-green-400" : "bg-gray-400"}`}
+          />
+          {online ? "Online now" : "Offline"}
+        </p>
       </div>
       <span className="ml-auto" />
       {callHref && (

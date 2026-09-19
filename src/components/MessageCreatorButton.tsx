@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { openCreatorChat } from "@/lib/openCreatorChat";
+import { useNavigate } from "@/lib/navPending";
 
 /**
  * "Message" action for a creator: switches the fan's session to their chat
@@ -15,19 +15,19 @@ export default function MessageCreatorButton({
   ownerId: string;
   className?: string;
 }) {
-  const router = useRouter();
+  const { run } = useNavigate();
   const [busy, setBusy] = useState(false);
 
   async function open() {
     if (busy) return;
     setBusy(true);
-    router.push(await openCreatorChat(ownerId));
+    await run(() => openCreatorChat(ownerId));
     setBusy(false);
   }
 
   return (
     <button type="button" onClick={open} disabled={busy} className={className}>
-      {busy ? "…" : "Message"}
+      Message
     </button>
   );
 }

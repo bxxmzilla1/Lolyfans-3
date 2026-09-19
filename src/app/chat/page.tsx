@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { after } from "next/server";
 import { getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
-import { visitorLocation } from "@/lib/geo";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats } from "@/lib/guest";
 import { guestChatAccessDestination } from "@/lib/subscriptionAccess";
@@ -26,9 +25,8 @@ export default async function GuestChatPage() {
   const db = supabaseAdmin();
   const requestHeaders = await headers();
 
-  // Messages, chat, unlocks, the guest's other chats, and their location all
-  // load at the same time.
-  const [{ data: messages }, { data: chat }, { data: unlocks }, location, allChats] =
+  // Messages, chat, unlocks and the guest's other chats all load at the same time.
+  const [{ data: messages }, { data: chat }, { data: unlocks }, allChats] =
     await Promise.all([
       // Newest 500, flipped to chronological below — ascending+limit would
       // freeze the view at the oldest 500 once a chat grows past that.
@@ -43,7 +41,6 @@ export default async function GuestChatPage() {
       // column migration has been applied.
       db.from("chats").select("*").eq("id", chatId).maybeSingle(),
       db.from("message_unlocks").select("message_id").eq("chat_id", chatId),
-      visitorLocation(requestHeaders),
       // Several creators → the header gets a back arrow to the chat list and
       // the footer's Chat tab points at the list.
       guestChats(requestHeaders),
@@ -74,8 +71,7 @@ export default async function GuestChatPage() {
     });
   }
 
-  // The owner's profile (name + picture) from their auth account; the guest's
-  // own location is shown as if the inviter is in the same place.
+  // The owner's profile (name + picture) from their auth account.
   const { data: ownerUser } = await db.auth.admin.getUserById(chat.owner_id);
   const meta = (ownerUser?.user?.user_metadata ?? {}) as {
     display_name?: string;
@@ -89,7 +85,6 @@ export default async function GuestChatPage() {
       chatId={chatId}
       name={meta.display_name || "Lolyfans"}
       avatarPath={meta.avatar_path || null}
-      location={location}
       verified={!!meta.invite_verified}
       initialOnline={!chat.owner_appears_offline}
       // Voice calls only exist once the creator saved an ElevenLabs voice.

@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { mediaUrl, formatTime } from "@/lib/utils";
+import { useNavigate } from "@/lib/navPending";
 import type { GuestChatRow } from "@/lib/guestBootstrapCache";
 import { IconUser, IconVerified } from "./Icons";
 
@@ -11,25 +11,25 @@ import { IconUser, IconVerified } from "./Icons";
  * Tapping a row points the session at that chat and opens it.
  */
 export default function GuestChatList({ chats }: { chats: GuestChatRow[] }) {
-  const router = useRouter();
+  const { run } = useNavigate();
   const [opening, setOpening] = useState<string | null>(null);
 
   async function open(chat: GuestChatRow) {
     if (opening) return;
     setOpening(chat.id);
-    try {
-      const res = await fetch("/api/guest/open", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId: chat.id }),
-      });
-      if (res.ok) {
-        router.push("/chat");
-        return;
+    await run(async () => {
+      try {
+        const res = await fetch("/api/guest/open", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId: chat.id }),
+        });
+        if (res.ok) return "/chat";
+      } catch {
+        // fall through
       }
-    } catch {
-      // fall through
-    }
+      return null;
+    });
     setOpening(null);
   }
 
