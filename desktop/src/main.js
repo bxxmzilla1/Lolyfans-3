@@ -141,6 +141,11 @@ function createView(account) {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
+      // Accounts you're not looking at are hidden views. Chromium would
+      // throttle their timers to ~1/min, stalling the inbox's 1-second
+      // online check and realtime presence. Keep them ticking like the
+      // web app does, so every account's green dots stay accurate.
+      backgroundThrottling: false,
     },
   });
   view.setBackgroundColor("#0b0f14");
