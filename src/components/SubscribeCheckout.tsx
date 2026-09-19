@@ -4,12 +4,9 @@ import { useEffect, useState } from "react";
 import { Elements, PaymentElement, useElements, useStripe } from "@stripe/react-stripe-js";
 import { getStripe, stripeAppearance } from "@/lib/stripeClient";
 import {
-  subCaption,
-  subCtaLabel,
   subDollars,
   subFirstPeriodCents,
   subPriceLabel,
-  SUB_UNLIMITED_TITLE,
   type SubPlan,
 } from "@/lib/subscriptionPlan";
 
@@ -207,16 +204,8 @@ export default function SubscribeCheckout({
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 rounded-xl bg-card2 border border-line px-3.5 py-3">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold truncate">{SUB_UNLIMITED_TITLE}</p>
-          {subCaption(plan) && (
-            <p className="text-xs text-muted">{subCaption(plan)}</p>
-          )}
-        </div>
-        <p className="text-sm font-bold text-accent shrink-0">{subCtaLabel(plan)}</p>
-      </div>
-
+      {/* No plan summary here: the pay button and the trial switch already
+          state the price and terms once. */}
       {error ? (
         <p className="text-red-400 text-sm">{error}</p>
       ) : !intent ? (

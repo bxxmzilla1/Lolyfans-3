@@ -21,11 +21,6 @@ const FREE_PLAN: SubPlan = {
   discountPct: 0,
 };
 
-/** Headline for the card step. */
-export function cardTitle(plan: SubPlan): string {
-  return plan.trialDays > 0 ? "Start your free trial" : "Add your card";
-}
-
 /**
  * Sign-up sheet shown over a creator's profile: name + email + password,
  * then — for paid profiles — the card step (Stripe) before the chat opens.
@@ -122,9 +117,8 @@ export function JoinChannelSheet({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-3">
-            <p className="font-bold">
-              {step === "card" ? cardTitle(plan) : "Join my private chat"}
-            </p>
+            {/* Card step has no title — the form speaks for itself. */}
+            <p className="font-bold">{step === "card" ? "" : "Join my private chat"}</p>
             <button
               type="button"
               onClick={onClose}

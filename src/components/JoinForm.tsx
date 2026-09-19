@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import type { SubPlan } from "@/lib/subscriptionPlan";
 import { trackSignup, trackSubscribe } from "@/lib/metaPixel";
 import SubscribeCheckout from "./SubscribeCheckout";
-import { cardTitle } from "./InviteSubscribeCta";
 import { IconEye, IconEyeOff } from "./Icons";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -94,7 +93,6 @@ export default function JoinForm({
     const { plan } = cardStep;
     return (
       <div className="w-full space-y-3">
-        <p className="font-bold">{cardTitle(plan)}</p>
         <SubscribeCheckout
           ownerId={cardStep.ownerId}
           ownerName={ownerName}
