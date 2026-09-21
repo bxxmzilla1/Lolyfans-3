@@ -3,9 +3,10 @@
  * chat feels detached from real money:
  *
  * - 1 token = 10¢ of creator-set price. A $5 unlock shows as "50 Tokens".
- * - Packs use charm prices ($9.99…) and grow bonus tokens with size, so the
- *   bigger packs read as obvious deals and balances land on big round numbers.
- * - The smallest pack (100 Tokens) already covers several unlocks, so a fan
+ * - Packs use charm prices ($49.99…) and grow bonus tokens with size (+10%
+ *   to +40%), so the bigger packs read as obvious deals and balances land on
+ *   big round numbers.
+ * - The smallest pack (550 Tokens) already covers many unlocks, so a fan
  *   rarely faces the top-up screen at the exact moment they want content.
  */
 export const CENTS_PER_TOKEN = 10;
@@ -30,10 +31,10 @@ export type TokenPack = {
 };
 
 export const TOKEN_PACKS: TokenPack[] = [
-  { id: "starter", tokens: 100, bonusTokens: 0, priceCents: 999 },
-  { id: "plus", tokens: 250, bonusTokens: 25, priceCents: 2499, tag: "Most popular" },
-  { id: "pro", tokens: 500, bonusTokens: 100, priceCents: 4999, tag: "+20% free" },
-  { id: "vip", tokens: 1000, bonusTokens: 300, priceCents: 9999, tag: "Best value" },
+  { id: "starter", tokens: 500, bonusTokens: 50, priceCents: 4999, tag: "+10% free" },
+  { id: "plus", tokens: 750, bonusTokens: 150, priceCents: 7499, tag: "Most popular" },
+  { id: "pro", tokens: 1000, bonusTokens: 300, priceCents: 9999, tag: "+30% free" },
+  { id: "vip", tokens: 1500, bonusTokens: 600, priceCents: 14999, tag: "Best value" },
 ];
 
 /**
