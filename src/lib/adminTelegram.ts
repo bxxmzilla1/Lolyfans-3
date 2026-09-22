@@ -201,6 +201,36 @@ export async function notifyCardVerified(chatId: string, ownerId: string) {
 }
 
 /**
+ * A visitor just created an account through a FREE creator's link (no card
+ * step, so this is the only signal). Never throws.
+ */
+export async function notifyFreeSignup(
+  chatId: string,
+  ownerId: string,
+  invite?: { label?: string | null; code?: string | null } | null
+) {
+  if (!telegramConfigured()) return;
+  try {
+    const ctx = await fanContext(chatId);
+    if (!ctx) return;
+    const { name } = await creatorInfo(ownerId);
+    const link = invite?.label || invite?.code;
+    const text = [
+      "🆕 <b>New signup</b> (free profile)",
+      fanLines(ctx.chat),
+      "",
+      `⭐ Creator: <b>${esc(name)}</b>`,
+      link ? `🔗 Link: ${esc(link)}` : null,
+    ]
+      .filter((l) => l !== null)
+      .join("\n");
+    await notifyAdmins(text);
+  } catch (err) {
+    console.error("Telegram notifyFreeSignup failed:", err);
+  }
+}
+
+/**
  * A fan who already had a verified card (with another creator) just
  * subscribed to a new creator — the card was copied onto the new chat.
  * Never throws.

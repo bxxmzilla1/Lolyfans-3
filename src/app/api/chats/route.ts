@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { previewMediaType } from "@/lib/chatPreview";
+import { inboxCardOnly } from "@/lib/subscriptionAccess";
 
 export async function GET() {
   const ownerId = await getOwnerId();
@@ -28,8 +29,13 @@ export async function GET() {
 
   // Pending = a paid-profile sign-up that never finished adding payment
   // details. Not a real fan yet, so keep them out of the inbox entirely.
+  // Paid profiles additionally list only fans with a verified card (the ones
+  // who can buy with one tap); free profiles show every fan who signed up.
+  const cardOnly = await inboxCardOnly(ownerId);
   const chats = (rawChats ?? []).filter(
-    (c) => !(c as { pending?: boolean }).pending
+    (c) =>
+      !(c as { pending?: boolean }).pending &&
+      (!cardOnly || !!(c as { stripe_payment_method_id?: string | null }).stripe_payment_method_id)
   );
 
   type Preview = {

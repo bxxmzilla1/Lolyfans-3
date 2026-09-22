@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { mediaUrl } from "@/lib/utils";
+import { subPlanFromMetadata } from "@/lib/subscriptionPlan";
 
 export const dynamic = "force-dynamic";
 
@@ -35,17 +36,18 @@ export async function GET() {
     avatar_path?: string;
   };
 
-  // Match the inbox: only fans with a verified card are listed/counted.
-  const { data: cardChats } = await db
-    .from("chats")
-    .select("id")
-    .eq("owner_id", ownerId)
-    .not("stripe_payment_method_id", "is", null);
-  const cardIds = new Set((cardChats ?? []).map((c) => String(c.id)));
-
-  const rows = ((Array.isArray(statRows) ? statRows : []) as StatRow[]).filter((r) =>
-    cardIds.has(String(r.chat_id))
-  );
+  // Match the inbox: paid profiles count only card-verified fans; free
+  // profiles count everyone who signed up.
+  let rows = (Array.isArray(statRows) ? statRows : []) as StatRow[];
+  if (subPlanFromMetadata(meta as Record<string, unknown>).priceCents > 0) {
+    const { data: cardChats } = await db
+      .from("chats")
+      .select("id")
+      .eq("owner_id", ownerId)
+      .not("stripe_payment_method_id", "is", null);
+    const cardIds = new Set((cardChats ?? []).map((c) => String(c.id)));
+    rows = rows.filter((r) => cardIds.has(String(r.chat_id)));
+  }
   const withUnread = rows
     .filter((r) => Number(r.unread_count) > 0)
     .sort((a, b) => +new Date(b.preview_created_at ?? 0) - +new Date(a.preview_created_at ?? 0))

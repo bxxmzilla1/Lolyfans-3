@@ -18,6 +18,15 @@ export async function ownerRequiresPaidSub(ownerId: string): Promise<boolean> {
 }
 
 /**
+ * Should the creator's inbox list only card-verified fans? Yes for paid
+ * profiles (a fan without a card hasn't finished subscribing); free profiles
+ * show everyone who signed up.
+ */
+export async function inboxCardOnly(ownerId: string): Promise<boolean> {
+  return ownerRequiresPaidSub(ownerId);
+}
+
+/**
  * Does this chat get into a paid creator's chat? Yes when the fan has a
  * verified card saved (the whole point of the paywall is card-on-file for
  * one-tap purchases) or an active/trialing subscription with this creator.

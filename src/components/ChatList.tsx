@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { RealtimeChannel } from "@supabase/supabase-js";
@@ -132,13 +132,9 @@ function subscribeInboxTyping(
 }
 
 export default function ChatList() {
-  const [allChats, setChats] = useState<ChatRow[] | null>(chatsCache);
-  // The inbox only lists fans with a verified card (the ones who can buy
-  // with one tap). Everyone else stays out of the list and its counts.
-  const chats = useMemo(
-    () => (allChats === null ? null : allChats.filter((c) => !!c.stripe_payment_method_id)),
-    [allChats]
-  );
+  // /api/chats already applies the plan rule: paid profiles list only
+  // card-verified fans, free profiles list everyone who signed up.
+  const [chats, setChats] = useState<ChatRow[] | null>(chatsCache);
   const [ownerId, setOwnerId] = useState<string | null>(ownerIdCache);
   const [categories, setCategories] = useState<Category[]>(categoriesCache ?? []);
   // "all" or a category id
@@ -440,7 +436,7 @@ export default function ChatList() {
         </div>
         <p className="font-semibold">No chats yet</p>
         <p className="text-muted text-sm">
-          Fans show up here once their card is verified.
+          Fans who subscribe will show up here.
         </p>
       </div>
     );
