@@ -537,20 +537,29 @@ export async function syncSubscription(sub: Stripe.Subscription) {
         ? "canceling"
         : sub.status;
 
-  await db.from("subscriptions").upsert(
+  const row = {
+    chat_id: chatId,
+    owner_id: ownerId,
+    stripe_subscription_id: sub.id,
+    status,
+    price_cents: priceCents,
+    billing_interval: interval,
+    current_period_end: periodEnd
+      ? new Date(periodEnd * 1000).toISOString()
+      : null,
+  };
+  // trial_end lets invite stats tell "still on a free trial" from "paid".
+  const { error } = await db.from("subscriptions").upsert(
     {
-      chat_id: chatId,
-      owner_id: ownerId,
-      stripe_subscription_id: sub.id,
-      status,
-      price_cents: priceCents,
-      billing_interval: interval,
-      current_period_end: periodEnd
-        ? new Date(periodEnd * 1000).toISOString()
-        : null,
+      ...row,
+      trial_end: sub.trial_end ? new Date(sub.trial_end * 1000).toISOString() : null,
     },
     { onConflict: "chat_id,owner_id" }
   );
+  if (error && /trial_end/i.test(error.message)) {
+    // Column not migrated yet (migration-invite-stats-v2.sql).
+    await db.from("subscriptions").upsert(row, { onConflict: "chat_id,owner_id" });
+  }
 
   if (status !== "canceled") {
     await db.from("follows").upsert(

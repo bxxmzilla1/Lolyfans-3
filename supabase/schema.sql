@@ -86,55 +86,8 @@ create table if not exists invite_events (
 create index if not exists invite_events_invite_idx on invite_events (invite_id, created_at desc);
 alter table invite_events enable row level security;
 
--- Invite link stats in ONE query: joins (unique per IP, with a country
--- breakdown) + unique-IP clicks per link. Replaces paging every chat and
--- visit row through the API, which made the Invite links tab crawl.
-create or replace function invite_stats(p_owner_id uuid)
-returns table (
-  invite_id uuid,
-  joins bigint,
-  clicks bigint,
-  countries jsonb
-) language sql stable as $$
-  with dedup as (
-    select distinct on (c.invite_id, coalesce(c.guest_ip, 'chat:' || c.id::text))
-      c.invite_id,
-      upper(coalesce(nullif(c.guest_country, ''), '??')) as country
-    from chats c
-    where c.owner_id = p_owner_id
-      and c.invite_id is not null
-    order by
-      c.invite_id,
-      coalesce(c.guest_ip, 'chat:' || c.id::text),
-      c.created_at asc
-  ),
-  join_stats as (
-    select t.invite_id, sum(t.cnt)::bigint as joins,
-      jsonb_object_agg(t.country, t.cnt) as countries
-    from (
-      select d.invite_id, d.country, count(*)::bigint as cnt
-      from dedup d
-      group by d.invite_id, d.country
-    ) t
-    group by t.invite_id
-  ),
-  click_stats as (
-    select v.invite_id, count(*)::bigint as clicks
-    from invite_visits v
-    join invites i on i.id = v.invite_id
-    where i.owner_id = p_owner_id
-    group by v.invite_id
-  )
-  select
-    i.id,
-    coalesce(j.joins, 0),
-    coalesce(cs.clicks, 0),
-    coalesce(j.countries, '{}'::jsonb)
-  from invites i
-  left join join_stats j on j.invite_id = i.id
-  left join click_stats cs on cs.invite_id = i.id
-  where i.owner_id = p_owner_id
-$$;
+-- Invite link stats (invite_stats) are defined further down, after the
+-- subscriptions table they depend on. See migration-invite-stats-v2.sql.
 
 create index if not exists chats_owner_invite_idx
   on chats (owner_id, invite_id)
@@ -598,6 +551,82 @@ create table if not exists subscriptions (
 );
 alter table subscriptions enable row level security;
 create index if not exists subscriptions_owner_idx on subscriptions (owner_id);
+-- When the fan's trial ends (null = no trial). Lets invite_stats 'paid' mode
+-- tell a fan still on a free trial (even one set to cancel) from one who paid.
+alter table subscriptions add column if not exists trial_end timestamptz;
+
+-- Invite link stats in ONE query (see migration-invite-stats-v2.sql):
+--  * Clicks only count visits from the link's allowed countries (when the
+--    link is restricted). Unrestricted links count everyone.
+--  * Subscribers depend on the creator's plan (p_mode):
+--      'all'  — free profile: every signup counts
+--      'card' — paid profile with a free trial: only fans who verified a card
+--      'paid' — paid profile without trial: only fans who actually paid
+drop function if exists invite_stats(uuid); -- v1 signature would be ambiguous
+create or replace function invite_stats(p_owner_id uuid, p_mode text default 'all')
+returns table (
+  invite_id uuid,
+  joins bigint,
+  clicks bigint,
+  countries jsonb
+) language sql stable as $$
+  with dedup as (
+    select distinct on (c.invite_id, coalesce(c.guest_ip, 'chat:' || c.id::text))
+      c.invite_id,
+      upper(coalesce(nullif(c.guest_country, ''), '??')) as country
+    from chats c
+    where c.owner_id = p_owner_id
+      and c.invite_id is not null
+      and (
+        coalesce(p_mode, 'all') = 'all'
+        or (p_mode = 'card' and c.stripe_payment_method_id is not null)
+        or (p_mode = 'paid' and exists (
+          select 1 from subscriptions s
+          where s.chat_id = c.id
+            and s.owner_id = c.owner_id
+            and s.status in ('active', 'past_due', 'canceling')
+            and (s.trial_end is null or s.trial_end <= now())
+        ))
+      )
+    order by
+      c.invite_id,
+      coalesce(c.guest_ip, 'chat:' || c.id::text),
+      c.created_at asc
+  ),
+  join_stats as (
+    select t.invite_id, sum(t.cnt)::bigint as joins,
+      jsonb_object_agg(t.country, t.cnt) as countries
+    from (
+      select d.invite_id, d.country, count(*)::bigint as cnt
+      from dedup d
+      group by d.invite_id, d.country
+    ) t
+    group by t.invite_id
+  ),
+  click_stats as (
+    select v.invite_id, count(*)::bigint as clicks
+    from invite_visits v
+    join invites i on i.id = v.invite_id
+    where i.owner_id = p_owner_id
+      and (
+        i.allowed_countries is null
+        or cardinality(i.allowed_countries) = 0
+        or upper(coalesce(v.country, '')) = any (
+          select upper(a) from unnest(i.allowed_countries) a
+        )
+      )
+    group by v.invite_id
+  )
+  select
+    i.id,
+    coalesce(j.joins, 0),
+    coalesce(cs.clicks, 0),
+    coalesce(j.countries, '{}'::jsonb)
+  from invites i
+  left join join_stats j on j.invite_id = i.id
+  left join click_stats cs on cs.invite_id = i.id
+  where i.owner_id = p_owner_id
+$$;
 
 -- Incoming-media gate: creator photos/videos arrive full screen (blurred)
 -- with Accept / Reject. fan_decision: null = the fan hasn't decided yet,

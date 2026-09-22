@@ -4,15 +4,33 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { fetchAllRows } from "@/lib/fetchAllRows";
 import { PROFILE_DESTINATION } from "@/lib/invites";
+import { ownerSubPlan } from "@/lib/subscriptionAccess";
+import type { SubPlan } from "@/lib/subscriptionPlan";
 
 type Stats = { joins: number; clicks: number; countries: Record<string, number> };
 const blank = (): Stats => ({ joins: 0, clicks: 0, countries: {} });
+
+/**
+ * Who counts as a "subscriber" on the link cards, from the creator's plan:
+ *  - free profile → every signup
+ *  - paid with a free trial → only fans who verified a card
+ *  - paid, no trial → only fans who actually paid
+ */
+type CountMode = "all" | "card" | "paid";
+function countMode(plan: SubPlan): CountMode {
+  if (plan.priceCents <= 0) return "all";
+  return plan.trialDays > 0 ? "card" : "paid";
+}
+
+/** Statuses that mean the fan has paid, once any trial is over. */
+const PAID_STATUSES = new Set(["active", "past_due", "canceling"]);
 
 export async function GET() {
   const ownerId = await getOwnerId();
   if (!ownerId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const db = supabaseAdmin();
+  const mode = countMode(await ownerSubPlan(ownerId));
   // Stats come from ONE SQL round trip (invite_stats in schema.sql). Paging
   // every chat/visit row through the API made this tab crawl for accounts
   // with thousands of fans.
@@ -22,11 +40,15 @@ export async function GET() {
       .select("*")
       .eq("owner_id", ownerId)
       .order("created_at", { ascending: false }),
-    db.rpc("invite_stats", { p_owner_id: ownerId }),
+    db.rpc("invite_stats", { p_owner_id: ownerId, p_mode: mode }),
   ]);
   if (invitesRes.error) {
     return NextResponse.json({ error: invitesRes.error.message }, { status: 500 });
   }
+  const invites = (invitesRes.data ?? []) as Array<{
+    id: string;
+    allowed_countries: string[] | null;
+  }>;
 
   const stats: Record<string, Stats> = {};
   if (!statsRes.error && Array.isArray(statsRes.data)) {
@@ -43,9 +65,9 @@ export async function GET() {
       };
     }
   } else {
-    // Function not installed yet: the old paged reads, so the tab still works
-    // (slowly) until migration-invite-stats.sql is run.
-    Object.assign(stats, await legacyStats(ownerId));
+    // v2 function not installed yet: the old paged reads, so the tab still
+    // works (slowly) until migration-invite-stats-v2.sql is run.
+    Object.assign(stats, await legacyStats(ownerId, mode, invites));
   }
 
   return NextResponse.json({
@@ -57,15 +79,19 @@ export async function GET() {
 }
 
 /** Pre-migration fallback: pages every chat + visit row (slow but correct). */
-async function legacyStats(ownerId: string): Promise<Record<string, Stats>> {
+async function legacyStats(
+  ownerId: string,
+  mode: CountMode,
+  invites: Array<{ id: string; allowed_countries: string[] | null }>
+): Promise<Record<string, Stats>> {
   const db = supabaseAdmin();
-  const [chatsRes, visitsRes] = await Promise.all([
+  const [chatsRes, visitsRes, paidChatIds] = await Promise.all([
     // Paged reads (fetchAllRows): Supabase caps selects at 1000 rows, which
     // froze click/subscriber counts at exactly 1000 once links got popular.
     fetchAllRows((from, to) =>
       db
         .from("chats")
-        .select("id, invite_id, guest_country, guest_ip")
+        .select("id, invite_id, guest_country, guest_ip, stripe_payment_method_id")
         .eq("owner_id", ownerId)
         .not("invite_id", "is", null)
         .order("created_at", { ascending: true })
@@ -75,18 +101,30 @@ async function legacyStats(ownerId: string): Promise<Record<string, Stats>> {
     fetchAllRows((from, to) =>
       db
         .from("invite_visits")
-        .select("invite_id, invites!inner(owner_id)")
+        .select("invite_id, country, invites!inner(owner_id)")
         .eq("invites.owner_id", ownerId)
         .order("created_at", { ascending: true })
         .range(from, to)
     ),
+    mode === "paid" ? paidChats(ownerId) : Promise.resolve(new Set<string>()),
   ]);
+
+  const allowedByInvite = new Map(
+    invites.map((i) => [
+      i.id,
+      i.allowed_countries?.length
+        ? new Set(i.allowed_countries.map((c) => c.toUpperCase()))
+        : null,
+    ])
+  );
 
   // Per link: subscribers = people who created a chat (deduplicated by IP —
   // the same device rejoining doesn't count twice), plus their countries.
   const stats: Record<string, Stats> = {};
   const seenIps: Record<string, Set<string>> = {};
   for (const chat of chatsRes.data ?? []) {
+    if (mode === "card" && !chat.stripe_payment_method_id) continue;
+    if (mode === "paid" && !paidChatIds.has(chat.id as string)) continue;
     const inviteId = chat.invite_id as string;
     stats[inviteId] ??= blank();
     seenIps[inviteId] ??= new Set();
@@ -100,10 +138,41 @@ async function legacyStats(ownerId: string): Promise<Record<string, Stats>> {
   }
   for (const visit of visitsRes.data ?? []) {
     const inviteId = visit.invite_id as string;
+    // Restricted links only count visitors from their allowed countries.
+    const allowed = allowedByInvite.get(inviteId);
+    if (allowed && !allowed.has(String(visit.country || "").toUpperCase())) continue;
     stats[inviteId] ??= blank();
     stats[inviteId].clicks += 1; // rows are already unique per (invite, ip)
   }
   return stats;
+}
+
+/** Chats with a subscription that has actually been paid (trial over). */
+async function paidChats(ownerId: string): Promise<Set<string>> {
+  type SubRow = { chat_id: string; status: string; trial_end?: string | null };
+  const db = supabaseAdmin();
+  let rows: SubRow[] = [];
+  const first = await db
+    .from("subscriptions")
+    .select("chat_id, status, trial_end")
+    .eq("owner_id", ownerId);
+  if (first.error && /trial_end/i.test(first.error.message)) {
+    const second = await db
+      .from("subscriptions")
+      .select("chat_id, status")
+      .eq("owner_id", ownerId);
+    rows = (second.data ?? []) as SubRow[];
+  } else {
+    rows = (first.data ?? []) as SubRow[];
+  }
+  const now = Date.now();
+  const ids = new Set<string>();
+  for (const s of rows) {
+    if (!PAID_STATUSES.has(s.status)) continue;
+    if (s.trial_end && new Date(s.trial_end).getTime() > now) continue;
+    ids.add(s.chat_id);
+  }
+  return ids;
 }
 
 /** Uppercase ISO-2 codes only; anything else is dropped. */

@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
   const db = supabaseAdmin();
   const { data: invite } = await db
     .from("invites")
-    .select("id")
+    .select("id, allowed_countries")
     .eq("id", inviteId)
     .eq("owner_id", ownerId)
     .maybeSingle();
@@ -25,10 +25,17 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const { data, error } = await db
+  // Restricted links: only visitors from the allowed countries, matching the
+  // click count on the card.
+  const allowed = ((invite.allowed_countries as string[] | null) ?? []).map((c) =>
+    c.toUpperCase()
+  );
+  let query = db
     .from("invite_visits")
     .select("ip, country, city, region, org, created_at, last_seen_at")
-    .eq("invite_id", inviteId)
+    .eq("invite_id", inviteId);
+  if (allowed.length) query = query.in("country", allowed);
+  const { data, error } = await query
     .order("created_at", { ascending: false })
     .limit(500);
   if (error) {
