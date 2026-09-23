@@ -37,14 +37,6 @@ export const TOKEN_PACKS: TokenPack[] = [
   { id: "vip", tokens: 5000, bonusTokens: 2500, priceCents: 49999, tag: "Best value" },
 ];
 
-/**
- * One-time offer for fans who have never topped up: the VIP pack at a huge
- * discount. The real goal is the first Stripe Checkout — it saves the card,
- * which turns every later top-up into a one-tap purchase.
- */
-export const FIRST_TOPUP_OFFER_PACK_ID = "vip";
-export const FIRST_TOPUP_OFFER_PRICE_CENTS = 499;
-
 export function packById(id: string): TokenPack | null {
   return TOKEN_PACKS.find((p) => p.id === id) ?? null;
 }
