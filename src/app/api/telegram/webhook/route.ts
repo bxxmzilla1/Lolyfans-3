@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
       chatId,
       enrolled
         ? `✅ You're receiving Lolyfans admin notifications.\n\n${HELP}`
-        : "👋 <b>Lolyfans admin bot</b>\n\nSend the admin code to get notified whenever a fan verifies a card, and which creator they subscribed to."
+        : "👋 <b>Lolyfans admin bot</b>\n\nSend the admin code to get notified whenever a fan signs up, verifies a card, or subscribes to another creator — and which creator it was."
     );
     return NextResponse.json({ ok: true });
   }
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     await sendTelegram(
       chatId,
       added
-        ? "✅ <b>Admin access granted.</b>\n\nYou'll now be notified about every card verification on Lolyfans — for all creators — including when a verified fan subscribes to another creator.\n\n" +
+        ? "✅ <b>Admin access granted.</b>\n\nYou'll now be notified — for all creators — about every new signup, every first card verification, and whenever a verified fan subscribes to another creator.\n\n" +
             HELP
         : `✅ You're already receiving notifications.\n\n${HELP}`
     );

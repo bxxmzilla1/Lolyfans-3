@@ -9,10 +9,9 @@ import { lookupIp } from "@/lib/ipinfo";
 import {
   guestAccessDestination,
   inheritVerifiedCard,
-  ownerRequiresPaidSub,
   ownerSubPlan,
 } from "@/lib/subscriptionAccess";
-import { notifyFreeSignup } from "@/lib/adminTelegram";
+import { notifySignup } from "@/lib/adminTelegram";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -208,15 +207,12 @@ export async function POST(req: NextRequest) {
       );
     await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId });
 
-    // Free profiles have no card step, so the signup itself is what the
-    // admin bot reports (paid profiles report the card verification instead).
-    // Runs after the geo lookup above so the message carries the location.
-    if (!(await ownerRequiresPaidSub(invite!.owner_id))) {
-      await notifyFreeSignup(chatId, invite!.owner_id, {
-        label: invite!.label,
-        code: invite!.code,
-      });
-    }
+    // Admin bot: new account. Runs after the geo lookup above so the
+    // message carries the fan's location.
+    await notifySignup(chatId, invite!.owner_id, {
+      label: invite!.label,
+      code: invite!.code,
+    });
   });
 
   const res = NextResponse.json({

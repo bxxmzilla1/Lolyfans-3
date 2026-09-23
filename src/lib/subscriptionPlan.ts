@@ -22,22 +22,23 @@ export const SUB_INTERVAL_LABEL: Record<SubInterval, string> = {
   lifetime: "lifetime",
 };
 
-export function subPlanFromMetadata(meta: Record<string, unknown>): SubPlan {
-  const priceCents = Math.max(0, Math.round(Number(meta.sub_price_cents) || 0));
-  const rawInterval = meta.sub_interval;
-  const interval: SubInterval =
-    rawInterval === "day" || rawInterval === "week" || rawInterval === "lifetime"
-      ? rawInterval
-      : "month";
-  // Trials and first-period discounts only make sense on recurring billing.
-  const recurring = priceCents > 0 && interval !== "lifetime";
-  const trialDays = recurring
-    ? Math.min(365, Math.max(0, Math.floor(Number(meta.sub_trial_days) || 0)))
-    : 0;
-  const discountPct = recurring
-    ? Math.min(95, Math.max(0, Math.floor(Number(meta.sub_discount_pct) || 0)))
-    : 0;
-  return { priceCents, interval, trialDays, discountPct };
+/** Every profile is free to subscribe to (no card step at signup). */
+export const FREE_PLAN: SubPlan = {
+  priceCents: 0,
+  interval: "month",
+  trialDays: 0,
+  discountPct: 0,
+};
+
+/**
+ * Paid subscriptions / free trials were removed from creator settings. Any
+ * sub_price_cents / sub_trial_days left in older accounts' metadata is
+ * ignored so nobody stays behind a paywall they can no longer switch off.
+ * Fans still add a card on their first purchase (one-tap top-ups / unlocks).
+ */
+export function subPlanFromMetadata(_meta: Record<string, unknown>): SubPlan {
+  void _meta;
+  return FREE_PLAN;
 }
 
 export function subDollars(cents: number): string {

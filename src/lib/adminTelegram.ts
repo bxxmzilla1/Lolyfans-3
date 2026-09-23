@@ -1,10 +1,10 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getSiteSetting, setSiteSetting } from "@/lib/siteSettings";
-import { subPlanFromMetadata, subPriceLabel, type SubPlan } from "@/lib/subscriptionPlan";
 
 /**
  * Platform admin bot: anyone who sends the admin code to the Telegram bot
- * gets notified about card verifications across ALL creators.
+ * gets notified about every signup, first card verification and
+ * cross-creator subscribe across ALL creators.
  *
  * Env:
  *   TELEGRAM_BOT_TOKEN      — from @BotFather (required for the bot to work)
@@ -117,18 +117,11 @@ function esc(s: string | null | undefined): string {
     .replace(/>/g, "&gt;");
 }
 
-function planLine(plan: SubPlan): string {
-  if (plan.priceCents <= 0) return "Free profile";
-  if (plan.interval === "lifetime") return `Lifetime · ${subPriceLabel(plan)}`;
-  const trial = plan.trialDays > 0 ? `${plan.trialDays}-day free trial · then ` : "";
-  return `${trial}${subPriceLabel(plan)}`;
-}
-
-async function creatorInfo(ownerId: string): Promise<{ name: string; plan: SubPlan }> {
+async function creatorName(ownerId: string): Promise<string> {
   const { data } = await supabaseAdmin().auth.admin.getUserById(ownerId);
   const meta = (data?.user?.user_metadata ?? {}) as Record<string, unknown>;
   const display = typeof meta.display_name === "string" ? meta.display_name.trim() : "";
-  return { name: display || "Unnamed creator", plan: subPlanFromMetadata(meta) };
+  return display || "Unnamed creator";
 }
 
 type FanRow = {
@@ -174,7 +167,8 @@ function fanLines(chat: FanRow): string {
 }
 
 /**
- * A fan just verified a card while signing up with a creator.
+ * A fan's card was saved for the first time (their first top-up / unlock
+ * with a creator — one-tap purchases work from here on).
  * Call AFTER the card is saved on the chat. Never throws.
  */
 export async function notifyCardVerified(chatId: string, ownerId: string) {
@@ -182,15 +176,14 @@ export async function notifyCardVerified(chatId: string, ownerId: string) {
   try {
     const ctx = await fanContext(chatId);
     if (!ctx) return;
-    const { name, plan } = await creatorInfo(ownerId);
+    const name = await creatorName(ownerId);
     const others = ctx.creatorIds.filter((id) => id !== ownerId).length;
     const text = [
       "💳 <b>New card verified</b>",
       fanLines(ctx.chat),
       "",
-      `⭐ Subscribed to: <b>${esc(name)}</b>`,
-      `🧾 Plan: ${esc(planLine(plan))}`,
-      others > 0 ? `🔗 Also has access to ${others} other creator${others === 1 ? "" : "s"}` : null,
+      `⭐ Creator: <b>${esc(name)}</b>`,
+      others > 0 ? `🔗 Also subscribed to ${others} other creator${others === 1 ? "" : "s"}` : null,
     ]
       .filter((l) => l !== null)
       .join("\n");
@@ -201,10 +194,9 @@ export async function notifyCardVerified(chatId: string, ownerId: string) {
 }
 
 /**
- * A visitor just created an account through a FREE creator's link (no card
- * step, so this is the only signal). Never throws.
+ * A visitor just created an account through a creator's link. Never throws.
  */
-export async function notifyFreeSignup(
+export async function notifySignup(
   chatId: string,
   ownerId: string,
   invite?: { label?: string | null; code?: string | null } | null
@@ -213,10 +205,10 @@ export async function notifyFreeSignup(
   try {
     const ctx = await fanContext(chatId);
     if (!ctx) return;
-    const { name } = await creatorInfo(ownerId);
+    const name = await creatorName(ownerId);
     const link = invite?.label || invite?.code;
     const text = [
-      "🆕 <b>New signup</b> (free profile)",
+      "🆕 <b>New signup</b>",
       fanLines(ctx.chat),
       "",
       `⭐ Creator: <b>${esc(name)}</b>`,
@@ -226,7 +218,7 @@ export async function notifyFreeSignup(
       .join("\n");
     await notifyAdmins(text);
   } catch (err) {
-    console.error("Telegram notifyFreeSignup failed:", err);
+    console.error("Telegram notifySignup failed:", err);
   }
 }
 
@@ -244,18 +236,16 @@ export async function notifyCrossCreatorSubscribe(
   try {
     const ctx = await fanContext(chatId);
     if (!ctx) return;
-    const [{ name, plan }, source] = await Promise.all([
-      creatorInfo(ownerId),
-      sourceOwnerId ? creatorInfo(sourceOwnerId) : Promise.resolve(null),
+    const [name, sourceName] = await Promise.all([
+      creatorName(ownerId),
+      sourceOwnerId ? creatorName(sourceOwnerId) : Promise.resolve(null),
     ]);
-    const sourceName = source?.name ?? null;
     const total = ctx.creatorIds.length;
     const text = [
       "🔁 <b>Verified fan subscribed to another creator</b>",
       fanLines(ctx.chat),
       "",
       `⭐ New creator: <b>${esc(name)}</b>`,
-      `🧾 Plan: ${esc(planLine(plan))}`,
       sourceName ? `💳 Card verified with: ${esc(sourceName)}` : null,
       `👥 Now subscribed to ${total} creator${total === 1 ? "" : "s"}`,
     ]
