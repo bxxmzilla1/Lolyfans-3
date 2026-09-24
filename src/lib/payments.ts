@@ -3,6 +3,7 @@ import { broadcast } from "@/lib/realtime";
 import { stripe } from "@/lib/stripe";
 import { clearChatCard, dropCardIfStale, isStaleStripeIdError } from "@/lib/stripeCards";
 import { notifyCardVerified } from "@/lib/adminTelegram";
+import { refuseNonCreditPayment } from "@/lib/cardFunding";
 import { after } from "next/server";
 import type Stripe from "stripe";
 
@@ -613,12 +614,22 @@ export async function fulfillCheckout(session: Stripe.Checkout.Session) {
   if (kind === "topup") {
     const tokens = Math.max(0, Math.round(Number(session.metadata?.tokens || 0)));
     if (!tokens) return { ok: false as const, kind: "topup" as const };
-    const { customerId, paymentMethodId } = await paymentMethodFromSession(session);
-    await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
     const paymentIntentId =
       typeof session.payment_intent === "string"
         ? session.payment_intent
         : session.payment_intent?.id ?? null;
+    // Credit cards only (hosted Checkout can't filter funding up front):
+    // a debit/prepaid payment is refunded and not credited.
+    if (paymentIntentId) {
+      const pi = await stripe().paymentIntents.retrieve(paymentIntentId, {
+        expand: ["payment_method"],
+      });
+      if (await refuseNonCreditPayment(pi)) {
+        return { ok: false as const, kind: "topup" as const, refused: true as const };
+      }
+    }
+    const { customerId, paymentMethodId } = await paymentMethodFromSession(session);
+    await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
     const couponMessageId =
       typeof session.metadata?.couponMessageId === "string"
         ? session.metadata.couponMessageId

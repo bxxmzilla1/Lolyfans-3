@@ -8,6 +8,7 @@ import {
   tokenBalance,
 } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
+import { CREDIT_ONLY_MESSAGE, refuseNonCreditPayment } from "@/lib/cardFunding";
 
 /**
  * Called right after the embedded card wizard confirms a top-up
@@ -31,13 +32,23 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const pi = await stripe().paymentIntents.retrieve(paymentIntentId);
+  const pi = await stripe().paymentIntents.retrieve(paymentIntentId, {
+    expand: ["payment_method"],
+  });
   if (
     pi.metadata?.chatId !== chatId ||
     pi.metadata?.kind !== "topup" ||
     pi.status !== "succeeded"
   ) {
     return NextResponse.json({ error: "Payment not completed" }, { status: 402 });
+  }
+
+  // Credit cards only: a debit/prepaid payment is refunded and not credited.
+  if (await refuseNonCreditPayment(pi)) {
+    return NextResponse.json(
+      { error: `${CREDIT_ONLY_MESSAGE} Your payment has been refunded.` },
+      { status: 402 }
+    );
   }
 
   const tokens = Math.max(0, Math.round(Number(pi.metadata.tokens || 0)));

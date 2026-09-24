@@ -11,6 +11,7 @@ import {
   syncSubscription,
 } from "@/lib/payments";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
+import { refuseNonCreditPayment } from "@/lib/cardFunding";
 import { stripe } from "@/lib/stripe";
 import Stripe from "stripe";
 
@@ -67,8 +68,9 @@ export async function POST(req: NextRequest) {
     if (pi.metadata?.kind === "topup") {
       // Token top-up (one-tap or Checkout). creditTokens is idempotent per
       // payment intent, so double delivery with /topup or /confirm is safe.
+      // Credit cards only: a debit/prepaid payment is refunded, not credited.
       const tokens = Math.max(0, Math.round(Number(pi.metadata.tokens || 0)));
-      if (tokens > 0) {
+      if (tokens > 0 && !(await refuseNonCreditPayment(pi))) {
         await saveStripePaymentMethod(chatId, customerId, paymentMethodId);
         await creditTokens({ chatId, tokens, paymentIntentId: pi.id });
         // Not for auto refills themselves — keep the fan's own last choice.

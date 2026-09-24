@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { saveStripePaymentMethod } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
+import { CREDIT_ONLY_MESSAGE, refuseNonCreditSetup } from "@/lib/cardFunding";
 
 /**
  * Called after the embedded wizard confirms a verification SetupIntent:
@@ -24,13 +25,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const si = await stripe().setupIntents.retrieve(setupIntentId);
+  const si = await stripe().setupIntents.retrieve(setupIntentId, {
+    expand: ["payment_method"],
+  });
   if (
     si.metadata?.chatId !== chatId ||
     si.metadata?.kind !== "verify" ||
     si.status !== "succeeded"
   ) {
     return NextResponse.json({ error: "Verification not completed" }, { status: 402 });
+  }
+
+  // Credit cards only: a debit/prepaid card is detached, never saved.
+  if (await refuseNonCreditSetup(si)) {
+    return NextResponse.json({ error: CREDIT_ONLY_MESSAGE }, { status: 402 });
   }
 
   const paymentMethodId =
