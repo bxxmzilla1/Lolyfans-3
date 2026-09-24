@@ -2,6 +2,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { subPlanFromMetadata, type SubPlan } from "@/lib/subscriptionPlan";
+import { welcomeFromMetadata, type ChatWelcome } from "@/lib/chatWelcome";
 
 export type GuestChat = {
   id: string;
@@ -71,6 +72,8 @@ export type OwnerProfile = {
   blurPosts: boolean;
   /** Profile-subscription plan (price 0 = free). */
   plan: SubPlan;
+  /** Settings → Chat: opening message (+ optional media) on the chat screen. */
+  welcome: ChatWelcome;
 };
 
 /** Display profiles (name, picture, checkmark) for a set of creators. */
@@ -107,6 +110,7 @@ export async function ownerProfiles(
           showLocation: !!meta.profile_show_location,
           blurPosts: !!meta.profile_blur_posts,
           plan: subPlanFromMetadata(meta as Record<string, unknown>),
+          welcome: welcomeFromMetadata(meta as Record<string, unknown>),
         },
       ] as const;
     })

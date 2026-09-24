@@ -21,7 +21,8 @@ export async function POST(req: NextRequest) {
     (scope === "vault" ||
       scope === "avatar" ||
       scope === "banner" ||
-      scope === "post") &&
+      scope === "post" ||
+      scope === "welcome") &&
     ownerId
       ? scope
       : scope === "avatar" && guestChatId

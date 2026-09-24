@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { SubPlan } from "@/lib/subscriptionPlan";
-import { trackSignup, trackSubscribe } from "@/lib/metaPixel";
+import { trackLead, trackSignup, trackSubscribe } from "@/lib/metaPixel";
 import SubscribeCheckout from "./SubscribeCheckout";
 import { IconEye, IconEyeOff } from "./Icons";
 
@@ -77,11 +77,20 @@ export default function JoinForm({
       setError(data?.error || "Could not join");
       return;
     }
-    if (data?.created) trackSignup("invite_signup");
+    const created = !!data?.created;
+    if (created) trackSignup("invite_signup");
     if (data?.requiresCard && data.ownerId && data.plan) {
+      // Paid / free-trial chat: the lead fires once the card is verified.
       setBusy(false);
       setCardStep({ ownerId: data.ownerId, plan: data.plan as SubPlan });
       return;
+    }
+    // Free chat (or card already verified elsewhere): the signup is the lead.
+    if (created) {
+      trackLead(
+        (data?.plan as SubPlan | undefined) ?? { priceCents: 0, trialDays: 0 },
+        "invite_signup"
+      );
     }
     await afterJoined();
   }
@@ -99,6 +108,8 @@ export default function JoinForm({
           plan={plan}
           onSuccess={() => {
             trackSubscribe(plan.priceCents, plan.trialDays);
+            // Paid / free-trial chat: verified card = the lead (once per fan).
+            trackLead(plan, "invite_signup");
             void afterJoined();
           }}
         />

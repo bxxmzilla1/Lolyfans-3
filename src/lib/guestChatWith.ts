@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
 import { inheritVerifiedCard } from "@/lib/subscriptionAccess";
 import { notifyCrossCreatorSubscribe } from "@/lib/adminTelegram";
+import { sendWelcomeMessage } from "@/lib/chatWelcome";
 import type { GuestChat } from "@/lib/guest";
 
 /**
@@ -71,6 +72,12 @@ export async function ensureGuestChatWith(
       .single());
   }
   if (error || !chat) return null;
+
+  // The creator's welcome message (Settings → Chat) opens the new chat.
+  await sendWelcomeMessage(chat.id as string, ownerId, {
+    city: (source.guest_city as string | null) ?? null,
+    country: (source.guest_country as string | null) ?? null,
+  });
 
   // Verified card with another creator → copied here (that path pings the
   // admin bot itself). No card yet → still report the cross-creator subscribe.

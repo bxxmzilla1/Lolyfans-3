@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Portal from "./Portal";
 import SubscribeCheckout from "./SubscribeCheckout";
-import { trackSignup, trackSubscribe } from "@/lib/metaPixel";
+import { trackLead, trackSignup, trackSubscribe } from "@/lib/metaPixel";
 import {
   subButtonLabels,
   subCaption,
@@ -87,19 +87,27 @@ export function JoinChannelSheet({
       setError(data?.error || "Could not sign up");
       return;
     }
-    if (data?.created) trackSignup("subscribe_sheet");
+    const created = !!data?.created;
+    const effectivePlan = (data?.plan as SubPlan | undefined) ?? plan;
+    if (created) trackSignup("subscribe_sheet");
     if (data?.requiresCard) {
       // Paid profile, no verified card yet → collect it before the chat.
+      // The lead fires once the card is verified (cardDone).
       if (data.plan) setPlan(data.plan as SubPlan);
       setBusy(false);
       setStep("card");
       return;
     }
+    // Free chat (or a card already verified elsewhere): the signup is the lead.
+    if (created) trackLead(effectivePlan, "subscribe_sheet");
     window.location.href = "/chat";
   }
 
   function cardDone() {
     trackSubscribe(plan.priceCents, plan.trialDays);
+    // Paid / free-trial chat: card entered and verified = the lead (a fan
+    // only ever passes this step once).
+    trackLead(plan, "subscribe_sheet");
     window.location.href = "/chat";
   }
 

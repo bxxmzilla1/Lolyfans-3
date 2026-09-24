@@ -49,6 +49,21 @@ export function trackSignup(source: string) {
 }
 
 /**
+ * A lead, as the platform defines it: on a FREE creator chat, the moment a
+ * new fan signs up; on a PAID / free-trial chat, the moment they've entered
+ * and verified their card. Fired once per new account per creator.
+ */
+export function trackLead(plan: { priceCents: number; trialDays: number }, source: string) {
+  trackPixel("Lead", {
+    content_name:
+      plan.priceCents <= 0 ? "free_chat" : plan.trialDays > 0 ? "paid_free_trial" : "paid",
+    content_category: source,
+    value: Number((plan.priceCents / 100).toFixed(2)),
+    currency: "USD",
+  });
+}
+
+/**
  * Fan bought a Token pack (real money). `amountCents` is what Stripe charged;
  * when a response lacks it, the pack's Token count gives the USD equivalent.
  */

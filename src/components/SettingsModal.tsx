@@ -7,12 +7,14 @@ import { mediaUrl, resizeImage } from "@/lib/utils";
 import InviteManager from "./InviteManager";
 import HomeRedirectManager from "./HomeRedirectManager";
 import SubscriptionSettings from "./SubscriptionSettings";
+import ChatSettings from "./ChatSettings";
 import ApiKeyManager from "./ApiKeyManager";
 import PostsManager from "./PostsManager";
 import SocialProofManager from "./SocialProofManager";
 import Portal from "./Portal";
 import {
   IconCard,
+  IconChat,
   IconGrid,
   IconHeart,
   IconHome,
@@ -24,6 +26,7 @@ import {
 
 type Section =
   | "profile"
+  | "chat"
   | "posts"
   | "social"
   | "subscription"
@@ -368,6 +371,16 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
             <IconUser className="w-3.5 h-3.5" /> Profile
           </button>
           <button
+            onClick={() => setSection("chat")}
+            className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
+              section === "chat"
+                ? "bg-accent text-white"
+                : "bg-card2 border border-line text-muted hover:text-fg"
+            }`}
+          >
+            <IconChat className="w-3.5 h-3.5" /> Chat
+          </button>
+          <button
             onClick={() => setSection("posts")}
             className={`flex items-center gap-2 px-3.5 py-2 rounded-full text-xs font-semibold transition-colors ${
               section === "posts"
@@ -432,7 +445,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
         <div className="flex-1 overflow-y-auto p-5 lg:p-8">
           <div
             className={`mx-auto w-full ${
-              section === "profile"
+              section === "profile" || section === "chat"
                 ? "max-w-2xl"
                 : section === "posts"
                   ? "max-w-4xl"
@@ -441,6 +454,8 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
           >
             {section === "profile" ? (
               <ProfileSection />
+            ) : section === "chat" ? (
+              <ChatSettings />
             ) : section === "posts" ? (
               <PostsManager />
             ) : section === "social" ? (

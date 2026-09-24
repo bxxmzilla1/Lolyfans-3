@@ -4,6 +4,8 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
 import { applyUserGeoTokens, visitorGeoParts } from "@/lib/geo";
 import { guestAccessDestination } from "@/lib/subscriptionAccess";
+import { DEFAULT_WELCOME_TEXT } from "@/lib/chatWelcome";
+import { mediaUrl } from "@/lib/utils";
 import CreatorChatPreview from "@/components/CreatorChatPreview";
 import SubscribeReturn from "@/components/SubscribeReturn";
 
@@ -88,10 +90,24 @@ export default async function CreatorPage({
   const profile = profiles.get(ownerId);
   if (!profile) notFound();
 
-  // CITYUSER / COUNTRYUSER in the bio become this visitor's own location.
-  const intro = profile.bio
-    ? applyUserGeoTokens(profile.bio, geo)
-    : `Hey, welcome to my private chat. Sign up and say hi!`;
+  // Settings → Chat: the creator's opening message. CITYUSER / COUNTRYUSER
+  // become this visitor's own location.
+  const { welcome } = profile;
+  const intro = welcome.text
+    ? applyUserGeoTokens(welcome.text, geo)
+    : welcome.mediaPath
+      ? null
+      : DEFAULT_WELCOME_TEXT;
+  const media =
+    welcome.mediaPath && welcome.mediaType
+      ? {
+          url: mediaUrl(welcome.mediaPath),
+          type: welcome.mediaType,
+          // Blurred until they're in: visitors, and on paid profiles fans
+          // who still owe the card step.
+          blurred: welcome.blur,
+        }
+      : null;
 
   return (
     <>
@@ -108,6 +124,7 @@ export default async function CreatorPage({
         avatarPath={profile.avatarPath}
         verified={profile.verified}
         intro={intro}
+        media={media}
         plan={profile.plan}
         inviteCode={viaInvite?.code ?? latestInvite?.code ?? null}
         // Signed up, no card yet (paid profile): the sheet opens at the card

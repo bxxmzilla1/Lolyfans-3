@@ -4,7 +4,14 @@ import { useState } from "react";
 import { mediaUrl } from "@/lib/utils";
 import { subCaption, type SubPlan } from "@/lib/subscriptionPlan";
 import { JoinChannelSheet } from "./InviteSubscribeCta";
-import { IconSend, IconUser, IconVerified } from "./Icons";
+import { IconLock, IconSend, IconUser, IconVerified } from "./Icons";
+
+export type WelcomeMedia = {
+  url: string;
+  type: "image" | "video";
+  /** Shown blurred with a lock until the visitor is in. */
+  blurred: boolean;
+};
 
 /**
  * What a visitor without an account sees when they open a creator: the
@@ -18,6 +25,7 @@ export default function CreatorChatPreview({
   avatarPath,
   verified,
   intro,
+  media,
   plan,
   inviteCode,
   cardOnly = false,
@@ -27,8 +35,10 @@ export default function CreatorChatPreview({
   name: string;
   avatarPath: string | null;
   verified: boolean;
-  /** The creator's opening line (bio, or a default greeting). */
-  intro: string;
+  /** The creator's opening line (Settings → Chat), null = media only. */
+  intro: string | null;
+  /** Optional photo / video sent with the opening line. */
+  media?: WelcomeMedia | null;
   /** The creator's subscription plan (price 0 = free). */
   plan: SubPlan;
   /** Active invite code to register with; null = not accepting new fans. */
@@ -107,8 +117,55 @@ export default function CreatorChatPreview({
           ) : (
             <div className="w-7 h-7 rounded-full bg-card2 shrink-0" />
           )}
-          <div className="rounded-2xl rounded-bl-md bg-card border border-line2 px-4 py-2.5 text-[15px] whitespace-pre-wrap break-words">
-            {intro}
+          <div className="min-w-0 space-y-1.5">
+            {media && (
+              <div className="relative w-64 max-w-full rounded-2xl rounded-bl-md overflow-hidden border border-line2 bg-card">
+                {media.type === "video" ? (
+                  <video
+                    src={media.url}
+                    className={`w-full h-auto max-h-80 object-cover ${
+                      media.blurred ? "blur-2xl scale-110 pointer-events-none" : ""
+                    }`}
+                    controls={!media.blurred}
+                    muted
+                    playsInline
+                    preload="metadata"
+                  />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={media.url}
+                    alt=""
+                    className={`w-full h-auto max-h-80 object-cover ${
+                      media.blurred ? "blur-2xl scale-110" : ""
+                    }`}
+                  />
+                )}
+                {media.blurred && (
+                  <button
+                    type="button"
+                    onClick={openSheet}
+                    className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/25"
+                  >
+                    <span className="w-11 h-11 rounded-full bg-white/15 backdrop-blur flex items-center justify-center">
+                      <IconLock className="w-5 h-5 text-white" />
+                    </span>
+                    <span className="text-white text-xs font-semibold drop-shadow">
+                      {cardOnly
+                        ? "Add your card to see this"
+                        : paid
+                          ? "Subscribe to see this"
+                          : "Sign up to see this"}
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
+            {intro && (
+              <div className="rounded-2xl rounded-bl-md bg-card border border-line2 px-4 py-2.5 text-[15px] whitespace-pre-wrap break-words">
+                {intro}
+              </div>
+            )}
           </div>
         </div>
 

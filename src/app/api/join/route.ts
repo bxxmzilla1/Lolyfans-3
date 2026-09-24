@@ -12,6 +12,7 @@ import {
   ownerSubPlan,
 } from "@/lib/subscriptionAccess";
 import { notifyCrossCreatorSubscribe, notifySignup } from "@/lib/adminTelegram";
+import { sendWelcomeMessage } from "@/lib/chatWelcome";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -187,8 +188,9 @@ export async function POST(req: NextRequest) {
   after(async () => {
     // Geo-locate the new fan through ipinfo so their city shows up next to
     // their name in the creator's inbox and chat header.
+    let geo: { city?: string | null; country?: string | null } | null = null;
     if (ip) {
-      const geo = await lookupIp(ip);
+      geo = await lookupIp(ip);
       if (geo?.city || geo?.country) {
         await db
           .from("chats")
@@ -199,6 +201,13 @@ export async function POST(req: NextRequest) {
           .eq("id", chatId);
       }
     }
+
+    // The creator's welcome message (Settings → Chat) becomes the first
+    // message of the new chat, with CITYUSER / COUNTRYUSER filled in.
+    await sendWelcomeMessage(chatId, invite!.owner_id, {
+      city: geo?.city ?? null,
+      country: geo?.country ?? country ?? null,
+    });
 
     await db
       .from("invites")
