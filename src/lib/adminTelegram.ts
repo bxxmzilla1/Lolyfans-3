@@ -3,8 +3,8 @@ import { getSiteSetting, setSiteSetting } from "@/lib/siteSettings";
 
 /**
  * Platform admin bot: anyone who sends the admin code to the Telegram bot
- * gets notified about every signup, first card verification and
- * cross-creator subscribe across ALL creators.
+ * gets notified about every signup, first card verification and every time
+ * a fan starts chatting with another creator — across ALL creators.
  *
  * Env:
  *   TELEGRAM_BOT_TOKEN      — from @BotFather (required for the bot to work)
@@ -191,7 +191,7 @@ export async function notifyCardVerified(chatId: string, ownerId: string) {
       fanLines(ctx.chat),
       "",
       `⭐ Creator: <b>${esc(name)}</b>`,
-      others > 0 ? `🔗 Also subscribed to ${others} other creator${others === 1 ? "" : "s"}` : null,
+      others > 0 ? `🔗 Also chatting with ${others} other creator${others === 1 ? "" : "s"}` : null,
     ]
       .filter((l) => l !== null)
       .join("\n");
@@ -231,15 +231,17 @@ export async function notifySignup(
 }
 
 /**
- * An existing fan just subscribed to a new creator (follow / Message button /
- * another creator's link). `cardCopied` = they already had a verified card,
- * which was copied onto the new chat. Never throws.
+ * An existing fan just opened a chat with a new creator (Message button on
+ * Home / another creator's link). `cardCopied` = they already had a verified
+ * card, which was copied onto the new chat. `via` = how they got there.
+ * Never throws.
  */
 export async function notifyCrossCreatorSubscribe(
   chatId: string,
   ownerId: string,
   sourceOwnerId?: string | null,
-  cardCopied = true
+  cardCopied = true,
+  via?: string | null
 ) {
   if (!telegramConfigured()) return;
   try {
@@ -252,8 +254,8 @@ export async function notifyCrossCreatorSubscribe(
     const total = ctx.allCreatorIds.length;
     const text = [
       cardCopied
-        ? "🔁 <b>Verified fan subscribed to another creator</b>"
-        : "➕ <b>Fan subscribed to another creator</b>",
+        ? "🔁 <b>Verified fan started chatting with another creator</b>"
+        : "➕ <b>Fan started chatting with another creator</b>",
       fanLines(ctx.chat),
       "",
       `⭐ New creator: <b>${esc(name)}</b>`,
@@ -262,8 +264,9 @@ export async function notifyCrossCreatorSubscribe(
           ? `💳 Card verified with: ${esc(sourceName)}`
           : `↩️ Came from: ${esc(sourceName)}`
         : null,
+      via ? `📲 Via: ${esc(via)}` : null,
       !cardCopied ? "💳 No card on file yet" : null,
-      `👥 Now subscribed to ${total} creator${total === 1 ? "" : "s"}`,
+      `👥 Now chatting with ${total} creator${total === 1 ? "" : "s"}`,
     ]
       .filter((l) => l !== null)
       .join("\n");

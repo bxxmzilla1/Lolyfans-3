@@ -42,7 +42,8 @@ export default function CreatorCard({
         )}
       </div>
 
-      <div className="px-4 pb-4 -mt-10 flex flex-col items-center text-center">
+      {/* relative + z-10 so the avatar paints over the banner, not under it */}
+      <div className="relative z-10 px-4 pb-4 -mt-10 flex flex-col items-center text-center">
         <div className="rounded-full p-[3px] bg-card shadow-sm">
           {avatarPath ? (
             // eslint-disable-next-line @next/next/no-img-element

@@ -222,15 +222,17 @@ export async function POST(req: NextRequest) {
     await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId });
 
     // Admin bot. Runs after the geo lookup above so the message carries the
-    // fan's location. Existing fan → "subscribed to another creator" (already
-    // sent by inheritVerifiedCard when a card was copied); otherwise "new signup".
+    // fan's location. Existing fan → "started chatting with another creator"
+    // (already sent by inheritVerifiedCard when a card was copied); otherwise
+    // "new signup".
     if (priorChat) {
       if (!cardCopied) {
         await notifyCrossCreatorSubscribe(
           chatId,
           invite!.owner_id,
           priorChat.owner_id as string,
-          false
+          false,
+          `Creator link ${invite!.label || invite!.code}`
         );
       }
     } else {

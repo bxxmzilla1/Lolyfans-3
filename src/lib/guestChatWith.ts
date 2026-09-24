@@ -77,7 +77,9 @@ export async function ensureGuestChatWith(
   const cardCopied = await inheritVerifiedCard(chat.id as string, source.guest_email);
   if (!cardCopied) {
     const newChatId = chat.id as string;
-    after(() => notifyCrossCreatorSubscribe(newChatId, ownerId, chats[0].owner_id, false));
+    after(() =>
+      notifyCrossCreatorSubscribe(newChatId, ownerId, chats[0].owner_id, false, "Message button")
+    );
   }
   await broadcast(`inbox:${ownerId}`, "new-chat", { chatId: chat.id });
 
