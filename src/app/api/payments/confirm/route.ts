@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { fulfillCheckout } from "@/lib/payments";
 import { stripe, stripeConfigured } from "@/lib/stripe";
-import { CREDIT_ONLY_MESSAGE } from "@/lib/cardFunding";
 
 /**
  * Called when the fan returns from Stripe Checkout. Verifies the session was
@@ -26,12 +25,6 @@ export async function POST(req: NextRequest) {
 
   const result = await fulfillCheckout(session);
   if (!result.ok) {
-    if ("refused" in result && result.refused) {
-      return NextResponse.json(
-        { error: `${CREDIT_ONLY_MESSAGE} Your payment has been refunded.` },
-        { status: 402 }
-      );
-    }
     return NextResponse.json(
       { error: "Payment not completed", status: session.payment_status },
       { status: 402 }

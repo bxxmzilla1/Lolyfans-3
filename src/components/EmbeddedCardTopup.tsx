@@ -19,10 +19,6 @@ const COUNTRY_CODES =
 
 const STEP_TITLES = ["Card details", "Cardholder name", "Confirm & pay"];
 
-/** Kept in sync with src/lib/cardFunding.ts (server-side rule). */
-const CREDIT_ONLY_MESSAGE =
-  "Only credit cards are accepted. Please use a credit card.";
-
 function priceLabel(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`;
 }
@@ -199,26 +195,10 @@ function CardWizard({
     setError(null);
     settledRef.current = false;
     try {
-      // Create the PaymentMethod first so we can read the card's funding
-      // type: credit cards only — debit/prepaid are refused before any
-      // charge or verification happens (the server enforces this too).
-      const created = await stripe.createPaymentMethod({
-        type: "card",
+      const paymentMethod = {
         card,
         billing_details: { name: name.trim(), address: { country } },
-      });
-      if (created.error || !created.paymentMethod) {
-        setError(created.error?.message || failMsg);
-        setPaying(false);
-        return;
-      }
-      if (created.paymentMethod.card?.funding !== "credit") {
-        setError(CREDIT_ONLY_MESSAGE);
-        setPaying(false);
-        return;
-      }
-      const paymentMethod = created.paymentMethod.id;
-
+      };
       // handleActions: false — we run the 3D Secure step ourselves below,
       // so a stuck challenge can never freeze the page silently.
       const result =
@@ -504,7 +484,6 @@ function CardWizard({
           : presentAsVerify
             ? "Secured by Stripe · Card verification"
             : "Secured by Stripe · Your card is saved for one-tap purchases"}
-        {" · Credit cards only"}
       </p>
     </div>
   );
