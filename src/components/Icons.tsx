@@ -455,6 +455,28 @@ export function IconStar({ className }: IconProps) {
   );
 }
 
+/** "AI" mark shown next to every creator's name (Tabler `ai`). */
+export function IconAi({ className }: IconProps) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+      aria-label="AI"
+    >
+      <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+      <path d="M8 16v-6a2 2 0 1 1 4 0v6" />
+      <path d="M8 13h4" />
+      <path d="M16 8v8" />
+    </svg>
+  );
+}
+
 export function IconVerified({ className }: IconProps) {
   return (
     <svg

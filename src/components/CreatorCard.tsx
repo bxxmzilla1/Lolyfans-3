@@ -2,7 +2,7 @@ import Link from "next/link";
 import { mediaUrl } from "@/lib/utils";
 import type { CreatorCardData } from "@/lib/creatorDirectory";
 import MessageCreatorButton from "./MessageCreatorButton";
-import { IconUser, IconVerified } from "./Icons";
+import { IconAi, IconUser, IconVerified } from "./Icons";
 
 const BUTTON_CLASS =
   "block w-full text-center px-5 py-2.5 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity disabled:opacity-60";
@@ -61,6 +61,7 @@ export default function CreatorCard({
 
         <p className="mt-2 font-bold text-base flex items-center gap-1 max-w-full">
           <span className="truncate">{name}</span>
+          <IconAi className="w-5 h-5 text-accent shrink-0" />
           {verified && <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />}
         </p>
         {bio && (

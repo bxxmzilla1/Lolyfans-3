@@ -13,6 +13,7 @@ import {
   IconHeartFilled,
   IconLock,
   IconPlay,
+  IconAi,
   IconSend,
   IconUser,
   IconVerified,
@@ -272,6 +273,7 @@ export default function PostFeed({
               )}
               <span className="font-semibold text-sm flex items-center gap-1 min-w-0 truncate">
                 {post.ownerName}
+                <IconAi className="w-5 h-5 text-accent shrink-0" />
                 {post.verified && <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />}
               </span>
             </Link>

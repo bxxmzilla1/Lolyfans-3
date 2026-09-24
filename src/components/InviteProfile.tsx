@@ -1,6 +1,6 @@
 "use client";
 
-import { IconUser, IconVerified } from "./Icons";
+import { IconAi, IconUser, IconVerified } from "./Icons";
 
 /** Invite page profile: avatar with an online dot and the inviter's name. */
 export default function InviteProfile({
@@ -35,6 +35,7 @@ export default function InviteProfile({
       <div className="text-center -mt-2">
         <h1 className="text-2xl font-bold flex items-center justify-center gap-1.5">
           {name}
+          <IconAi className="w-6 h-6 text-accent shrink-0" />
           {verified && <IconVerified className="w-5 h-5 text-[#1d9bf0]" />}
         </h1>
       </div>

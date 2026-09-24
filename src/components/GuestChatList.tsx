@@ -4,7 +4,7 @@ import { useState } from "react";
 import { mediaUrl, formatTime } from "@/lib/utils";
 import { useNavigate } from "@/lib/navPending";
 import type { GuestChatRow } from "@/lib/guestBootstrapCache";
-import { IconUser, IconVerified } from "./Icons";
+import { IconAi, IconUser, IconVerified } from "./Icons";
 
 /**
  * The fan's conversations — one per creator they subscribed to or follow.
@@ -78,6 +78,7 @@ export default function GuestChatList({ chats }: { chats: GuestChatRow[] }) {
               <div className="flex items-center gap-2">
                 <p className="font-semibold text-[15px] truncate flex items-center gap-1">
                   <span className="truncate">{chat.ownerName}</span>
+                  <IconAi className="w-5 h-5 text-accent shrink-0" />
                   {chat.verified && (
                     <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />
                   )}
