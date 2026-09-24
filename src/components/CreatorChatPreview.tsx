@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { mediaUrl } from "@/lib/utils";
+import { subCaption, type SubPlan } from "@/lib/subscriptionPlan";
 import { JoinChannelSheet } from "./InviteSubscribeCta";
 import { IconAi, IconSend, IconUser, IconVerified } from "./Icons";
 
@@ -17,7 +18,10 @@ export default function CreatorChatPreview({
   avatarPath,
   verified,
   intro,
+  plan,
   inviteCode,
+  cardOnly = false,
+  autoOpen = false,
 }: {
   ownerId: string;
   name: string;
@@ -25,13 +29,30 @@ export default function CreatorChatPreview({
   verified: boolean;
   /** The creator's opening line (bio, or a default greeting). */
   intro: string;
+  /** The creator's subscription plan (price 0 = free). */
+  plan: SubPlan;
   /** Active invite code to register with; null = not accepting new fans. */
   inviteCode: string | null;
+  /** Fan already has an account here but no card yet (paid profile). */
+  cardOnly?: boolean;
+  /** Open the sheet on load (sent here by the paywall). */
+  autoOpen?: boolean;
 }) {
   // The chat shows first; the sign-up sheet only appears when they try to
-  // talk (message box, send button or Start chatting).
-  const [open, setOpen] = useState(false);
-  const canJoin = !!inviteCode;
+  // talk (message box, send button or Start chatting) — unless the paywall
+  // sent them here to add their card.
+  const [open, setOpen] = useState(autoOpen);
+  // The card step doesn't need an invite code; a fresh sign-up does.
+  const canJoin = cardOnly || !!inviteCode;
+  const paid = plan.priceCents > 0;
+  const caption = subCaption(plan);
+  const prompt = !canJoin
+    ? `${name} isn't accepting new fans right now.`
+    : cardOnly
+      ? `Add your card to start chatting with ${name}.`
+      : paid
+        ? `Create your account and subscribe to start chatting with ${name}.`
+        : `Create your free account to start chatting with ${name}.`;
 
   function openSheet() {
     if (canJoin) setOpen(true);
@@ -95,19 +116,18 @@ export default function CreatorChatPreview({
         </div>
 
         <div className="pt-6 flex flex-col items-center text-center gap-3">
-          <p className="text-sm text-muted max-w-xs">
-            {canJoin
-              ? `Create your free account to start chatting with ${name}.`
-              : `${name} isn't accepting new fans right now.`}
-          </p>
+          <p className="text-sm text-muted max-w-xs">{prompt}</p>
           {canJoin && (
             <button
               type="button"
               onClick={openSheet}
               className="px-6 py-3 rounded-full bg-accent text-white text-sm font-semibold active:opacity-80 transition-opacity"
             >
-              Start chatting
+              {cardOnly ? "Add your card" : paid ? "Subscribe" : "Start chatting"}
             </button>
+          )}
+          {canJoin && paid && caption && (
+            <p className="text-xs text-muted">{caption}</p>
           )}
         </div>
       </main>
@@ -128,11 +148,13 @@ export default function CreatorChatPreview({
         </button>
       </div>
 
-      {open && inviteCode && (
+      {open && canJoin && (
         <JoinChannelSheet
-          code={inviteCode}
+          code={inviteCode ?? ""}
           ownerId={ownerId}
           ownerName={name}
+          plan={plan}
+          startAtCard={cardOnly}
           onClose={() => setOpen(false)}
         />
       )}

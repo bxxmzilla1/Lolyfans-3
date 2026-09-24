@@ -3,7 +3,9 @@ import { notFound, redirect } from "next/navigation";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChats, ownerProfiles } from "@/lib/guest";
 import { applyUserGeoTokens, visitorGeoParts } from "@/lib/geo";
+import { guestAccessDestination } from "@/lib/subscriptionAccess";
 import CreatorChatPreview from "@/components/CreatorChatPreview";
+import SubscribeReturn from "@/components/SubscribeReturn";
 
 export const dynamic = "force-dynamic";
 
@@ -12,24 +14,45 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 /**
  * Opening a creator goes straight to their chat. Fans with an account land
  * in their conversation with this creator (started on the spot if needed);
- * visitors see the locked chat and must finish signing up to talk.
+ * visitors see the locked chat and must finish signing up to talk. On paid
+ * profiles, fans who signed up but haven't added a card see the chat locked
+ * with the card step instead.
  */
 export default async function CreatorPage({
   params,
   searchParams,
 }: {
   params: Promise<{ ownerId: string }>;
-  searchParams: Promise<{ via?: string }>;
+  searchParams: Promise<{
+    via?: string;
+    subscribe?: string;
+    subscribed?: string;
+    sub?: string;
+    pi?: string;
+  }>;
 }) {
   const [{ ownerId }, query] = await Promise.all([params, searchParams]);
   if (!UUID_RE.test(ownerId)) notFound();
 
   const requestHeaders = await headers();
   const chats = await guestChats(requestHeaders);
+  const chatWithOwner = chats.find((c) => c.owner_id === ownerId) ?? null;
 
-  // Already a fan of someone: open (or start) the chat with this creator.
-  // The route handler sets the session cookie and lands on /chat.
-  if (chats.length > 0) {
+  // Ids Stripe appends to the return URL after a 3-D Secure redirect.
+  const returnSubId = query.subscribed === "1" ? query.sub : undefined;
+  const returnPiId = query.subscribed === "1" ? query.pi : undefined;
+  const finishing = !!(returnSubId || returnPiId) && !!chatWithOwner;
+
+  // Fan of this creator with access → their chat. The route handler sets the
+  // session cookie and lands on /chat.
+  let needsCard = false;
+  if (chatWithOwner && !finishing) {
+    const access = await guestAccessDestination(chatWithOwner.id, ownerId);
+    if (access.allowed) redirect(`/api/guest/open?ownerId=${ownerId}`);
+    needsCard = true;
+  } else if (!chatWithOwner && chats.length > 0) {
+    // Fan of someone else: start the chat with this creator. If the profile
+    // is paid, /chat sends them back here with the card step open.
     redirect(`/api/guest/open?ownerId=${ownerId}`);
   }
 
@@ -71,13 +94,27 @@ export default async function CreatorPage({
     : `Hey, welcome to my private chat. Sign up and say hi!`;
 
   return (
-    <CreatorChatPreview
-      ownerId={ownerId}
-      name={profile.name}
-      avatarPath={profile.avatarPath}
-      verified={profile.verified}
-      intro={intro}
-      inviteCode={viaInvite?.code ?? latestInvite?.code ?? null}
-    />
+    <>
+      {finishing && (
+        <SubscribeReturn
+          ownerId={ownerId}
+          subscriptionId={returnSubId}
+          paymentIntentId={returnPiId}
+        />
+      )}
+      <CreatorChatPreview
+        ownerId={ownerId}
+        name={profile.name}
+        avatarPath={profile.avatarPath}
+        verified={profile.verified}
+        intro={intro}
+        plan={profile.plan}
+        inviteCode={viaInvite?.code ?? latestInvite?.code ?? null}
+        // Signed up, no card yet (paid profile): the sheet opens at the card
+        // step — immediately when sent here by the paywall (?subscribe=1).
+        cardOnly={needsCard}
+        autoOpen={needsCard && query.subscribe === "1"}
+      />
+    </>
   );
 }

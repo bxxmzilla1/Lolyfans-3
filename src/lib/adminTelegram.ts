@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getSiteSetting, setSiteSetting } from "@/lib/siteSettings";
+import { subPlanFromMetadata, subPriceLabel, type SubPlan } from "@/lib/subscriptionPlan";
 
 /**
  * Platform admin bot: anyone who sends the admin code to the Telegram bot
@@ -117,11 +118,18 @@ function esc(s: string | null | undefined): string {
     .replace(/>/g, "&gt;");
 }
 
-async function creatorName(ownerId: string): Promise<string> {
+function planLine(plan: SubPlan): string {
+  if (plan.priceCents <= 0) return "Free profile";
+  if (plan.interval === "lifetime") return `Lifetime · ${subPriceLabel(plan)}`;
+  const trial = plan.trialDays > 0 ? `${plan.trialDays}-day free trial · then ` : "";
+  return `${trial}${subPriceLabel(plan)}`;
+}
+
+async function creatorInfo(ownerId: string): Promise<{ name: string; plan: SubPlan }> {
   const { data } = await supabaseAdmin().auth.admin.getUserById(ownerId);
   const meta = (data?.user?.user_metadata ?? {}) as Record<string, unknown>;
   const display = typeof meta.display_name === "string" ? meta.display_name.trim() : "";
-  return display || "Unnamed creator";
+  return { name: display || "Unnamed creator", plan: subPlanFromMetadata(meta) };
 }
 
 type FanRow = {
@@ -184,13 +192,14 @@ export async function notifyCardVerified(chatId: string, ownerId: string) {
   try {
     const ctx = await fanContext(chatId);
     if (!ctx) return;
-    const name = await creatorName(ownerId);
+    const { name, plan } = await creatorInfo(ownerId);
     const others = ctx.creatorIds.filter((id) => id !== ownerId).length;
     const text = [
       "💳 <b>New card verified</b>",
       fanLines(ctx.chat),
       "",
       `⭐ Creator: <b>${esc(name)}</b>`,
+      `🧾 Plan: ${esc(planLine(plan))}`,
       others > 0 ? `🔗 Also chatting with ${others} other creator${others === 1 ? "" : "s"}` : null,
     ]
       .filter((l) => l !== null)
@@ -213,13 +222,14 @@ export async function notifySignup(
   try {
     const ctx = await fanContext(chatId);
     if (!ctx) return;
-    const name = await creatorName(ownerId);
+    const { name, plan } = await creatorInfo(ownerId);
     const link = invite?.label || invite?.code;
     const text = [
       "🆕 <b>New signup</b>",
       fanLines(ctx.chat),
       "",
       `⭐ Creator: <b>${esc(name)}</b>`,
+      `🧾 Plan: ${esc(planLine(plan))}`,
       link ? `🔗 Link: ${esc(link)}` : null,
     ]
       .filter((l) => l !== null)
@@ -247,10 +257,11 @@ export async function notifyCrossCreatorSubscribe(
   try {
     const ctx = await fanContext(chatId);
     if (!ctx) return;
-    const [name, sourceName] = await Promise.all([
-      creatorName(ownerId),
-      sourceOwnerId ? creatorName(sourceOwnerId) : Promise.resolve(null),
+    const [{ name, plan }, source] = await Promise.all([
+      creatorInfo(ownerId),
+      sourceOwnerId ? creatorInfo(sourceOwnerId) : Promise.resolve(null),
     ]);
+    const sourceName = source?.name ?? null;
     const total = ctx.allCreatorIds.length;
     const text = [
       cardCopied
@@ -259,6 +270,7 @@ export async function notifyCrossCreatorSubscribe(
       fanLines(ctx.chat),
       "",
       `⭐ New creator: <b>${esc(name)}</b>`,
+      `🧾 Plan: ${esc(planLine(plan))}`,
       sourceName
         ? cardCopied
           ? `💳 Card verified with: ${esc(sourceName)}`
