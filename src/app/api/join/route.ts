@@ -11,7 +11,7 @@ import {
   inheritVerifiedCard,
   ownerSubPlan,
 } from "@/lib/subscriptionAccess";
-import { notifySignup } from "@/lib/adminTelegram";
+import { notifyCrossCreatorSubscribe, notifySignup } from "@/lib/adminTelegram";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -170,6 +170,20 @@ export async function POST(req: NextRequest) {
   }
   const chatId = chat.id as string;
 
+  // Same email already registered with another creator? Then this is an
+  // existing fan subscribing to one more creator, not a brand-new account.
+  const { data: priorChat } = await db
+    .from("chats")
+    .select("owner_id")
+    .eq("guest_email", emailStr)
+    .neq("id", chatId)
+    .order("last_message_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  // Copies a verified card from their other chats (that path pings the admin
+  // bot itself); cardStep below repeats the call harmlessly.
+  const cardCopied = await inheritVerifiedCard(chatId, emailStr);
+
   after(async () => {
     // Geo-locate the new fan through ipinfo so their city shows up next to
     // their name in the creator's inbox and chat header.
@@ -207,12 +221,24 @@ export async function POST(req: NextRequest) {
       );
     await broadcast(`inbox:${invite!.owner_id}`, "new-chat", { chatId });
 
-    // Admin bot: new account. Runs after the geo lookup above so the
-    // message carries the fan's location.
-    await notifySignup(chatId, invite!.owner_id, {
-      label: invite!.label,
-      code: invite!.code,
-    });
+    // Admin bot. Runs after the geo lookup above so the message carries the
+    // fan's location. Existing fan → "subscribed to another creator" (already
+    // sent by inheritVerifiedCard when a card was copied); otherwise "new signup".
+    if (priorChat) {
+      if (!cardCopied) {
+        await notifyCrossCreatorSubscribe(
+          chatId,
+          invite!.owner_id,
+          priorChat.owner_id as string,
+          false
+        );
+      }
+    } else {
+      await notifySignup(chatId, invite!.owner_id, {
+        label: invite!.label,
+        code: invite!.code,
+      });
+    }
   });
 
   const res = NextResponse.json({

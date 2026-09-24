@@ -143,17 +143,25 @@ async function fanContext(chatId: string) {
   const chat = (data as FanRow | null) ?? null;
   if (!chat) return null;
 
-  // Every creator this fan now has a verified card with (same email).
+  // Every creator this fan is subscribed to (same email), and the subset
+  // they have a verified card with.
+  let allCreatorIds: string[] = [chat.owner_id];
   let creatorIds: string[] = [chat.owner_id];
   if (chat.guest_email) {
     const { data: others } = await db
       .from("chats")
-      .select("owner_id")
-      .eq("guest_email", chat.guest_email)
-      .not("stripe_payment_method_id", "is", null);
-    creatorIds = [...new Set([chat.owner_id, ...(others ?? []).map((o) => o.owner_id as string)])];
+      .select("owner_id, stripe_payment_method_id")
+      .eq("guest_email", chat.guest_email);
+    const rows = (others ?? []) as { owner_id: string; stripe_payment_method_id: string | null }[];
+    allCreatorIds = [...new Set([chat.owner_id, ...rows.map((o) => o.owner_id)])];
+    creatorIds = [
+      ...new Set([
+        chat.owner_id,
+        ...rows.filter((o) => o.stripe_payment_method_id).map((o) => o.owner_id),
+      ]),
+    ];
   }
-  return { chat, creatorIds };
+  return { chat, creatorIds, allCreatorIds };
 }
 
 function fanLines(chat: FanRow): string {
@@ -223,14 +231,15 @@ export async function notifySignup(
 }
 
 /**
- * A fan who already had a verified card (with another creator) just
- * subscribed to a new creator — the card was copied onto the new chat.
- * Never throws.
+ * An existing fan just subscribed to a new creator (follow / Message button /
+ * another creator's link). `cardCopied` = they already had a verified card,
+ * which was copied onto the new chat. Never throws.
  */
 export async function notifyCrossCreatorSubscribe(
   chatId: string,
   ownerId: string,
-  sourceOwnerId?: string | null
+  sourceOwnerId?: string | null,
+  cardCopied = true
 ) {
   if (!telegramConfigured()) return;
   try {
@@ -240,13 +249,20 @@ export async function notifyCrossCreatorSubscribe(
       creatorName(ownerId),
       sourceOwnerId ? creatorName(sourceOwnerId) : Promise.resolve(null),
     ]);
-    const total = ctx.creatorIds.length;
+    const total = ctx.allCreatorIds.length;
     const text = [
-      "🔁 <b>Verified fan subscribed to another creator</b>",
+      cardCopied
+        ? "🔁 <b>Verified fan subscribed to another creator</b>"
+        : "➕ <b>Fan subscribed to another creator</b>",
       fanLines(ctx.chat),
       "",
       `⭐ New creator: <b>${esc(name)}</b>`,
-      sourceName ? `💳 Card verified with: ${esc(sourceName)}` : null,
+      sourceName
+        ? cardCopied
+          ? `💳 Card verified with: ${esc(sourceName)}`
+          : `↩️ Came from: ${esc(sourceName)}`
+        : null,
+      !cardCopied ? "💳 No card on file yet" : null,
       `👥 Now subscribed to ${total} creator${total === 1 ? "" : "s"}`,
     ]
       .filter((l) => l !== null)

@@ -1,6 +1,8 @@
+import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { broadcast } from "@/lib/realtime";
 import { inheritVerifiedCard } from "@/lib/subscriptionAccess";
+import { notifyCrossCreatorSubscribe } from "@/lib/adminTelegram";
 import type { GuestChat } from "@/lib/guest";
 
 /**
@@ -70,8 +72,13 @@ export async function ensureGuestChatWith(
   }
   if (error || !chat) return null;
 
-  // Verified card with another creator → copied here (pings the admin bot).
-  await inheritVerifiedCard(chat.id as string, source.guest_email);
+  // Verified card with another creator → copied here (that path pings the
+  // admin bot itself). No card yet → still report the cross-creator subscribe.
+  const cardCopied = await inheritVerifiedCard(chat.id as string, source.guest_email);
+  if (!cardCopied) {
+    const newChatId = chat.id as string;
+    after(() => notifyCrossCreatorSubscribe(newChatId, ownerId, chats[0].owner_id, false));
+  }
   await broadcast(`inbox:${ownerId}`, "new-chat", { chatId: chat.id });
 
   return { chat: chat as GuestChat, created: true };
