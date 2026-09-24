@@ -8,8 +8,8 @@ import { IconSend, IconUser, IconVerified } from "./Icons";
 /**
  * What a visitor without an account sees when they open a creator: the
  * creator's chat, locked. The header and message box look like the real
- * chat; anything they tap opens the sign-up sheet, and finishing it drops
- * them straight into the conversation.
+ * chat and load without any popup; trying to write opens the sign-up sheet,
+ * and finishing it drops them straight into the conversation.
  */
 export default function CreatorChatPreview({
   ownerId,
@@ -28,7 +28,9 @@ export default function CreatorChatPreview({
   /** Active invite code to register with; null = not accepting new fans. */
   inviteCode: string | null;
 }) {
-  const [open, setOpen] = useState(!!inviteCode);
+  // The chat shows first; the sign-up sheet only appears when they try to
+  // talk (message box, send button or Start chatting).
+  const [open, setOpen] = useState(false);
   const canJoin = !!inviteCode;
 
   function openSheet() {
