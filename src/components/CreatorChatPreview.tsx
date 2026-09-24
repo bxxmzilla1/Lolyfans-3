@@ -4,7 +4,7 @@ import { useState } from "react";
 import { mediaUrl } from "@/lib/utils";
 import { subCaption, type SubPlan } from "@/lib/subscriptionPlan";
 import { JoinChannelSheet } from "./InviteSubscribeCta";
-import { IconAi, IconSend, IconUser, IconVerified } from "./Icons";
+import { IconSend, IconUser, IconVerified } from "./Icons";
 
 /**
  * What a visitor without an account sees when they open a creator: the
@@ -81,13 +81,10 @@ export default function CreatorChatPreview({
         <div className="min-w-0">
           <p className="font-bold text-[15px] leading-tight flex items-center gap-1">
             <span className="truncate">{name}</span>
-            <IconAi className="w-5 h-5 text-accent shrink-0" />
+            <IconVerified className="w-5 h-5 text-accent shrink-0" />
             {verified && (
-              <span className="flex items-center gap-0.5 shrink-0">
-                <IconVerified className="w-4 h-4 text-sky-500" />
-                <span className="text-[10px] font-semibold text-sky-500">
-                  ID Verified
-                </span>
+              <span className="text-[10px] font-semibold text-accent shrink-0">
+                ID Verified
               </span>
             )}
           </p>

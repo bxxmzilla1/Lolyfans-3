@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Portal from "./Portal";
-import { IconAi, IconGear, IconUser, IconVerified } from "./Icons";
+import { IconGear, IconUser, IconVerified } from "./Icons";
 
 type Subscription = {
   ownerId: string;
@@ -164,10 +164,7 @@ export default function GuestSubscriptions() {
               <div className="flex-1 min-w-0">
                 <p className="font-semibold text-sm flex items-center gap-1 min-w-0">
                   <span className="truncate">{sub.name}</span>
-                  <IconAi className="w-5 h-5 text-accent shrink-0" />
-                  {sub.verified && (
-                    <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />
-                  )}
+                  <IconVerified className="w-5 h-5 text-accent shrink-0" />
                 </p>
                 <p className="text-xs text-muted truncate">
                   {sub.status === "trialing"

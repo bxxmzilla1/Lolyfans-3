@@ -261,9 +261,7 @@ export default function HomeRedirectManager() {
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold truncate">
                       {creator.name}
-                      {creator.verified && (
-                        <IconVerified className="inline w-4 h-4 ml-1 -mt-0.5 text-sky-500" />
-                      )}
+                      <IconVerified className="inline w-4 h-4 ml-1 -mt-0.5 text-accent" />
                     </span>
                     <span className="block text-xs text-muted truncate">
                       {host()} opens this creator&apos;s chat

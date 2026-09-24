@@ -5,7 +5,7 @@ import Link from "next/link";
 import { mediaUrl } from "@/lib/utils";
 import { supabaseBrowser } from "@/lib/supabase/browser";
 import { useNavigate } from "@/lib/navPending";
-import { IconAi, IconBack, IconPhone, IconUser, IconVerified } from "./Icons";
+import { IconBack, IconPhone, IconUser, IconVerified } from "./Icons";
 
 /**
  * Guest-side chat header: the owner's profile with an online / offline
@@ -85,13 +85,10 @@ export default function GuestChatHeader({
       <div className="min-w-0">
         <p className="font-bold text-[15px] leading-tight flex items-center gap-1">
           <span className="truncate">{name}</span>
-          <IconAi className="w-5 h-5 text-accent shrink-0" />
+          <IconVerified className="w-5 h-5 text-accent shrink-0" />
           {verified && (
-            <span className="flex items-center gap-0.5 shrink-0">
-              <IconVerified className="w-4 h-4 text-sky-500" />
-              <span className="text-[10px] font-semibold text-sky-500">
-                ID Verified
-              </span>
+            <span className="text-[10px] font-semibold text-accent shrink-0">
+              ID Verified
             </span>
           )}
         </p>
