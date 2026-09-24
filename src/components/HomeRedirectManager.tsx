@@ -2,7 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { PROFILE_DESTINATION, type Invite } from "@/lib/invites";
-import { IconCheck, IconHome, IconLink } from "./Icons";
+import type { CreatorCardData } from "@/lib/creatorDirectory";
+import { mediaUrl } from "@/lib/utils";
+import { IconCheck, IconHome, IconLink, IconUser, IconVerified } from "./Icons";
+
+/** What the bare domain currently does. */
+type Choice =
+  | { kind: "off" }
+  | { kind: "creator"; id: string }
+  | { kind: "invite"; id: string };
+
+function sameChoice(a: Choice, b: Choice) {
+  return a.kind === b.kind && ("id" in a ? a.id : null) === ("id" in b ? b.id : null);
+}
 
 const MIGRATION_SQL = `create table if not exists site_settings (
   key text primary key,
@@ -27,15 +39,16 @@ function destinationLabel(url: string | null | undefined): string {
 }
 
 /**
- * Settings → Main Page Redirect: pick the invite link that visitors of the
- * bare domain are forwarded to (or turn it off to show the public feed).
+ * Settings → Main Page: what visitors of the bare domain see — a specific
+ * creator's chat, one of your invite links, or the creator cards (off).
  */
 export default function HomeRedirectManager() {
   const [invites, setInvites] = useState<Invite[]>([]);
-  const [current, setCurrent] = useState<string | null>(null);
+  const [creators, setCreators] = useState<CreatorCardData[]>([]);
+  const [current, setCurrent] = useState<Choice>({ kind: "off" });
   const [loading, setLoading] = useState(true);
   const [needsMigration, setNeedsMigration] = useState(false);
-  const [saving, setSaving] = useState<string | "off" | null>(null);
+  const [saving, setSaving] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -49,7 +62,14 @@ export default function HomeRedirectManager() {
       .then(([inv, cfg]) => {
         if (cancelled) return;
         setInvites((inv.invites ?? []) as Invite[]);
-        setCurrent(cfg.inviteId ?? null);
+        setCreators((cfg.creators ?? []) as CreatorCardData[]);
+        setCurrent(
+          cfg.creatorId
+            ? { kind: "creator", id: cfg.creatorId }
+            : cfg.inviteId
+              ? { kind: "invite", id: cfg.inviteId }
+              : { kind: "off" }
+        );
         setNeedsMigration(!!cfg.needsMigration);
       })
       .catch(() => {
@@ -63,19 +83,22 @@ export default function HomeRedirectManager() {
     };
   }, []);
 
-  async function choose(inviteId: string | null) {
+  async function choose(next: Choice) {
     if (saving) return;
     const prev = current;
-    setSaving(inviteId ?? "off");
+    setSaving(true);
     setError("");
-    setCurrent(inviteId); // optimistic
+    setCurrent(next); // optimistic
     const res = await fetch("/api/site/home-redirect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ inviteId }),
+      body: JSON.stringify({
+        creatorId: next.kind === "creator" ? next.id : null,
+        inviteId: next.kind === "invite" ? next.id : null,
+      }),
     }).catch(() => null);
     const data = await res?.json().catch(() => ({}));
-    setSaving(null);
+    setSaving(false);
     if (!res?.ok) {
       setCurrent(prev);
       if (data?.needsMigration) setNeedsMigration(true);
@@ -92,35 +115,67 @@ export default function HomeRedirectManager() {
     setTimeout(() => setCopied(false), 1500);
   }
 
-  const active = invites.find((i) => i.id === current) ?? null;
+  const activeInvite =
+    current.kind === "invite" ? invites.find((i) => i.id === current.id) ?? null : null;
+  const activeCreator =
+    current.kind === "creator"
+      ? creators.find((c) => c.ownerId === current.id) ?? null
+      : null;
+
+  const optionClass = (selected: boolean, dim = false) =>
+    `w-full text-left rounded-2xl border p-4 flex items-center gap-3 transition-colors disabled:opacity-60 ${
+      selected ? "border-accent ring-1 ring-accent bg-card" : "border-line bg-card hover:bg-card2/60"
+    } ${dim ? "opacity-50" : ""}`;
+  const radio = (selected: boolean) => (
+    <span
+      className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+        selected ? "bg-accent border-accent" : "border-line"
+      }`}
+    >
+      {selected && <IconCheck className="w-3 h-3 text-white" />}
+    </span>
+  );
 
   return (
     <div className="space-y-4 max-w-2xl">
       <div className="rounded-2xl border border-line bg-card p-4 space-y-2">
         <p className="text-sm font-semibold flex items-center gap-1.5">
-          <IconHome className="w-4 h-4 text-accent" /> Main page redirect
+          <IconHome className="w-4 h-4 text-accent" /> Main page
         </p>
         <p className="text-xs text-muted">
-          Send everyone who opens <span className="font-mono">{host()}</span>{" "}
-          straight to one of your invite links — no home feed, no extra tap.
-          Signed-in fans and your own creator login are never redirected, and
-          every hit still counts as a click on that link.
+          Choose what everyone who opens <span className="font-mono">{host()}</span>{" "}
+          sees: one creator&apos;s chat (visitors can start chatting right away
+          and sign up when they write), one of your invite links, or the
+          creator cards. Signed-in fans and creator logins are never redirected.
         </p>
         <p className="text-xs">
-          {active ? (
+          {activeCreator ? (
+            <>
+              <span className="text-muted">Currently: </span>
+              <span className="font-mono">{host()}</span>
+              <span className="text-muted"> → </span>
+              {activeCreator.name}&apos;s chat
+            </>
+          ) : current.kind === "creator" ? (
+            <>
+              <span className="text-muted">Currently: </span>
+              <span className="font-mono">{host()}</span>
+              <span className="text-muted"> → a creator&apos;s chat</span>
+            </>
+          ) : activeInvite ? (
             <>
               <span className="text-muted">Currently: </span>
               <span className="font-mono">{host()}</span>
               <span className="text-muted"> → </span>
               <span className="font-mono">
-                {host()}/{active.code}
+                {host()}/{activeInvite.code}
               </span>
               <span className="text-muted"> → </span>
-              {destinationLabel(active.redirect_url)}
+              {destinationLabel(activeInvite.redirect_url)}
             </>
           ) : (
             <span className="text-muted">
-              Currently off — visitors see the public home feed.
+              Currently off — visitors see the creator cards.
             </span>
           )}
           {savedFlash && (
@@ -162,50 +217,84 @@ export default function HomeRedirectManager() {
         <ul className="space-y-2">
           <li>
             <button
-              onClick={() => choose(null)}
-              disabled={!!saving || needsMigration}
-              className={`w-full text-left rounded-2xl border p-4 flex items-center gap-3 transition-colors disabled:opacity-60 ${
-                current === null
-                  ? "border-accent ring-1 ring-accent bg-card"
-                  : "border-line bg-card hover:bg-card2/60"
-              }`}
+              onClick={() => choose({ kind: "off" })}
+              disabled={saving || needsMigration}
+              className={optionClass(current.kind === "off")}
             >
-              <span
-                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                  current === null ? "bg-accent border-accent" : "border-line"
-                }`}
-              >
-                {current === null && <IconCheck className="w-3 h-3 text-white" />}
-              </span>
+              {radio(current.kind === "off")}
               <span className="min-w-0">
                 <span className="block text-sm font-semibold">Off</span>
                 <span className="block text-xs text-muted">
-                  Show the public home feed on {host()}
+                  Show the creator cards on {host()}
                 </span>
               </span>
             </button>
           </li>
 
+          <li className="pt-2">
+            <p className="text-xs font-semibold text-muted uppercase tracking-wide px-1">
+              Show a creator&apos;s chat
+            </p>
+          </li>
+          {creators.map((creator) => {
+            const selected = sameChoice(current, { kind: "creator", id: creator.ownerId });
+            return (
+              <li key={creator.ownerId}>
+                <button
+                  onClick={() => choose({ kind: "creator", id: creator.ownerId })}
+                  disabled={saving || needsMigration}
+                  className={optionClass(selected)}
+                >
+                  {radio(selected)}
+                  {creator.avatarPath ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={mediaUrl(creator.avatarPath)}
+                      alt=""
+                      className="w-9 h-9 rounded-full object-cover bg-card2 shrink-0"
+                    />
+                  ) : (
+                    <span className="w-9 h-9 rounded-full bg-card2 flex items-center justify-center shrink-0">
+                      <IconUser className="w-4 h-4 text-muted" />
+                    </span>
+                  )}
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-sm font-semibold truncate">
+                      {creator.name}
+                      {creator.verified && (
+                        <IconVerified className="inline w-4 h-4 ml-1 -mt-0.5 text-sky-500" />
+                      )}
+                    </span>
+                    <span className="block text-xs text-muted truncate">
+                      {host()} opens this creator&apos;s chat
+                    </span>
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+          {creators.length === 0 && (
+            <li className="text-xs text-muted px-1">
+              No creators with an active invite link yet — a creator needs one
+              so visitors can sign up from their chat.
+            </li>
+          )}
+
+          <li className="pt-2">
+            <p className="text-xs font-semibold text-muted uppercase tracking-wide px-1">
+              Forward to one of your invite links
+            </p>
+          </li>
           {invites.map((invite) => {
-            const selected = current === invite.id;
+            const selected = sameChoice(current, { kind: "invite", id: invite.id });
             return (
               <li key={invite.id}>
                 <button
-                  onClick={() => choose(invite.id)}
-                  disabled={!!saving || needsMigration}
-                  className={`w-full text-left rounded-2xl border p-4 flex items-center gap-3 transition-colors disabled:opacity-60 ${
-                    selected
-                      ? "border-accent ring-1 ring-accent bg-card"
-                      : "border-line bg-card hover:bg-card2/60"
-                  } ${invite.active ? "" : "opacity-50"}`}
+                  onClick={() => choose({ kind: "invite", id: invite.id })}
+                  disabled={saving || needsMigration}
+                  className={optionClass(selected, !invite.active)}
                 >
-                  <span
-                    className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                      selected ? "bg-accent border-accent" : "border-line"
-                    }`}
-                  >
-                    {selected && <IconCheck className="w-3 h-3 text-white" />}
-                  </span>
+                  {radio(selected)}
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-semibold truncate">
                       {invite.label || "Invite link"}
@@ -228,7 +317,7 @@ export default function HomeRedirectManager() {
           })}
 
           {invites.length === 0 && (
-            <li className="text-sm text-muted text-center py-6">
+            <li className="text-xs text-muted px-1">
               No invite links yet — create one in the Invite links tab first.
             </li>
           )}

@@ -2,6 +2,8 @@ import { supabaseAdmin } from "./supabase/admin";
 
 /** Key of the invite the bare domain ("/") redirects visitors to. */
 export const HOME_REDIRECT_KEY = "home_redirect_invite_id";
+/** Key of the creator whose chat the bare domain ("/") shows visitors. */
+export const HOME_CREATOR_KEY = "home_creator_owner_id";
 
 /** Postgres "relation does not exist" — site_settings migration not run yet. */
 export function isMissingTable(error: { code?: string } | null): boolean {
@@ -50,4 +52,15 @@ export async function homeRedirectInviteCode(): Promise<string | null> {
     .eq("id", value)
     .maybeSingle();
   return data?.active ? data.code : null;
+}
+
+/**
+ * Creator whose chat screen the bare domain should open, or null when the
+ * feature is off, the table is missing, or that creator account is gone.
+ */
+export async function homeCreatorOwnerId(): Promise<string | null> {
+  const { value } = await getSiteSetting(HOME_CREATOR_KEY);
+  if (!value) return null;
+  const { data } = await supabaseAdmin().auth.admin.getUserById(value);
+  return data?.user ? value : null;
 }

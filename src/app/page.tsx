@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { getOwnerId, getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { homeRedirectInviteCode } from "@/lib/siteSettings";
+import { homeCreatorOwnerId, homeRedirectInviteCode } from "@/lib/siteSettings";
 import { listCreators } from "@/lib/creatorDirectory";
 import Logo from "@/components/Logo";
 import { CreatorGrid } from "@/components/CreatorCard";
@@ -30,10 +30,14 @@ export default async function Home({
     if (existing) redirect("/home");
   }
 
-  // "Main Page Redirect" (Settings): the bare domain sends everyone without
-  // an account straight to the chosen invite link — the invite route counts
-  // the click and forwards to its destination.
-  const homeRedirect = await homeRedirectInviteCode();
+  // "Main page" (Settings): the bare domain can open one creator's chat
+  // screen for everyone without an account, or send them to an invite link
+  // (the invite route counts the click and forwards to its destination).
+  const [homeCreator, homeRedirect] = await Promise.all([
+    homeCreatorOwnerId(),
+    homeRedirectInviteCode(),
+  ]);
+  if (homeCreator) redirect(`/p/${homeCreator}`);
   if (homeRedirect) redirect(`/i/${homeRedirect}`);
 
   // Returning guest without a usable cookie (none at all, or one pointing at a

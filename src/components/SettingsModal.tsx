@@ -402,7 +402,7 @@ export default function SettingsModal({ onClose }: { onClose: () => void }) {
                 : "bg-card2 border border-line text-muted hover:text-fg"
             }`}
           >
-            <IconHome className="w-3.5 h-3.5" /> Main Page Redirect
+            <IconHome className="w-3.5 h-3.5" /> Main Page
           </button>
           <button
             onClick={() => setSection("apikey")}
