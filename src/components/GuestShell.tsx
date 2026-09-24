@@ -1,22 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import GuestNav from "./GuestNav";
 import { GuestShellProvider } from "./GuestShellContext";
 import { useInboxSignals } from "@/lib/useInboxSignals";
 import GuestProfileEditor from "./GuestProfileEditor";
 import GuestChatList from "./GuestChatList";
-import FollowButton from "./FollowButton";
-import PostFeed from "./PostFeed";
+import { CreatorGrid } from "./CreatorCard";
 import {
   getGuestBootstrapCache,
   setGuestBootstrapCache,
   type GuestBootstrap,
 } from "@/lib/guestBootstrapCache";
-import { mediaUrl } from "@/lib/utils";
-import { IconUser, IconVerified } from "./Icons";
 
 type Bootstrap = GuestBootstrap;
 
@@ -73,62 +69,11 @@ function PanelShell({
   );
 }
 
+/** Home: every creator as a bubble card with a Message button. */
 function HomePanel({ data }: { data: Bootstrap["home"] }) {
   return (
     <PanelShell title="Home">
-      {data.suggestions.length > 0 && (
-        <section className="px-4 pt-4 space-y-2">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wide">
-            Suggested for you
-          </p>
-          {data.suggestions.map((s) => (
-            <div
-              key={s.ownerId}
-              className="flex items-center gap-3 rounded-2xl border border-line2 bg-card p-3"
-            >
-              <Link
-                href={`/p/${s.ownerId}`}
-                className="flex items-center gap-3 min-w-0 flex-1"
-              >
-                {s.avatarPath ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={mediaUrl(s.avatarPath)}
-                    alt={s.name}
-                    className="w-10 h-10 rounded-full object-cover bg-bg shrink-0"
-                  />
-                ) : (
-                  <div className="w-10 h-10 rounded-full bg-card2 flex items-center justify-center shrink-0">
-                    <IconUser className="w-5 h-5 text-muted" />
-                  </div>
-                )}
-                <span className="font-semibold text-sm truncate flex items-center gap-1">
-                  {s.name}
-                  {s.verified && (
-                    <IconVerified className="w-4 h-4 text-sky-500 shrink-0" />
-                  )}
-                </span>
-              </Link>
-              <FollowButton
-                ownerId={s.ownerId}
-                initialFollowing={false}
-                plan={s.plan}
-                small
-              />
-            </div>
-          ))}
-        </section>
-      )}
-      {data.posts.length === 0 ? (
-        <div className="px-6 py-16 text-center">
-          <p className="font-semibold mb-1">No posts yet</p>
-          <p className="text-sm text-muted">
-            Subscribe to creators to see their latest photos and videos here.
-          </p>
-        </div>
-      ) : (
-        <PostFeed posts={data.posts} canInteract={data.canInteract} />
-      )}
+      <CreatorGrid creators={data.creators} />
     </PanelShell>
   );
 }

@@ -96,9 +96,13 @@ export async function GET(
   // Legacy links created before redirect links became mandatory.
   if (!url) return blocked("This invite link is no longer active");
 
-  // "profile" destination: load the creator's public profile page.
+  // "profile" destination: the creator's chat sign-up screen. `via` keeps the
+  // sign-up attributed to this exact invite link.
   if (url === PROFILE_DESTINATION) {
-    return NextResponse.redirect(new URL(`/p/${invite!.owner_id}`, req.url), 307);
+    return NextResponse.redirect(
+      new URL(`/p/${invite!.owner_id}?via=${encodeURIComponent(invite!.code)}`, req.url),
+      307
+    );
   }
 
   return NextResponse.redirect(url, 307);

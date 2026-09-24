@@ -31,3 +31,28 @@ export async function POST(req: NextRequest) {
   );
   return res;
 }
+
+/**
+ * Link form of the above: `/api/guest/open?ownerId=…` switches the session
+ * to the fan's chat with that creator and lands on /chat. Used by the
+ * creator page, which can't set cookies itself. Fans without an account
+ * are sent back to the public home.
+ */
+export async function GET(req: NextRequest) {
+  const ownerId = req.nextUrl.searchParams.get("ownerId");
+  if (!ownerId) return NextResponse.redirect(new URL("/", req.url), 303);
+
+  const chats = await guestChats(req.headers);
+  const chat = chats.length
+    ? (await ensureGuestChatWith(ownerId, chats))?.chat
+    : null;
+  if (!chat) return NextResponse.redirect(new URL("/", req.url), 303);
+
+  const res = NextResponse.redirect(new URL("/chat", req.url), 303);
+  res.cookies.set(
+    GUEST_COOKIE,
+    createToken({ chatId: chat.id, name: chat.guest_name }),
+    cookieOptions
+  );
+  return res;
+}

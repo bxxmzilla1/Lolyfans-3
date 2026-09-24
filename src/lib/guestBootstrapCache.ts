@@ -1,5 +1,4 @@
-import type { FeedPost } from "@/components/PostFeed";
-import type { SubPlan } from "@/lib/subscriptionPlan";
+import type { CreatorCardData } from "@/lib/creatorDirectory";
 
 // The chat rows the guest bootstrap returns (the old guest chat list UI is
 // gone; the shell still uses these for unread badges and presence).
@@ -19,15 +18,7 @@ export type GuestBootstrap = {
   chats: GuestChatRow[];
   unread: number;
   home: {
-    suggestions: Array<{
-      ownerId: string;
-      name: string;
-      avatarPath: string | null;
-      verified: boolean;
-      plan?: SubPlan | null;
-    }>;
-    posts: FeedPost[];
-    canInteract: boolean;
+    creators: CreatorCardData[];
   };
 };
 
