@@ -13,6 +13,7 @@ import {
 } from "@/lib/subscriptionAccess";
 import { notifyCrossCreatorSubscribe, notifySignup } from "@/lib/adminTelegram";
 import { sendWelcomeMessage } from "@/lib/chatWelcome";
+import { headerGeo } from "@/lib/geo";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
@@ -183,7 +184,12 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   // Copies a verified card from their other chats (that path pings the admin
   // bot itself); cardStep below repeats the call harmlessly.
-  const cardCopied = await inheritVerifiedCard(chatId, emailStr);
+  // The creator's welcome message (Settings → Chat) is in place before the
+  // chat opens, so it's there on first paint.
+  const [cardCopied] = await Promise.all([
+    inheritVerifiedCard(chatId, emailStr),
+    sendWelcomeMessage(chatId, invite!.owner_id, headerGeo(req.headers)),
+  ]);
 
   after(async () => {
     // Geo-locate the new fan through ipinfo so their city shows up next to
@@ -201,13 +207,6 @@ export async function POST(req: NextRequest) {
           .eq("id", chatId);
       }
     }
-
-    // The creator's welcome message (Settings → Chat) becomes the first
-    // message of the new chat, with CITYUSER / COUNTRYUSER filled in.
-    await sendWelcomeMessage(chatId, invite!.owner_id, {
-      city: geo?.city ?? null,
-      country: geo?.country ?? country ?? null,
-    });
 
     await db
       .from("invites")

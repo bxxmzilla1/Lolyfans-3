@@ -109,6 +109,16 @@ export function applyUserGeoTokens(text: string, geo: GeoParts): string {
     .replace(/CITYUSER/g, geo.city || "your city");
 }
 
+/** City + full country name from Vercel's geo headers only — instant, no lookup. */
+export function headerGeo(h: Headers): { city: string | null; country: string | null } {
+  const city = h.get("x-vercel-ip-city");
+  const country = h.get("x-vercel-ip-country");
+  return {
+    city: city ? decodeURIComponent(city) : null,
+    country: country ? countryName(country) : null,
+  };
+}
+
 /**
  * The visitor's ISO country code ("PH") via ipinfo, falling back to Vercel's
  * geo header — used to pre-select the country in embedded payment forms.

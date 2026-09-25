@@ -17,6 +17,7 @@ import { lookupIp } from "@/lib/ipinfo";
 import { recordInviteEvent } from "@/lib/inviteEvents";
 import { broadcast } from "@/lib/realtime";
 import { sendWelcomeMessage } from "@/lib/chatWelcome";
+import { headerGeo } from "@/lib/geo";
 import { notifySignup } from "@/lib/adminTelegram";
 
 const CHAT_COLUMNS =
@@ -111,6 +112,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Could not start the chat" }, { status: 500 });
   }
   const chatId = chat.id as string;
+  await sendWelcomeMessage(chatId, ownerId, headerGeo(req.headers));
 
   after(async () => {
     const geo = ip ? await lookupIp(ip) : null;
@@ -123,10 +125,6 @@ export async function POST(req: NextRequest) {
         })
         .eq("id", chatId);
     }
-    await sendWelcomeMessage(chatId, ownerId, {
-      city: geo?.city ?? null,
-      country: geo?.country ?? country ?? null,
-    });
     await db
       .from("invites")
       .update({ uses: (invite!.uses ?? 0) + 1 })

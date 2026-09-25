@@ -41,16 +41,14 @@ export async function sendWelcomeMessage(
 ) {
   try {
     const db = supabaseAdmin();
-    const { data } = await db.auth.admin.getUserById(ownerId);
+    const [{ data }, { count }] = await Promise.all([
+      db.auth.admin.getUserById(ownerId),
+      db.from("messages").select("id", { count: "exact", head: true }).eq("chat_id", chatId),
+    ]);
     const welcome = welcomeFromMetadata(
       (data?.user?.user_metadata ?? {}) as Record<string, unknown>
     );
     if (!welcome.text && !welcome.mediaPath) return;
-
-    const { count } = await db
-      .from("messages")
-      .select("id", { count: "exact", head: true })
-      .eq("chat_id", chatId);
     if ((count ?? 0) > 0) return;
 
     const content = welcome.text
