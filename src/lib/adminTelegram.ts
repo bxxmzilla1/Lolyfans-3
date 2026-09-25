@@ -1,11 +1,11 @@
-import { supabaseAdmin } from "@/lib/supabase/admin";
+﻿import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getSiteSetting, setSiteSetting } from "@/lib/siteSettings";
 import { subPlanFromMetadata, subPriceLabel, type SubPlan } from "@/lib/subscriptionPlan";
 
 /**
  * Platform admin bot: anyone who sends the admin code to the Telegram bot
- * gets notified about every signup, first card verification and every time
- * a fan starts chatting with another creator — across ALL creators.
+ * gets notified about every signup, every USDC payment and every time a fan
+ * starts chatting with another creator — across ALL creators.
  *
  * Env:
  *   TELEGRAM_BOT_TOKEN      — from @BotFather (required for the bot to work)
@@ -108,7 +108,7 @@ export async function notifyAdmins(text: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Card-verification notifications
+// Fan notifications
 // ---------------------------------------------------------------------------
 
 function esc(s: string | null | undefined): string {
@@ -137,6 +137,7 @@ type FanRow = {
   owner_id: string;
   guest_name: string | null;
   guest_email: string | null;
+  guest_wallet: string | null;
   guest_city: string | null;
   guest_country: string | null;
 };
@@ -145,37 +146,32 @@ async function fanContext(chatId: string) {
   const db = supabaseAdmin();
   const { data } = await db
     .from("chats")
-    .select("id, owner_id, guest_name, guest_email, guest_city, guest_country")
+    .select("id, owner_id, guest_name, guest_email, guest_wallet, guest_city, guest_country")
     .eq("id", chatId)
     .maybeSingle();
   const chat = (data as FanRow | null) ?? null;
   if (!chat) return null;
 
-  // Every creator this fan is subscribed to (same email), and the subset
-  // they have a verified card with.
+  // Every creator this fan chats with (same wallet or email).
   let allCreatorIds: string[] = [chat.owner_id];
-  let creatorIds: string[] = [chat.owner_id];
-  if (chat.guest_email) {
-    const { data: others } = await db
-      .from("chats")
-      .select("owner_id, stripe_payment_method_id")
-      .eq("guest_email", chat.guest_email);
-    const rows = (others ?? []) as { owner_id: string; stripe_payment_method_id: string | null }[];
+  const filters: string[] = [];
+  if (chat.guest_wallet) filters.push(`guest_wallet.eq.${chat.guest_wallet}`);
+  if (chat.guest_email) filters.push(`guest_email.eq.${chat.guest_email}`);
+  if (filters.length) {
+    const { data: others } = await db.from("chats").select("owner_id").or(filters.join(","));
+    const rows = (others ?? []) as { owner_id: string }[];
     allCreatorIds = [...new Set([chat.owner_id, ...rows.map((o) => o.owner_id)])];
-    creatorIds = [
-      ...new Set([
-        chat.owner_id,
-        ...rows.filter((o) => o.stripe_payment_method_id).map((o) => o.owner_id),
-      ]),
-    ];
   }
-  return { chat, creatorIds, allCreatorIds };
+  return { chat, allCreatorIds };
 }
 
 function fanLines(chat: FanRow): string {
   const loc = [chat.guest_city, chat.guest_country].filter(Boolean).join(", ");
+  const id = chat.guest_wallet
+    ? `${chat.guest_wallet.slice(0, 4)}…${chat.guest_wallet.slice(-4)}`
+    : chat.guest_email;
   return [
-    `👤 <b>${esc(chat.guest_name || "Unknown")}</b>${chat.guest_email ? ` · ${esc(chat.guest_email)}` : ""}`,
+    `👤 <b>${esc(chat.guest_name || "Unknown")}</b>${id ? ` · ${esc(id)}` : ""}`,
     loc ? `📍 ${esc(loc)}` : null,
   ]
     .filter(Boolean)
@@ -183,30 +179,38 @@ function fanLines(chat: FanRow): string {
 }
 
 /**
- * A fan's card was saved for the first time (their first top-up / unlock
- * with a creator — one-tap purchases work from here on).
- * Call AFTER the card is saved on the chat. Never throws.
+ * A fan paid in USDC (token pack, coupon or subscription period). Never
+ * throws.
  */
-export async function notifyCardVerified(chatId: string, ownerId: string) {
+export async function notifyCryptoPayment(
+  chatId: string,
+  amountCents: number,
+  kind: string,
+  tokens: number
+) {
   if (!telegramConfigured()) return;
   try {
     const ctx = await fanContext(chatId);
     if (!ctx) return;
-    const { name, plan } = await creatorInfo(ownerId);
-    const others = ctx.creatorIds.filter((id) => id !== ownerId).length;
+    const { name, plan } = await creatorInfo(ctx.chat.owner_id);
+    const dollars = `$${(amountCents / 100).toFixed(2).replace(/\.00$/, "")}`;
+    const what =
+      kind === "subscription"
+        ? "Subscription period"
+        : kind === "coupon"
+          ? `Coupon · ${tokens} Tokens`
+          : `Token pack · ${tokens} Tokens`;
     const text = [
-      "💳 <b>New card verified</b>",
+      `💰 <b>USDC payment · ${esc(dollars)}</b>`,
       fanLines(ctx.chat),
       "",
+      `🧾 ${esc(what)}`,
       `⭐ Creator: <b>${esc(name)}</b>`,
-      `🧾 Plan: ${esc(planLine(plan))}`,
-      others > 0 ? `🔗 Also chatting with ${others} other creator${others === 1 ? "" : "s"}` : null,
-    ]
-      .filter((l) => l !== null)
-      .join("\n");
+      `📋 Plan: ${esc(planLine(plan))}`,
+    ].join("\n");
     await notifyAdmins(text);
   } catch (err) {
-    console.error("Telegram notifyCardVerified failed:", err);
+    console.error("Telegram notifyCryptoPayment failed:", err);
   }
 }
 
@@ -242,15 +246,12 @@ export async function notifySignup(
 
 /**
  * An existing fan just opened a chat with a new creator (Message button on
- * Home / another creator's link). `cardCopied` = they already had a verified
- * card, which was copied onto the new chat. `via` = how they got there.
- * Never throws.
+ * Home / another creator's link). `via` = how they got there. Never throws.
  */
 export async function notifyCrossCreatorSubscribe(
   chatId: string,
   ownerId: string,
   sourceOwnerId?: string | null,
-  cardCopied = true,
   via?: string | null
 ) {
   if (!telegramConfigured()) return;
@@ -261,23 +262,15 @@ export async function notifyCrossCreatorSubscribe(
       creatorInfo(ownerId),
       sourceOwnerId ? creatorInfo(sourceOwnerId) : Promise.resolve(null),
     ]);
-    const sourceName = source?.name ?? null;
     const total = ctx.allCreatorIds.length;
     const text = [
-      cardCopied
-        ? "🔁 <b>Verified fan started chatting with another creator</b>"
-        : "➕ <b>Fan started chatting with another creator</b>",
+      "➕ <b>Fan started chatting with another creator</b>",
       fanLines(ctx.chat),
       "",
       `⭐ New creator: <b>${esc(name)}</b>`,
       `🧾 Plan: ${esc(planLine(plan))}`,
-      sourceName
-        ? cardCopied
-          ? `💳 Card verified with: ${esc(sourceName)}`
-          : `↩️ Came from: ${esc(sourceName)}`
-        : null,
+      source ? `↩️ Came from: ${esc(source.name)}` : null,
       via ? `📲 Via: ${esc(via)}` : null,
-      !cardCopied ? "💳 No card on file yet" : null,
       `👥 Now chatting with ${total} creator${total === 1 ? "" : "s"}`,
     ]
       .filter((l) => l !== null)

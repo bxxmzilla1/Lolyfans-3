@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { mediaUrl } from "@/lib/utils";
 import { subPlanFromMetadata } from "@/lib/subscriptionPlan";
+import { subscriberChatIds } from "@/lib/subscriptionAccess";
 
 export const dynamic = "force-dynamic";
 
@@ -36,17 +37,12 @@ export async function GET() {
     avatar_path?: string;
   };
 
-  // Match the inbox: paid profiles count only card-verified fans; free
-  // profiles count everyone who signed up.
+  // Match the inbox: paid profiles count only subscribed fans (trial or
+  // USDC-paid); free profiles count everyone who signed up.
   let rows = (Array.isArray(statRows) ? statRows : []) as StatRow[];
   if (subPlanFromMetadata(meta as Record<string, unknown>).priceCents > 0) {
-    const { data: cardChats } = await db
-      .from("chats")
-      .select("id")
-      .eq("owner_id", ownerId)
-      .not("stripe_payment_method_id", "is", null);
-    const cardIds = new Set((cardChats ?? []).map((c) => String(c.id)));
-    rows = rows.filter((r) => cardIds.has(String(r.chat_id)));
+    const subscribers = await subscriberChatIds(ownerId);
+    rows = rows.filter((r) => subscribers.has(String(r.chat_id)));
   }
   const withUnread = rows
     .filter((r) => Number(r.unread_count) > 0)

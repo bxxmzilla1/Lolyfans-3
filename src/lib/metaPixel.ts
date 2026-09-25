@@ -33,7 +33,7 @@ export function trackPixel(event: string, params?: Record<string, unknown>) {
   }
 }
 
-/** Fan added a card for a paid profile (trial started or first charge). */
+/** Fan paid a subscription period in USDC (or started the free trial). */
 export function trackSubscribe(priceCents: number, trialDays: number) {
   trackPixel("Subscribe", {
     value: Number((priceCents / 100).toFixed(2)),
@@ -49,9 +49,8 @@ export function trackSignup(source: string) {
 }
 
 /**
- * A lead, as the platform defines it: on a FREE creator chat, the moment a
- * new fan signs up; on a PAID / free-trial chat, the moment they've entered
- * and verified their card. Fired once per new account per creator.
+ * A lead, as the platform defines it: the moment a new fan signs up with
+ * their Phantom wallet. Fired once per new account per creator.
  */
 export function trackLead(plan: { priceCents: number; trialDays: number }, source: string) {
   trackPixel("Lead", {
@@ -64,7 +63,7 @@ export function trackLead(plan: { priceCents: number; trialDays: number }, sourc
 }
 
 /**
- * Fan bought a Token pack (real money). `amountCents` is what Stripe charged;
+ * Fan bought a Token pack (USDC). `amountCents` is what was paid on chain;
  * when a response lacks it, the pack's Token count gives the USD equivalent.
  */
 export function trackTopup(opts: {

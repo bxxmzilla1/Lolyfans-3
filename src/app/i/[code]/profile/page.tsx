@@ -17,7 +17,12 @@ import { applyUserGeoTokens, visitorGeoParts, visitorLocation } from "@/lib/geo"
 import { formatCount, mediaUrl } from "@/lib/utils";
 import CreatorBanner from "@/components/CreatorBanner";
 import InviteSubscribeCta from "@/components/InviteSubscribeCta";
-import { guestAccessDestination } from "@/lib/subscriptionAccess";
+import {
+  chatSubscription,
+  guestAccessDestination,
+  ownerSubPlan,
+  subscriptionChargeCents,
+} from "@/lib/subscriptionAccess";
 import {
   IconChat,
   IconHeart,
@@ -71,12 +76,21 @@ export default async function InviteProfilePreviewPage({
   // Returning guests with an account go straight to the open profile page.
   let alreadyJoined = false;
   let openPay = pay === "1";
+  let chargeCents: number | null = null;
   const existing = cookieChat?.data ?? null;
   if (existing) {
     const dest = await guestAccessDestination(existing.id, existing.owner_id);
     if (dest.allowed) redirect(dest.href);
-    alreadyJoined = true;
-    openPay = true;
+    // Their account is with THIS creator and the period is over → straight
+    // to the USDC step. (Another creator's fan signs in with the wallet.)
+    if (existing.owner_id === inviteRes.data?.owner_id) {
+      alreadyJoined = true;
+      openPay = true;
+      chargeCents = subscriptionChargeCents(
+        await ownerSubPlan(existing.owner_id),
+        await chatSubscription(existing.id, existing.owner_id)
+      );
+    }
   } else if (ipChat?.data) {
     // Restore the guest cookie, then come back here with ?pay=1 if unpaid.
     redirect(`/api/resume?next=${encodeURIComponent(`/i/${code}/profile`)}`);
@@ -173,6 +187,7 @@ export default async function InviteProfilePreviewPage({
     plan: profile.plan,
     alreadyJoined,
     initialOpen: openPay && alreadyJoined,
+    chargeCents,
   };
   const paidProfile = profile.plan.priceCents > 0;
 
@@ -211,7 +226,7 @@ export default async function InviteProfilePreviewPage({
               </p>
             )}
 
-            {/* Full-width join bar — opens Stripe over this profile page.
+            {/* Full-width join bar — opens the Phantom sheet over this profile page.
                 The CTA carries its own caption (trial + price, or "Free to
                 join"). */}
             <div className="pt-1 space-y-2">

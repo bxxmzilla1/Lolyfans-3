@@ -1,19 +1,13 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
-import {
-  autoRefillTokens,
-  maybeAutoRefillLowBalance,
-  recordUnlock,
-  spendTokens,
-  tokenBalance,
-} from "@/lib/payments";
+import { recordUnlock, spendTokens, tokenBalance } from "@/lib/payments";
 import { tokensForCents } from "@/lib/tokens";
 
 /**
- * Unlock locked media with wallet Tokens. The fan tops up their wallet via
- * Stripe (see /api/payments/topup); unlocking itself is an instant token
- * spend — no card round-trip, no payment sheet.
+ * Unlock locked media with wallet Tokens. The fan tops up their wallet with
+ * USDC from Phantom (see /api/payments/crypto); unlocking itself is an
+ * instant token spend.
  */
 export async function POST(req: NextRequest) {
   const { messageId } = await req.json();
@@ -55,30 +49,15 @@ export async function POST(req: NextRequest) {
   }
 
   const tokens = tokensForCents(price);
-  let balance = await spendTokens({
+  const balance = await spendTokens({
     chatId: message.chat_id,
     tokens,
     kind: "unlock",
     messageId: message.id,
   });
 
-  // Short on tokens: auto refill charges the saved card for the last pack
-  // the fan bought, then the spend is retried — true one-tap.
   if (balance === null) {
-    const current = await tokenBalance(message.chat_id);
-    const refilled = await autoRefillTokens(message.chat_id, tokens - current);
-    if (refilled !== null) {
-      balance = await spendTokens({
-        chatId: message.chat_id,
-        tokens,
-        kind: "unlock",
-        messageId: message.id,
-      });
-    }
-  }
-
-  if (balance === null) {
-    // No saved card (or the charge failed) — the client opens the top-up sheet.
+    // The client opens the Phantom top-up sheet.
     return NextResponse.json(
       {
         error: "Not enough Tokens",
@@ -94,10 +73,6 @@ export async function POST(req: NextRequest) {
     chatId: message.chat_id,
     priceCents: price,
   });
-
-  // Wallet running low (≤10 Tokens)? Refill in the background.
-  const newBalance = balance;
-  after(() => maybeAutoRefillLowBalance(message.chat_id, newBalance));
 
   return NextResponse.json({
     ok: true,

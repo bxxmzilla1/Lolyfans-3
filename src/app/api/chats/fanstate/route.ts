@@ -5,7 +5,7 @@ import { mediaItemsFromMessage } from "@/lib/utils";
 
 /**
  * Live fan state for the creator's open chat. Polled while the tab is
- * visible: card-on-file, token balance, plus accept / decline / unlock
+ * visible: Phantom wallet linked, token balance, plus accept / decline / unlock
  * status for each creator photo/video.
  */
 export async function GET(req: NextRequest) {
@@ -19,7 +19,7 @@ export async function GET(req: NextRequest) {
     const db = supabaseAdmin();
     const { data: chat, error: chatErr } = await db
       .from("chats")
-      .select("token_balance, stripe_payment_method_id")
+      .select("token_balance, guest_wallet")
       .eq("id", chatId)
       .eq("owner_id", ownerId)
       .maybeSingle();
@@ -74,7 +74,7 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({
       balance: chat.token_balance ?? 0,
-      hasCard: !!chat.stripe_payment_method_id,
+      hasWallet: !!chat.guest_wallet,
       media,
     });
   } catch (err) {

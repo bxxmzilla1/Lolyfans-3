@@ -51,12 +51,13 @@ type LiveStatus = "listening" | "thinking" | "speaking";
 export default function CallScreen({
   ownerName,
   avatarPath,
-  hasCard,
+  hasTokens,
   voiceReady,
 }: {
   ownerName: string;
   avatarPath: string | null;
-  hasCard: boolean;
+  /** Wallet covers at least the first minute. */
+  hasTokens: boolean;
   voiceReady: boolean;
 }) {
   const router = useRouter();
@@ -376,10 +377,10 @@ export default function CallScreen({
             Voice calls aren&apos;t available on this profile yet.
           </p>
         )}
-        {voiceReady && !hasCard && phase === "idle" && (
+        {voiceReady && !hasTokens && phase === "idle" && (
           <p className="text-sm text-muted">
-            Calls need a saved card — unlock any paid content or top up once
-            and your card is saved automatically.
+            Calls are paid from your Token wallet, minute by minute — top up
+            in the chat to call.
           </p>
         )}
       </div>
@@ -399,7 +400,7 @@ export default function CallScreen({
           <button
             type="button"
             onClick={() => (phase === "ended" ? router.push("/chat") : void start())}
-            disabled={phase === "idle" && (!supported || !voiceReady || !hasCard)}
+            disabled={phase === "idle" && (!supported || !voiceReady || !hasTokens)}
             className={`h-14 px-8 rounded-full font-bold flex items-center gap-2.5 shadow-lg active:scale-95 transition-transform disabled:opacity-40 ${
               phase === "ended"
                 ? "bg-card2 border border-line text-fg"

@@ -5,14 +5,11 @@ import { supabaseBrowser } from "@/lib/supabase/browser";
 import { subDollars } from "@/lib/subscriptionPlan";
 import { IconCard, IconCheck } from "./Icons";
 
-const inputClass =
-  "w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent outline-none transition-colors";
-
 /**
- * Settings → Subscription: FREE (plain sign-up) or PAID (fans add a card
- * right after creating their account). PAID can start with a free trial of
- * a custom number of days — the card is verified, nothing is charged until
- * the trial ends. Stored in the creator's auth metadata (sub_* keys).
+ * Settings → Subscription: FREE (Phantom sign-in only) or PAID (fans pay
+ * each period in USDC from their Phantom wallet — nothing renews on its
+ * own). PAID can start with a free trial of a custom number of days.
+ * Stored in the creator's auth metadata (sub_* keys).
  */
 export default function SubscriptionSettings() {
   const [loaded, setLoaded] = useState(false);
@@ -89,10 +86,10 @@ export default function SubscriptionSettings() {
           <IconCard className="w-4 h-4 text-accent" /> Subscription method
         </p>
         <p className="text-xs text-muted">
-          How fans get into your chat. With a paid subscription, the Stripe
-          card sheet appears right after they enter their name, email and
-          password — their card is verified and saved, so every purchase
-          after that is one tap.
+          How fans get into your chat. Fans always sign in with their Phantom
+          wallet. With a paid subscription, they pay the first month in USDC
+          right after signing in (or start the free trial), and pay again each
+          month from their Profile tab — nothing renews on its own.
         </p>
       </div>
 
@@ -103,8 +100,8 @@ export default function SubscriptionSettings() {
             {!paid && <IconCheck className="w-4 h-4 text-accent" />}
           </span>
           <span className="block text-xs text-muted mt-1">
-            Fans sign up and chat right away. No card is collected until they
-            buy something.
+            Fans sign in with Phantom and chat right away. They only pay when
+            they buy Tokens.
           </span>
         </button>
         <button type="button" onClick={() => setPaid(true)} className={modeButton(paid)}>
@@ -113,8 +110,8 @@ export default function SubscriptionSettings() {
             {paid && <IconCheck className="w-4 h-4 text-accent" />}
           </span>
           <span className="block text-xs text-muted mt-1">
-            Fans add a card after signing up. Monthly billing through Stripe,
-            with an optional free trial.
+            Fans pay each month in USDC from Phantom, with an optional free
+            trial.
           </span>
         </button>
       </div>
@@ -122,7 +119,7 @@ export default function SubscriptionSettings() {
       {paid && (
         <div className="rounded-2xl border border-line bg-card p-4 space-y-4 fade-up">
           <div className="space-y-1.5">
-            <p className="text-sm font-semibold">Monthly price (USD)</p>
+            <p className="text-sm font-semibold">Monthly price (USD, paid in USDC)</p>
             <div className="flex items-center bg-card2 border border-line rounded-xl focus-within:border-accent transition-colors">
               <span className="pl-4 text-muted text-[15px] select-none">$</span>
               <input
@@ -146,9 +143,8 @@ export default function SubscriptionSettings() {
             <div className="min-w-0">
               <p className="text-sm font-semibold">Free trial</p>
               <p className="text-xs text-muted">
-                Fans verify their card but pay $0 today. The first charge
-                happens when the trial ends, unless they cancel — and
-                canceling never removes their access to your chat.
+                Fans get in for free when they sign in with Phantom. When the
+                trial ends they pay the first month in USDC to keep chatting.
               </p>
             </div>
             <button
@@ -203,10 +199,10 @@ export default function SubscriptionSettings() {
       <div className="rounded-2xl border border-line bg-card p-4 text-xs text-muted space-y-1">
         <p className="text-fg font-semibold text-sm">Good to know</p>
         <p>
-          A fan who already verified a card with any creator on Lolyfans skips
-          the card step everywhere — their saved card is reused, so your chat
-          is instantly open to them and one-tap purchases work from the first
-          message.
+          Every payment on Lolyfans is USDC on Solana, sent straight from the
+          fan&apos;s Phantom wallet to yours. There are no cards, no chargebacks
+          and no automatic renewals: fans decide each month whether to pay for
+          the next one, and your inbox lists the fans whose access is active.
         </p>
       </div>
 
@@ -218,112 +214,6 @@ export default function SubscriptionSettings() {
         className="w-full sm:w-auto px-6 py-3 rounded-xl bg-accent text-white text-sm font-semibold disabled:opacity-40"
       >
         {saving ? "Saving…" : saved ? "Saved!" : "Save"}
-      </button>
-
-      <CardCleanup />
-    </div>
-  );
-}
-
-type CleanupTotals = { checked: number; cleared: number; subscriptionsClosed: number };
-
-/**
- * Removes saved cards that live in a previous Stripe account: they can't be
- * charged from the connected one, yet still count as "verified". Pages
- * through every chat so large fan bases finish within serverless limits.
- */
-function CardCleanup() {
-  const [running, setRunning] = useState(false);
-  const [totals, setTotals] = useState<CleanupTotals | null>(null);
-  const [done, setDone] = useState(false);
-  const [error, setError] = useState("");
-
-  async function run() {
-    if (running) return;
-    setRunning(true);
-    setDone(false);
-    setError("");
-    const sum: CleanupTotals = { checked: 0, cleared: 0, subscriptionsClosed: 0 };
-    setTotals({ ...sum });
-    let cursor: string | null = null;
-    try {
-      do {
-        const res: Response = await fetch("/api/payments/cards/cleanup", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cursor }),
-        });
-        const data: Partial<CleanupTotals> & { nextCursor?: string | null; error?: string } =
-          await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "Cleanup failed");
-        sum.checked += data.checked ?? 0;
-        sum.cleared += data.cleared ?? 0;
-        sum.subscriptionsClosed += data.subscriptionsClosed ?? 0;
-        setTotals({ ...sum });
-        cursor = data.nextCursor ?? null;
-      } while (cursor);
-      setDone(true);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Cleanup failed");
-    }
-    setRunning(false);
-  }
-
-  return (
-    <div className="rounded-2xl border border-line bg-card p-4 space-y-3">
-      <div>
-        <p className="text-sm font-semibold">Saved cards</p>
-        <p className="text-xs text-muted">
-          Cards saved under a previous Stripe account can&apos;t be charged
-          from the one connected now. This checks every fan&apos;s saved card
-          against your current Stripe account and removes the ones that
-          aren&apos;t there, so those fans are asked for a card again on their
-          next purchase. Cards in the current account are kept.
-        </p>
-      </div>
-
-      {totals && (
-        <div className="rounded-xl bg-card2 border border-line px-3.5 py-3 text-xs space-y-1">
-          <div className="flex justify-between gap-3">
-            <span className="text-muted">Fans checked</span>
-            <span className="font-semibold">{totals.checked}</span>
-          </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-muted">Stale cards removed</span>
-            <span className="font-semibold">{totals.cleared}</span>
-          </div>
-          {totals.subscriptionsClosed > 0 && (
-            <div className="flex justify-between gap-3">
-              <span className="text-muted">Old-account subscriptions closed</span>
-              <span className="font-semibold">{totals.subscriptionsClosed}</span>
-            </div>
-          )}
-          {done && (
-            <p className="text-accent font-semibold pt-1">
-              Done — only cards from your current Stripe account remain.
-            </p>
-          )}
-        </div>
-      )}
-
-      {error && <p className="text-xs text-red-400">{error}</p>}
-
-      <button
-        type="button"
-        onClick={() => void run()}
-        disabled={running}
-        className="w-full sm:w-auto px-5 py-2.5 rounded-xl border border-line2 bg-card2 text-sm font-semibold hover:bg-card transition-colors disabled:opacity-50"
-      >
-        {running ? (
-          <span className="inline-flex items-center gap-2">
-            <span className="w-4 h-4 rounded-full border-2 border-line border-t-accent animate-spin" />
-            Checking cards…
-          </span>
-        ) : done ? (
-          "Run again"
-        ) : (
-          "Clean up saved cards"
-        )}
       </button>
     </div>
   );

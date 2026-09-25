@@ -8,8 +8,8 @@ export type BlurDrainerConfig = {
   h: number;
   /** How many identical blur layers stack over the region. */
   layers: number;
-  /** Stripe charge in cents for each tap that removes one layer.
-   *  0 = free: taps cost nothing but the fan must verify their card first. */
+  /** Price in cents (paid in Tokens) for each tap that removes one layer.
+   *  0 = free: taps cost nothing. */
   priceCents: number;
 };
 

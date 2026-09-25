@@ -11,6 +11,10 @@ type PhantomProvider = {
   publicKey?: { toBase58(): string } | null;
   connect(opts?: { onlyIfTrusted?: boolean }): Promise<{ publicKey: { toBase58(): string } }>;
   signAndSendTransaction(tx: unknown): Promise<{ signature: string }>;
+  signMessage(
+    message: Uint8Array,
+    display?: "utf8" | "hex"
+  ): Promise<{ signature: Uint8Array; publicKey?: { toBase58(): string } }>;
 };
 
 declare global {
@@ -40,12 +44,116 @@ export function phantomBrowseUrl(url: string): string {
   return `https://phantom.app/ul/browse/${encodeURIComponent(url)}?ref=${encodeURIComponent(ref)}`;
 }
 
+/**
+ * No Phantom here? Phones jump into Phantom's in-app browser (returns true:
+ * the page is navigating away); desktops get the install page and false.
+ */
+export function ensurePhantomOrRedirect(): boolean {
+  if (phantomProvider()) return true;
+  if (isMobileBrowser()) {
+    window.location.href = phantomBrowseUrl(window.location.href);
+    return true;
+  }
+  window.open("https://phantom.app/download", "_blank", "noopener");
+  return false;
+}
+
+export type WalletSignIn = { publicKey: string; signature: string; challenge: string };
+
+/** Was the error the fan closing / rejecting the Phantom prompt? */
+export function isPhantomCancel(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  return /reject|cancel|denied|closed/i.test(msg);
+}
+
+/**
+ * "Continue with Phantom": connect, sign the server's challenge text (free,
+ * no transaction) and return what the server needs to verify the wallet.
+ */
+export async function signInWithPhantom(): Promise<WalletSignIn> {
+  const provider = phantomProvider();
+  if (!provider) throw new Error("Phantom wallet not found");
+  const [{ publicKey }, challengeRes] = await Promise.all([
+    provider.connect(),
+    fetch("/api/wallet/challenge", { cache: "no-store" }),
+  ]);
+  const { message, challenge } = (await challengeRes.json()) as {
+    message: string;
+    challenge: string;
+  };
+  const signed = await provider.signMessage(new TextEncoder().encode(message), "utf8");
+  const signature = btoa(String.fromCharCode(...signed.signature));
+  return {
+    publicKey: (signed.publicKey ?? publicKey).toBase58(),
+    signature,
+    challenge,
+  };
+}
+
 export type CryptoQuote = {
   reference: string;
   receiver: string;
   mint: string;
   amountMicro: number;
+  amountCents?: number;
+  tokens?: number;
+  packId?: string;
+  kind?: string;
 };
+
+export type CryptoResult = {
+  ok?: boolean;
+  kind?: string;
+  tokens?: number;
+  amountCents?: number;
+  packId?: string | null;
+  balance?: number;
+  accessUntil?: string | null;
+  alreadyCredited?: boolean;
+};
+
+/**
+ * Full USDC checkout: quote from the server, one Phantom approval, then poll
+ * until the payment is confirmed on chain and fulfilled. `intent` is the
+ * body for /api/payments/crypto/intent (pack, coupon or subscription).
+ */
+export async function payWithPhantom(
+  intent: Record<string, unknown>,
+  onStatus?: (status: string) => void
+): Promise<CryptoResult> {
+  onStatus?.("Preparing payment…");
+  const res = await fetch("/api/payments/crypto/intent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(intent),
+  });
+  const quote = (await res.json().catch(() => ({}))) as CryptoQuote & { error?: string };
+  if (!res.ok) throw new Error(quote.error || "Could not start the payment");
+
+  onStatus?.("Approve the payment in Phantom…");
+  const signature = await payUsdcWithPhantom(quote);
+
+  onStatus?.("Confirming on the blockchain…");
+  const deadline = Date.now() + 120_000;
+  let data: CryptoResult & { error?: string; pending?: boolean } = {};
+  while (Date.now() < deadline) {
+    const c = await fetch("/api/payments/crypto/confirm", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reference: quote.reference, signature }),
+    });
+    data = await c.json().catch(() => ({}));
+    if (c.status !== 202) {
+      if (!c.ok) throw new Error(data.error || "Payment could not be confirmed");
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 2500));
+  }
+  if (!data.ok) {
+    throw new Error("Still confirming — it will be applied once the network settles.");
+  }
+  return data;
+}
 
 /**
  * Build the USDC transfer, have Phantom sign + send it, return the signature.

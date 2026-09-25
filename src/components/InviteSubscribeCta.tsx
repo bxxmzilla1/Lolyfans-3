@@ -2,17 +2,21 @@
 
 import { useState } from "react";
 import Portal from "./Portal";
-import SubscribeCheckout from "./SubscribeCheckout";
 import { trackLead, trackSignup, trackSubscribe } from "@/lib/metaPixel";
 import {
   subButtonLabels,
   subCaption,
   subCtaLabel,
+  subDollars,
+  subFirstPeriodCents,
   type SubPlan,
 } from "@/lib/subscriptionPlan";
-import { IconEye, IconEyeOff } from "./Icons";
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+import {
+  ensurePhantomOrRedirect,
+  isPhantomCancel,
+  payWithPhantom,
+  signInWithPhantom,
+} from "@/lib/phantom";
 
 const FREE_PLAN: SubPlan = {
   priceCents: 0,
@@ -21,99 +25,197 @@ const FREE_PLAN: SubPlan = {
   discountPct: 0,
 };
 
+const PHANTOM_BTN =
+  "w-full bg-[#AB9FF2] text-[#1C1C1C] font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity flex items-center justify-center gap-2";
+
+function PhantomMark({ className = "w-5 h-5" }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 128 128" className={className} aria-hidden="true">
+      <circle cx="64" cy="64" r="64" fill="#1C1C1C" />
+      <path
+        fill="#AB9FF2"
+        d="M110 65c0 24-19 44-42 44-18 0-27-10-33-21-3-6-9-4-12 2-3 5-7 10-12 10-4 0-7-3-7-7 0-6 6-9 6-15 0-9 1-18 7-27C25 38 41 21 66 21c25 0 44 19 44 44Zm-60-6a6 6 0 1 0 0-12 6 6 0 0 0 0 12Zm25 0a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z"
+      />
+    </svg>
+  );
+}
+
 /**
- * Sign-up sheet shown over a creator's profile: name + email + password,
- * then — for paid profiles — the card step (Stripe) before the chat opens.
- * `startAtCard` reopens the sheet straight at the card step for fans who
- * already have an account but haven't added a card yet.
+ * The whole fan sign-up: "Continue with Phantom" (a free message signature
+ * proves the wallet), then — on paid profiles without a running trial or
+ * paid period — one USDC payment for the first period. Lands in the chat.
+ */
+export function WalletJoinFlow({
+  code,
+  ownerId,
+  ownerName,
+  plan: planProp,
+  startAtPay = false,
+  chargeCents,
+  source,
+  buttonText,
+}: {
+  code: string;
+  ownerId: string;
+  ownerName?: string;
+  plan?: SubPlan | null;
+  /** Fan already signed up but owes this period: go straight to payment. */
+  startAtPay?: boolean;
+  /** Exact amount due now (server-computed); defaults to the first-period price. */
+  chargeCents?: number | null;
+  source: string;
+  buttonText?: string;
+}) {
+  const [step, setStep] = useState<"connect" | "pay">(startAtPay ? "pay" : "connect");
+  const [plan, setPlan] = useState<SubPlan>(planProp ?? FREE_PLAN);
+  const [due, setDue] = useState<number | null>(chargeCents ?? null);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const paid = plan.priceCents > 0;
+  const amountDue = due ?? subFirstPeriodCents(plan);
+
+  async function connect() {
+    if (busy) return;
+    if (!ensurePhantomOrRedirect()) {
+      setError("Install the Phantom wallet, then come back to this page.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    setStatus("Sign the message in Phantom…");
+    try {
+      const signed = await signInWithPhantom();
+      setStatus("Opening your chat…");
+      const res = await fetch("/api/join", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, ...signed }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data?.error || "Could not sign up");
+      const created = !!data?.created;
+      const effectivePlan = (data?.plan as SubPlan | undefined) ?? plan;
+      if (created) {
+        trackSignup(source);
+        // Signing up with the wallet is the lead.
+        trackLead(effectivePlan, source);
+      }
+      if (data?.requiresPayment) {
+        setPlan(effectivePlan);
+        setDue(subFirstPeriodCents(effectivePlan));
+        setStatus(null);
+        setBusy(false);
+        setStep("pay");
+        return;
+      }
+      window.location.href = "/chat";
+    } catch (err) {
+      setStatus(null);
+      setBusy(false);
+      setError(
+        isPhantomCancel(err)
+          ? "Cancelled in Phantom."
+          : err instanceof Error
+            ? err.message
+            : "Could not sign up"
+      );
+    }
+  }
+
+  async function pay() {
+    if (busy) return;
+    if (!ensurePhantomOrRedirect()) {
+      setError("Install the Phantom wallet, then come back to this page.");
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      await payWithPhantom({ subscribeOwnerId: ownerId }, setStatus);
+      trackSubscribe(plan.priceCents, plan.trialDays);
+      setStatus("Opening your chat…");
+      window.location.href = "/chat";
+    } catch (err) {
+      setStatus(null);
+      setBusy(false);
+      setError(
+        isPhantomCancel(err)
+          ? "Payment cancelled in Phantom."
+          : err instanceof Error
+            ? err.message
+            : "Could not complete the payment"
+      );
+    }
+  }
+
+  if (step === "pay") {
+    const periodLabel =
+      plan.interval === "lifetime" ? "Lifetime access" : `Access for 1 ${plan.interval}`;
+    return (
+      <div className="space-y-3">
+        <div className="rounded-xl bg-card2 border border-line px-3.5 py-3 text-sm space-y-1">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted">{ownerName ? `${ownerName} · ` : ""}Subscription</span>
+            <span className="font-semibold">{subCtaLabel(plan)}</span>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted">{periodLabel}</span>
+            <span className="font-semibold">{subDollars(amountDue)} USDC</span>
+          </div>
+        </div>
+        <p className="text-xs text-muted">
+          Paid in USDC from your Phantom wallet. Nothing renews on its own — when
+          the period ends you decide whether to pay for the next one.
+        </p>
+        {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+        <button type="button" onClick={() => void pay()} disabled={busy} className={PHANTOM_BTN}>
+          <PhantomMark />
+          {status ?? `Pay ${subDollars(amountDue)} with Phantom`}
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted">
+        {paid
+          ? `Sign in with your Phantom wallet. ${subCaption(plan) ?? ""}`
+          : "Sign in with your Phantom wallet to start chatting. No email, no password."}
+      </p>
+      {error && <p className="text-red-400 text-sm text-center">{error}</p>}
+      <button type="button" onClick={() => void connect()} disabled={busy} className={PHANTOM_BTN}>
+        <PhantomMark />
+        {status ?? (buttonText?.trim() || "Continue with Phantom")}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Sign-up sheet shown over a creator's profile. `startAtPay` reopens it at
+ * the USDC payment step for fans who already have an account but owe the
+ * current period.
  */
 export function JoinChannelSheet({
   code,
   ownerId,
   ownerName,
-  plan: planProp,
-  startAtCard = false,
+  plan,
+  startAtPay = false,
+  chargeCents,
   onClose,
 }: {
   code: string;
   ownerId: string;
   ownerName?: string;
   plan?: SubPlan | null;
-  startAtCard?: boolean;
+  startAtPay?: boolean;
+  chargeCents?: number | null;
   onClose: () => void;
 }) {
-  const [step, setStep] = useState<"account" | "card">(
-    startAtCard ? "card" : "account"
-  );
-  const [plan, setPlan] = useState<SubPlan>(planProp ?? FREE_PLAN);
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const paid = plan.priceCents > 0;
-
-  async function signup() {
-    if (busy) return;
-    if (!name.trim()) {
-      setError("Enter your name");
-      return;
-    }
-    if (!EMAIL_RE.test(email.trim())) {
-      setError("Enter a valid email address");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    const res = await fetch("/api/join", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        code,
-        name: name.trim(),
-        email: email.trim(),
-        password,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setBusy(false);
-      setError(data?.error || "Could not sign up");
-      return;
-    }
-    const created = !!data?.created;
-    const effectivePlan = (data?.plan as SubPlan | undefined) ?? plan;
-    if (created) trackSignup("subscribe_sheet");
-    if (data?.requiresCard) {
-      // Paid profile, no verified card yet → collect it before the chat.
-      // The lead fires once the card is verified (cardDone).
-      if (data.plan) setPlan(data.plan as SubPlan);
-      setBusy(false);
-      setStep("card");
-      return;
-    }
-    // Free chat (or a card already verified elsewhere): the signup is the lead.
-    if (created) trackLead(effectivePlan, "subscribe_sheet");
-    window.location.href = "/chat";
-  }
-
-  function cardDone() {
-    trackSubscribe(plan.priceCents, plan.trialDays);
-    // Paid / free-trial chat: card entered and verified = the lead (a fan
-    // only ever passes this step once).
-    trackLead(plan, "subscribe_sheet");
-    window.location.href = "/chat";
-  }
-
-  const inputClass =
-    "w-full bg-card2 border border-line rounded-xl px-4 py-3 text-[15px] placeholder:text-muted focus:border-accent outline-none transition-colors";
-
   return (
     <Portal>
       <div
@@ -125,8 +227,7 @@ export function JoinChannelSheet({
           onClick={(e) => e.stopPropagation()}
         >
           <div className="flex items-center justify-between gap-3">
-            {/* Card step has no title — the form speaks for itself. */}
-            <p className="font-bold">{step === "card" ? "" : "Join my private chat"}</p>
+            <p className="font-bold">{startAtPay ? "Continue your subscription" : "Join my private chat"}</p>
             <button
               type="button"
               onClick={onClose}
@@ -137,75 +238,15 @@ export function JoinChannelSheet({
             </button>
           </div>
 
-          {step === "card" ? (
-            <div className="space-y-3">
-              <SubscribeCheckout
-                ownerId={ownerId}
-                ownerName={ownerName}
-                plan={plan}
-                onSuccess={cardDone}
-              />
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <p className="text-xs text-muted">
-                {paid
-                  ? `Create your account, then add your card. ${subCaption(plan) ?? ""}`
-                  : "Create a free account to start chatting."}
-              </p>
-              <input
-                type="text"
-                autoComplete="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Your name"
-                maxLength={40}
-                className={inputClass}
-              />
-              <input
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="Email address"
-                maxLength={254}
-                className={inputClass}
-              />
-              <div className="relative">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  autoComplete="new-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Create a password"
-                  minLength={6}
-                  className={`${inputClass} pr-12`}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((s) => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted hover:text-fg transition-colors p-1"
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? (
-                    <IconEyeOff className="w-5 h-5" />
-                  ) : (
-                    <IconEye className="w-5 h-5" />
-                  )}
-                </button>
-              </div>
-              {error && <p className="text-red-400 text-sm text-center">{error}</p>}
-              <button
-                type="button"
-                onClick={() => void signup()}
-                disabled={busy || !name.trim() || !email.trim() || password.length < 6}
-                className="w-full bg-accent text-white font-semibold rounded-xl py-3 disabled:opacity-40 active:opacity-80 transition-opacity"
-              >
-                {busy ? "Joining…" : paid ? "Continue" : "Start chatting"}
-              </button>
-            </div>
-          )}
+          <WalletJoinFlow
+            code={code}
+            ownerId={ownerId}
+            ownerName={ownerName}
+            plan={plan}
+            startAtPay={startAtPay}
+            chargeCents={chargeCents}
+            source="subscribe_sheet"
+          />
         </div>
       </div>
     </Portal>
@@ -214,7 +255,7 @@ export function JoinChannelSheet({
 
 /**
  * Invite-profile "Join my private chat" button. Opens the sign-up sheet over
- * the profile; paid profiles add the card step; then the fan lands in chat.
+ * the profile; paid profiles add the USDC step; then the fan lands in chat.
  */
 export default function InviteSubscribeCta({
   code,
@@ -223,15 +264,17 @@ export default function InviteSubscribeCta({
   plan,
   initialOpen = false,
   alreadyJoined = false,
+  chargeCents,
 }: {
   code: string;
   ownerId: string;
   ownerName?: string;
   plan?: SubPlan | null;
-  /** Open the sheet immediately (returning unpaid fan → card step). */
+  /** Open the sheet immediately (returning unpaid fan → payment step). */
   initialOpen?: boolean;
-  /** Fan already has an account: skip the form, go to the card step. */
+  /** Fan already has an account: skip sign-in, go to the payment step. */
   alreadyJoined?: boolean;
+  chargeCents?: number | null;
 }) {
   const [open, setOpen] = useState(initialOpen);
   const effectivePlan = plan ?? FREE_PLAN;
@@ -263,7 +306,8 @@ export default function InviteSubscribeCta({
           ownerId={ownerId}
           ownerName={ownerName}
           plan={effectivePlan}
-          startAtCard={alreadyJoined && paid}
+          startAtPay={alreadyJoined && paid}
+          chargeCents={chargeCents}
           onClose={() => setOpen(false)}
         />
       )}

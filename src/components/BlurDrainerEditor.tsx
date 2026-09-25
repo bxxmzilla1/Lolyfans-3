@@ -44,7 +44,7 @@ export default function BlurDrainerEditor({
       : { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }
   );
   const [layers, setLayers] = useState(String(initial?.layers ?? 8));
-  // Free mode: taps cost nothing but the fan must verify their card first.
+  // Free mode: taps cost nothing.
   const [free, setFree] = useState(initial ? initial.priceCents === 0 : false);
   const [price, setPrice] = useState(
     initial && initial.priceCents > 0
@@ -219,12 +219,12 @@ export default function BlurDrainerEditor({
                   onChange={(e) => setFree(e.target.checked)}
                   className="accent-accent"
                 />
-                <span className="text-muted">Free · card verify</span>
+                <span className="text-muted">Free</span>
               </label>
             </div>
             <p className="text-[11px] text-muted">
               {free
-                ? "Fans unblur for free with a single tap, after verifying their card"
+                ? "Fans unblur for free, one tap per layer"
                 : `Fans pay ${priceCents > 0 ? blurDrainPriceLabel(priceCents) : "— Tokens"} each tap · ${Math.max(1, parseInt(layers, 10) || 1)} taps to fully clear`}
             </p>
 

@@ -9,18 +9,21 @@ export type GuestChat = {
   owner_id: string;
   guest_name: string;
   guest_email: string | null;
+  guest_wallet: string | null;
   guest_avatar_path: string | null;
   guest_last_read_at: string | null;
   last_message_at: string;
 };
 
-const CHAT_COLUMNS =
-  "id, owner_id, guest_name, guest_email, guest_avatar_path, guest_last_read_at, last_message_at";
+export const GUEST_CHAT_COLUMNS =
+  "id, owner_id, guest_name, guest_email, guest_wallet, guest_avatar_path, guest_last_read_at, last_message_at";
+const CHAT_COLUMNS = GUEST_CHAT_COLUMNS;
 
 /**
  * Every chat that belongs to this guest — matched by their session cookie,
  * their remembered IP (covers cleared history / other browsers), and the
- * email their account is registered with (covers logging in on a computer).
+ * Phantom wallet (or legacy email) their account is registered with (covers
+ * logging in on a computer).
  */
 export async function guestChats(requestHeaders: Headers): Promise<GuestChat[]> {
   const db = supabaseAdmin();
@@ -39,13 +42,17 @@ export async function guestChats(requestHeaders: Headers): Promise<GuestChat[]> 
     .order("last_message_at", { ascending: false });
   const chats = (data as GuestChat[]) ?? [];
 
-  // Same email registered with other creators? Those chats are theirs too.
+  // Same wallet / email registered with other creators? Those chats are theirs too.
   const emails = [...new Set(chats.map((c) => c.guest_email).filter(Boolean))] as string[];
-  if (emails.length) {
+  const wallets = [...new Set(chats.map((c) => c.guest_wallet).filter(Boolean))] as string[];
+  if (emails.length || wallets.length) {
+    const filters: string[] = [];
+    if (wallets.length) filters.push(`guest_wallet.in.(${wallets.join(",")})`);
+    if (emails.length) filters.push(`guest_email.in.(${emails.map((e) => `"${e}"`).join(",")})`);
     const { data: byEmail } = await db
       .from("chats")
       .select(CHAT_COLUMNS)
-      .in("guest_email", emails);
+      .or(filters.join(","));
     for (const chat of (byEmail as GuestChat[]) ?? []) {
       if (!chats.some((c) => c.id === chat.id)) chats.push(chat);
     }

@@ -558,6 +558,23 @@ create table if not exists crypto_topups (
 alter table crypto_topups enable row level security;
 create index if not exists crypto_topups_chat_idx on crypto_topups (chat_id, created_at desc);
 
+-- Phantom-only (migration-phantom-only.sql): wallet identity, coupon and
+-- subscription payments in USDC, voice-call minutes from the token wallet.
+alter table chats add column if not exists guest_wallet text;
+create index if not exists chats_guest_wallet_idx on chats (guest_wallet);
+create unique index if not exists chats_owner_wallet_idx
+  on chats (owner_id, guest_wallet)
+  where guest_wallet is not null;
+alter table crypto_topups add column if not exists kind text not null default 'topup';
+alter table crypto_topups drop constraint if exists crypto_topups_kind_check;
+alter table crypto_topups add constraint crypto_topups_kind_check
+  check (kind in ('topup', 'coupon', 'subscription'));
+alter table crypto_topups add column if not exists owner_id uuid references auth.users(id) on delete cascade;
+alter table crypto_topups add column if not exists message_id uuid references messages(id) on delete set null;
+alter table token_transactions drop constraint if exists token_transactions_kind_check;
+alter table token_transactions add constraint token_transactions_kind_check
+  check (kind in ('topup', 'unlock', 'tip', 'call'));
+
 -- Paid profile subscriptions (Stripe Billing). One row per fan chat + creator.
 -- status mirrors Stripe: trialing / active / canceling / past_due / canceled.
 create table if not exists subscriptions (
@@ -582,8 +599,8 @@ alter table subscriptions add column if not exists trial_end timestamptz;
 --    link is restricted). Unrestricted links count everyone.
 --  * Subscribers depend on the creator's plan (p_mode):
 --      'all'  — free profile: every signup counts
---      'card' — paid profile with a free trial: only fans who verified a card
---      'paid' — paid profile without trial: only fans who actually paid
+--      'card' — paid profile with a free trial: fans who started the trial
+--      'paid' — paid profile: only fans who actually paid in USDC
 drop function if exists invite_stats(uuid); -- v1 signature would be ambiguous
 create or replace function invite_stats(p_owner_id uuid, p_mode text default 'all')
 returns table (
@@ -601,7 +618,10 @@ returns table (
       and c.invite_id is not null
       and (
         coalesce(p_mode, 'all') = 'all'
-        or (p_mode = 'card' and c.stripe_payment_method_id is not null)
+        or (p_mode = 'card' and exists (
+          select 1 from subscriptions s
+          where s.chat_id = c.id and s.owner_id = c.owner_id
+        ))
         or (p_mode = 'paid' and exists (
           select 1 from subscriptions s
           where s.chat_id = c.id

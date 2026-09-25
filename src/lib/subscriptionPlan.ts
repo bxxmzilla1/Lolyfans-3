@@ -12,7 +12,7 @@ export type SubPlan = {
   discountPct: number;
 };
 
-/** Card-step summary title: one subscription covers the whole site. */
+/** Payment-step summary title: one subscription covers the whole site. */
 export const SUB_UNLIMITED_TITLE = "Lolyfans Subscription";
 
 export const SUB_INTERVAL_LABEL: Record<SubInterval, string> = {

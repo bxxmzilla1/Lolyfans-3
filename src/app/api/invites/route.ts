@@ -4,7 +4,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getOwnerId } from "@/lib/session";
 import { fetchAllRows } from "@/lib/fetchAllRows";
 import { PROFILE_DESTINATION } from "@/lib/invites";
-import { ownerSubPlan } from "@/lib/subscriptionAccess";
+import { ownerSubPlan, subscriberChatIds } from "@/lib/subscriptionAccess";
 import type { SubPlan } from "@/lib/subscriptionPlan";
 
 type Stats = { joins: number; clicks: number; countries: Record<string, number> };
@@ -13,8 +13,8 @@ const blank = (): Stats => ({ joins: 0, clicks: 0, countries: {} });
 /**
  * Who counts as a "subscriber" on the link cards, from the creator's plan:
  *  - free profile → every signup
- *  - paid with a free trial → only fans who verified a card
- *  - paid, no trial → only fans who actually paid
+ *  - paid with a free trial → only fans who started the trial
+ *  - paid, no trial → only fans who actually paid in USDC
  */
 type CountMode = "all" | "card" | "paid";
 function countMode(plan: SubPlan): CountMode {
@@ -85,13 +85,13 @@ async function legacyStats(
   invites: Array<{ id: string; allowed_countries: string[] | null }>
 ): Promise<Record<string, Stats>> {
   const db = supabaseAdmin();
-  const [chatsRes, visitsRes, paidChatIds] = await Promise.all([
+  const [chatsRes, visitsRes, paidChatIds, subscribedChatIds] = await Promise.all([
     // Paged reads (fetchAllRows): Supabase caps selects at 1000 rows, which
     // froze click/subscriber counts at exactly 1000 once links got popular.
     fetchAllRows((from, to) =>
       db
         .from("chats")
-        .select("id, invite_id, guest_country, guest_ip, stripe_payment_method_id")
+        .select("id, invite_id, guest_country, guest_ip")
         .eq("owner_id", ownerId)
         .not("invite_id", "is", null)
         .order("created_at", { ascending: true })
@@ -107,6 +107,7 @@ async function legacyStats(
         .range(from, to)
     ),
     mode === "paid" ? paidChats(ownerId) : Promise.resolve(new Set<string>()),
+    mode === "card" ? subscriberChatIds(ownerId) : Promise.resolve(new Set<string>()),
   ]);
 
   const allowedByInvite = new Map(
@@ -123,7 +124,8 @@ async function legacyStats(
   const stats: Record<string, Stats> = {};
   const seenIps: Record<string, Set<string>> = {};
   for (const chat of chatsRes.data ?? []) {
-    if (mode === "card" && !chat.stripe_payment_method_id) continue;
+    // 'card' mode (paid profile with a free trial) = fans who started the trial.
+    if (mode === "card" && !subscribedChatIds.has(chat.id as string)) continue;
     if (mode === "paid" && !paidChatIds.has(chat.id as string)) continue;
     const inviteId = chat.invite_id as string;
     stats[inviteId] ??= blank();

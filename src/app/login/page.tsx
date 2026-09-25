@@ -6,7 +6,7 @@ import Logo from "@/components/Logo";
 
 export const dynamic = "force-dynamic";
 
-/** Fan login page: sign in with the email + password used at sign-up. */
+/** Fan login page: Continue with Phantom (email + password for older accounts). */
 export default async function GuestLoginPage() {
   // Already logged in as a guest? Straight to their chats.
   const guestChatId = await getGuestChatId();
@@ -28,8 +28,8 @@ export default async function GuestLoginPage() {
             LolyFans
           </h1>
           <p className="text-muted text-sm text-center">
-            Log in with the email and password you signed up with to get back
-            to your chats.
+            Sign in with the Phantom wallet you signed up with to get back to
+            your chats.
           </p>
         </div>
         <GuestLoginForm />

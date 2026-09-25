@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Portal from "./Portal";
 import { IconGear, IconUser, IconVerified } from "./Icons";
+import { ensurePhantomOrRedirect, isPhantomCancel, payWithPhantom } from "@/lib/phantom";
+import { trackSubscribe } from "@/lib/metaPixel";
 
 type Subscription = {
   ownerId: string;
@@ -10,21 +12,21 @@ type Subscription = {
   avatarUrl: string | null;
   verified: boolean;
   status: string;
+  live: boolean;
   priceCents: number;
   interval: string;
   currentPeriodEnd: string | null;
+  nextChargeCents: number;
+  planInterval: string;
 };
 
-const INTERVAL_ADVERB: Record<string, string> = {
-  day: "daily",
-  week: "weekly",
-  month: "monthly",
-};
+function dollars(cents: number): string {
+  return `$${(cents / 100).toFixed(2).replace(/\.00$/, "")}`;
+}
 
 function priceLabel(sub: Subscription): string {
   if (sub.interval === "lifetime") return "Lifetime access";
-  const dollars = `$${(sub.priceCents / 100).toFixed(2).replace(/\.00$/, "")}`;
-  return `${dollars} / ${sub.interval}`;
+  return `${dollars(sub.priceCents)} / ${sub.interval}`;
 }
 
 function dateLabel(iso: string | null): string | null {
@@ -39,15 +41,15 @@ function dateLabel(iso: string | null): string | null {
 }
 
 /**
- * Fan Profile tab → the creators they're paying for. Each row's settings
- * button opens a sheet where the recurring charge can be cancelled; access
- * runs to the end of the period they already paid for.
+ * Fan Profile tab → the creators they subscribe to. Nothing renews on its
+ * own: each row's sheet shows when access ends and pays the next period in
+ * USDC from Phantom (paying early adds to the current period).
  */
 export default function GuestSubscriptions() {
   const [subs, setSubs] = useState<Subscription[] | null>(null);
   const [openFor, setOpenFor] = useState<Subscription | null>(null);
-  const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState("");
 
   async function load() {
@@ -64,26 +66,29 @@ export default function GuestSubscriptions() {
     void load();
   }, []);
 
-  async function cancel(sub: Subscription) {
+  async function payNext(sub: Subscription) {
     if (busy) return;
+    if (!ensurePhantomOrRedirect()) {
+      setError("Install the Phantom wallet, then come back to this page.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      const res = await fetch("/api/payments/subscribe", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ownerId: sub.ownerId, action: "cancel" }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok) {
-        setConfirming(false);
-        setOpenFor(null);
-        await load();
-      } else {
-        setError(data.error || "Could not cancel subscription");
-      }
-    } catch {
-      setError("Could not cancel subscription");
+      await payWithPhantom({ subscribeOwnerId: sub.ownerId }, setStatus);
+      trackSubscribe(sub.nextChargeCents, 0);
+      setStatus(null);
+      setOpenFor(null);
+      await load();
+    } catch (err) {
+      setStatus(null);
+      setError(
+        isPhantomCancel(err)
+          ? "Payment cancelled in Phantom."
+          : err instanceof Error
+            ? err.message
+            : "Could not complete the payment"
+      );
     }
     setBusy(false);
   }
@@ -91,7 +96,6 @@ export default function GuestSubscriptions() {
   function closeSheet() {
     if (busy) return;
     setOpenFor(null);
-    setConfirming(false);
     setError("");
   }
 
@@ -141,8 +145,15 @@ export default function GuestSubscriptions() {
 
       <ul className="space-y-2">
         {subs.map((sub) => {
-          const canceling = sub.status === "canceling";
-          const renewal = dateLabel(sub.currentPeriodEnd);
+          const end = dateLabel(sub.currentPeriodEnd);
+          const detail =
+            sub.interval === "lifetime"
+              ? "Lifetime access"
+              : !sub.live
+                ? `${priceLabel(sub)} · expired${end ? ` ${end}` : ""}`
+                : sub.status === "trialing"
+                  ? `Free trial${end ? ` · ends ${end}` : ""}`
+                  : `${priceLabel(sub)}${end ? ` · until ${end}` : ""}`;
           return (
             <li
               key={sub.ownerId}
@@ -166,17 +177,8 @@ export default function GuestSubscriptions() {
                   <span className="truncate">{sub.name}</span>
                   <IconVerified className="w-5 h-5 text-accent shrink-0" />
                 </p>
-                <p className="text-xs text-muted truncate">
-                  {sub.status === "trialing"
-                    ? `Free trial · then ${priceLabel(sub)}`
-                    : priceLabel(sub)}
-                  {canceling
-                    ? renewal
-                      ? ` · ends ${renewal}`
-                      : " · cancelled"
-                    : renewal
-                      ? ` · renews ${renewal}`
-                      : ""}
+                <p className={`text-xs truncate ${sub.live ? "text-muted" : "text-red-400"}`}>
+                  {detail}
                 </p>
               </div>
 
@@ -218,72 +220,56 @@ export default function GuestSubscriptions() {
                   <span className="text-muted">Plan</span>
                   <span className="font-semibold">{priceLabel(sheetSub)}</span>
                 </div>
-                {periodEnd && (
+                {periodEnd && sheetSub.interval !== "lifetime" && (
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-muted">
-                      {sheetSub.status === "canceling"
-                        ? "Subscription ends"
+                      {!sheetSub.live
+                        ? "Access ended"
                         : sheetSub.status === "trialing"
-                          ? "Trial ends · first charge"
-                          : "Next charge"}
+                          ? "Trial ends"
+                          : "Access until"}
                     </span>
                     <span className="font-semibold">{periodEnd}</span>
                   </div>
                 )}
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-muted">Status</span>
-                  <span className="font-semibold capitalize">
-                    {sheetSub.status === "canceling"
-                      ? "Cancelled"
+                  <span className="font-semibold">
+                    {!sheetSub.live
+                      ? "Expired"
                       : sheetSub.status === "trialing"
                         ? "Free trial"
-                        : sheetSub.status}
+                        : "Active"}
                   </span>
                 </div>
               </div>
 
               {error && <p className="text-sm text-red-400">{error}</p>}
 
-              {sheetSub.status === "canceling" ? (
+              {sheetSub.interval === "lifetime" ? (
                 <p className="text-xs text-muted text-center">
-                  This subscription is cancelled and won&apos;t be charged
-                  again. You still have access to the chat.
+                  You have lifetime access — nothing more to pay.
                 </p>
-              ) : sheetSub.interval === "lifetime" ? (
-                <p className="text-xs text-muted text-center">
-                  You have lifetime access — there&apos;s nothing to cancel.
-                </p>
-              ) : confirming ? (
+              ) : sheetSub.nextChargeCents > 0 ? (
                 <div className="space-y-2">
-                  <p className="text-sm text-muted">
-                    {sheetSub.status === "trialing"
-                      ? `Cancel your free trial with ${sheetSub.name}? Your card won't be charged${periodEnd ? ` on ${periodEnd}` : ""}, and you keep access to the chat.`
-                      : `Cancel your ${INTERVAL_ADVERB[sheetSub.interval] ?? "recurring"} subscription to ${sheetSub.name}? Your card won't be charged again${periodEnd ? ` after ${periodEnd}` : ""}, and you keep access to the chat.`}
+                  <p className="text-xs text-muted text-center">
+                    Nothing renews on its own. Pay the next {sheetSub.planInterval} in USDC
+                    from Phantom whenever you like — paying early adds to your current
+                    access.
                   </p>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setConfirming(false)}
-                      disabled={busy}
-                      className="flex-1 bg-card2 border border-line rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50"
-                    >
-                      Keep it
-                    </button>
-                    <button
-                      onClick={() => void cancel(sheetSub)}
-                      disabled={busy}
-                      className="flex-1 bg-red-500 text-white rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50 active:opacity-80 transition-opacity"
-                    >
-                      {busy ? "Cancelling…" : "Cancel it"}
-                    </button>
-                  </div>
+                  <button
+                    onClick={() => void payNext(sheetSub)}
+                    disabled={busy}
+                    className="w-full bg-[#AB9FF2] text-[#1C1C1C] rounded-xl py-2.5 text-sm font-semibold disabled:opacity-50 active:opacity-80 transition-opacity"
+                  >
+                    {status ??
+                      `Pay ${dollars(sheetSub.nextChargeCents)} for 1 ${sheetSub.planInterval} · Phantom`}
+                  </button>
                 </div>
               ) : (
-                <button
-                  onClick={() => setConfirming(true)}
-                  className="w-full bg-red-500/10 border border-red-500/30 text-red-400 rounded-xl py-2.5 text-sm font-semibold hover:bg-red-500/20 transition-colors"
-                >
-                  Cancel subscription
-                </button>
+                <p className="text-xs text-muted text-center">
+                  This creator&apos;s chat is free now — nothing to pay.
+                </p>
               )}
             </div>
           </div>

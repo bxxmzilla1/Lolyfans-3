@@ -3,8 +3,8 @@ import { chargeCallMinute, endCall, guestCall } from "@/lib/voiceCall";
 
 /**
  * Per-minute billing heartbeat: the call page posts here every 60 seconds
- * while the call is live. Each tick charges one more minute on the fan's
- * saved card; a failed charge ends the call immediately.
+ * while the call is live. Each tick spends one more minute from the fan's
+ * token wallet; an empty wallet ends the call immediately.
  */
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   if (!(await chargeCallMinute(call))) {
     await endCall(call);
     return NextResponse.json(
-      { error: "Your card was declined — the call has ended." },
+      { error: "Your Token wallet is empty — the call has ended." },
       { status: 402 }
     );
   }

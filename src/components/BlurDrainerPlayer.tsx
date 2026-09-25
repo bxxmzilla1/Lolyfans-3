@@ -2,12 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import Portal from "./Portal";
-import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { mediaUrl } from "@/lib/utils";
 import { useVideoContentBox } from "@/lib/useVideoContentBox";
-import { elementsEnabled } from "@/lib/stripeClient";
 import { TOKEN_PACKS, packTotalTokens, formatTokens } from "@/lib/tokens";
 import { trackTopup } from "@/lib/metaPixel";
+import { ensurePhantomOrRedirect, isPhantomCancel, payWithPhantom } from "@/lib/phantom";
 import {
   blurDrainPriceLabel,
   type BlurDrainerConfig,
@@ -17,10 +16,10 @@ import {
  * Fullscreen BlurDrainer: video plays under a stacked square blur. Tapping
  * anywhere on the screen peels a layer instantly (pointer-down, optimistic —
  * the token spends run in the background), so rapid tapping never drops a
- * click. When the wallet can't cover a tap and auto-refill is off, the stuck
- * layer turns into a top-up layer: one deliberate tap on it buys a pack
- * (saved card = instant) and the layer clears automatically. Free drains
- * require card verification first.
+ * click. When the wallet can't cover a tap, the stuck layer turns into a
+ * top-up layer: one deliberate tap on it buys the smallest covering pack
+ * with USDC from Phantom and the layer clears automatically. Free drains
+ * cost nothing.
  */
 export default function BlurDrainerPlayer({
   videoPath,
@@ -41,16 +40,11 @@ export default function BlurDrainerPlayer({
 }) {
   const [cleared, setCleared] = useState(initialCleared);
   const [peelFlash, setPeelFlash] = useState(false);
-  const [card, setCard] = useState<{
-    clientSecret: string;
-    country: string | null;
-    mode: "setup" | "payment";
-    amountCents: number;
-  } | null>(null);
-  const [cardNote, setCardNote] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
-  // Wallet too small for the next tap (and auto-refill didn't cover it):
-  // the blur square becomes a top-up layer until the fan buys a pack.
+  const [payStatus, setPayStatus] = useState<string | null>(null);
+  const [payError, setPayError] = useState<string | null>(null);
+  // Wallet too small for the next tap: the blur square becomes a top-up
+  // layer until the fan buys a pack.
   const [needTopup, setNeedTopup] = useState<{ needTokens: number } | null>(
     null
   );
@@ -136,36 +130,28 @@ export default function BlurDrainerPlayer({
     setCleared(tappedRef.current);
   }
 
-  /** Unblur a layer. Paid taps peel instantly (optimistic) while the token
-   *  spend runs in the background — every rapid tap counts, each firing its
-   *  own spend. Free taps before card verification wait with a spinner so
-   *  the blur never flashes open prematurely. */
+  /** Unblur a layer. Taps peel instantly (optimistic) while the token spend
+   *  runs in the background — every rapid tap counts, each firing its own
+   *  spend. */
   async function tap(force = false) {
     // Refs, not state: guards stay exact even when taps land faster than
     // React re-renders. `force` skips them for the automatic retry right
     // after a top-up (the state clearing them hasn't re-rendered yet).
-    if (!force && (card || checkingRef.current || needTopupRef.current)) return;
+    if (!force && (checkingRef.current || needTopupRef.current)) return;
     if (tappedRef.current >= config.layers) return;
-    const optimistic = !free;
-    if (optimistic) {
-      tappedRef.current += 1;
-      setCleared(tappedRef.current);
-    } else {
-      checkingRef.current = true;
-      setChecking(true);
-    }
+    tappedRef.current += 1;
+    setCleared(tappedRef.current);
     inflightRef.current += 1;
     try {
       const res = await fetch("/api/payments/blur-drain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId, embedded: elementsEnabled() }),
+        body: JSON.stringify({ messageId }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.status === 402 && typeof data.needTokens === "number") {
-        // Auto-refill didn't cover it (switched off, no saved card, or the
-        // charge failed): the blur square becomes a top-up layer.
-        if (optimistic) revertOneTap();
+        // Empty wallet: the blur square becomes a top-up layer.
+        revertOneTap();
         needTopupRef.current = true;
         setNeedTopup({ needTokens: data.needTokens });
         return;
@@ -174,139 +160,63 @@ export default function BlurDrainerPlayer({
         tappedRef.current = Math.max(tappedRef.current, data.layersCleared);
         setCleared((c) => Math.max(c, data.layersCleared));
         onProgress?.(data.layersCleared);
-      } else if (res.ok && data.setupClientSecret) {
-        setCardNote("Verify your card below to unblur the video for free.");
-        setCard({
-          clientSecret: data.setupClientSecret,
-          country: data.country ?? null,
-          mode: "setup",
-          amountCents: 0,
-        });
-      } else if (optimistic) {
+      } else {
         revertOneTap();
       }
     } catch {
-      if (optimistic) revertOneTap();
+      revertOneTap();
     } finally {
       inflightRef.current = Math.max(0, inflightRef.current - 1);
-      checkingRef.current = false;
-      setChecking(false);
     }
   }
 
-  /** The stuck layer's top-up: buy the smallest pack that covers the tap.
-   *  Saved card charges instantly and the layer clears right away; first
-   *  purchase opens the in-player card wizard instead. */
+  /** The stuck layer's top-up: buy the smallest pack that covers the tap
+   *  with USDC from Phantom, then pay for the layer and keep going. */
   async function topUp() {
-    if (checkingRef.current || card) return;
+    if (checkingRef.current) return;
+    if (!ensurePhantomOrRedirect()) {
+      setPayError("Install the Phantom wallet, then come back.");
+      return;
+    }
     const pack =
       TOKEN_PACKS.find(
         (p) => packTotalTokens(p) >= (needTopup?.needTokens ?? 1)
       ) ?? TOKEN_PACKS[TOKEN_PACKS.length - 1];
     checkingRef.current = true;
     setChecking(true);
+    setPayError(null);
     try {
-      const res = await fetch("/api/payments/topup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chatId,
-          packId: pack.id,
-          embedded: elementsEnabled(),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.topped) {
-        // One-tap charge went through — pay for the stuck layer and continue.
-        trackTopup({ ...data, source: "blur_drainer_one_tap" });
-        needTopupRef.current = false;
-        setNeedTopup(null);
-        checkingRef.current = false;
-        setChecking(false);
-        await tap(true);
-        return;
-      }
-      if (res.ok && data.clientSecret) {
-        setCardNote(
-          `Top up ${formatTokens(packTotalTokens(pack))} to keep unblurring.`
-        );
-        setCard({
-          clientSecret: data.clientSecret,
-          country: data.country ?? null,
-          mode: "payment",
-          amountCents: data.amountCents ?? pack.priceCents,
-        });
-        return;
-      }
-      if (data.checkoutUrl) {
-        window.location.href = data.checkoutUrl;
-      }
-    } catch {
-      // stays on the top-up layer — the fan can tap again
+      const data = await payWithPhantom({ chatId, packId: pack.id }, setPayStatus);
+      trackTopup({ ...data, source: "blur_drainer_crypto" });
+      needTopupRef.current = false;
+      setNeedTopup(null);
+      setPayStatus(null);
+      checkingRef.current = false;
+      setChecking(false);
+      if (videoEl) videoEl.play().catch(() => {});
+      await tap(true);
+      return;
+    } catch (err) {
+      setPayStatus(null);
+      setPayError(
+        isPhantomCancel(err)
+          ? "Payment cancelled in Phantom."
+          : err instanceof Error
+            ? err.message
+            : "Could not complete the payment"
+      );
     } finally {
       checkingRef.current = false;
       setChecking(false);
     }
   }
 
-  async function completeCard(intentId: string) {
-    const mode = card?.mode ?? "setup";
-    const chargedCents = card?.amountCents ?? 0;
-    setCard(null);
-    setCardNote(null);
-    if (mode === "payment") {
-      // Card top-up finished: credit the tokens, then automatically pay for
-      // the layer the fan was stuck on and let them continue tapping.
-      let data: { amountCents?: number; tokens?: number; packId?: string | null } = {};
-      try {
-        const res = await fetch("/api/payments/topup/complete", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chatId, paymentIntentId: intentId }),
-        });
-        if (res.ok) data = await res.json().catch(() => ({}));
-      } catch {
-        // the webhook still credits the payment
-      }
-      trackTopup({
-        amountCents: data.amountCents ?? chargedCents,
-        tokens: data.tokens,
-        packId: data.packId,
-        source: "blur_drainer_card_wizard",
-      });
-      needTopupRef.current = false;
-      setNeedTopup(null);
-      if (videoEl) videoEl.play().catch(() => {});
-      await tap(true);
-      return;
-    }
-    try {
-      const res = await fetch("/api/payments/blur-drain", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messageId, setupIntentId: intentId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && typeof data.layersCleared === "number") {
-        tappedRef.current = Math.max(tappedRef.current, data.layersCleared);
-        setCleared((c) => Math.max(c, data.layersCleared));
-        onProgress?.(data.layersCleared);
-        if (videoEl) videoEl.play().catch(() => {});
-      }
-    } catch {
-      // webhook still records
-    }
-  }
-
-  const freePrompt = free && cleared === 0;
   const blurLabel =
     remaining <= 0
       ? "Tap to unblur"
       : needTopup
         ? "You're out of Tokens"
-        : freePrompt
-          ? "Confirm your payment details to watch this video for FREE"
-          : `Tap ${remaining} time${remaining === 1 ? "" : "s"} to unblur the video`;
+        : `Tap ${remaining} time${remaining === 1 ? "" : "s"} to unblur the video`;
 
   return (
     <Portal>
@@ -315,7 +225,7 @@ export default function BlurDrainerPlayer({
       <div
         className="fixed inset-0 z-[85] bg-black fade-up flex flex-col touch-manipulation select-none"
         onPointerDown={() => {
-          if (card || needTopupRef.current) return;
+          if (needTopupRef.current) return;
           if (remaining <= 0) return;
           void tap();
         }}
@@ -392,7 +302,7 @@ export default function BlurDrainerPlayer({
                       className="h-8 w-8 rounded-full border-2 border-white/25 border-t-white/90 animate-spin drop-shadow-lg"
                     />
                     <span className="text-white/75 text-sm font-thin tracking-wide drop-shadow-lg select-none">
-                      One moment…
+                      {payStatus ?? "One moment…"}
                     </span>
                   </span>
                 ) : needTopup ? (
@@ -400,17 +310,23 @@ export default function BlurDrainerPlayer({
                     <span className="text-white/85 text-xl sm:text-2xl font-thin tracking-wide drop-shadow-lg select-none leading-snug">
                       {blurLabel}
                     </span>
-                    <span className="px-4 py-2 rounded-full bg-accent text-white text-sm font-semibold shadow-lg select-none">
-                      Tap to top up &amp; continue
+                    <span className="px-4 py-2 rounded-full bg-[#AB9FF2] text-[#1C1C1C] text-sm font-semibold shadow-lg select-none">
+                      Top up with Phantom &amp; continue
                     </span>
-                  </span>
-                ) : freePrompt ? (
-                  <span className="flex flex-col items-center gap-2">
-                    <span className="text-white/85 text-xl sm:text-2xl font-thin tracking-wide drop-shadow-lg select-none leading-snug">
-                      {blurLabel}
-                    </span>
-                    <span className="text-white/60 text-sm font-thin tracking-wide drop-shadow-lg select-none">
-                      Tap here
+                    {payError && (
+                      <span className="text-red-300 text-xs font-light drop-shadow-lg select-none">
+                        {payError}
+                      </span>
+                    )}
+                    <span className="text-white/60 text-xs font-thin tracking-wide drop-shadow-lg select-none">
+                      {formatTokens(
+                        packTotalTokens(
+                          TOKEN_PACKS.find(
+                            (p) => packTotalTokens(p) >= needTopup.needTokens
+                          ) ?? TOKEN_PACKS[TOKEN_PACKS.length - 1]
+                        )
+                      )}{" "}
+                      in USDC
                     </span>
                   </span>
                 ) : (
@@ -436,35 +352,6 @@ export default function BlurDrainerPlayer({
             />
           )}
         </div>
-
-        {card && (
-          <div className="absolute inset-x-0 bottom-0 z-30 flex flex-col justify-end pointer-events-none">
-            <div className="flex-1 min-h-[20vh] bg-gradient-to-t from-black/70 to-transparent pointer-events-none" />
-            <div
-              className="pointer-events-auto w-full max-h-[min(72vh,640px)] overflow-y-auto rounded-t-3xl border-t border-white/15 bg-card px-4 pt-3 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_rgba(0,0,0,0.45)] space-y-2"
-              onPointerDown={(e) => e.stopPropagation()}
-            >
-              <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-line" />
-              {cardNote && (
-                <p className="rounded-xl text-xs font-light px-3.5 py-2.5 text-center bg-accent/10 border border-accent/30 text-fg">
-                  {cardNote}
-                </p>
-              )}
-              <EmbeddedCardTopup
-                clientSecret={card.clientSecret}
-                mode={card.mode}
-                amountCents={card.amountCents}
-                presentAsVerify={card.mode === "setup"}
-                countryGuess={card.country}
-                onSuccess={completeCard}
-                onCancel={() => {
-                  setCard(null);
-                  setCardNote(null);
-                }}
-              />
-            </div>
-          </div>
-        )}
       </div>
     </Portal>
   );

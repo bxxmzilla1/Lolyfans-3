@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import { tokenBalance } from "@/lib/payments";
 import { TOKEN_PACKS } from "@/lib/tokens";
@@ -13,19 +12,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const db = supabaseAdmin();
-  const [balance, { data: chat }] = await Promise.all([
-    tokenBalance(chatId),
-    db
-      .from("chats")
-      .select("stripe_payment_method_id")
-      .eq("id", chatId)
-      .maybeSingle(),
-  ]);
-
   return NextResponse.json({
-    balance,
+    balance: await tokenBalance(chatId),
     packs: TOKEN_PACKS,
-    hasCard: !!chat?.stripe_payment_method_id,
   });
 }

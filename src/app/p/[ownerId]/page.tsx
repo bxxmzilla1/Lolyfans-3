@@ -5,11 +5,14 @@ import { guestChats, ownerProfiles } from "@/lib/guest";
 import { postStats } from "@/lib/posts";
 import { applyUserGeoTokens, visitorGeoParts, visitorLocation } from "@/lib/geo";
 import { formatCount, mediaUrl } from "@/lib/utils";
-import { guestAccessDestination } from "@/lib/subscriptionAccess";
+import {
+  chatSubscription,
+  guestAccessDestination,
+  subscriptionChargeCents,
+} from "@/lib/subscriptionAccess";
 import GuestPage from "@/components/GuestPage";
 import FollowButton from "@/components/FollowButton";
 import ProfileSubscribeCta from "@/components/ProfileSubscribeCta";
-import SubscribeReturn from "@/components/SubscribeReturn";
 import MessageCreatorButton from "@/components/MessageCreatorButton";
 import PostFeed, { type FeedPost } from "@/components/PostFeed";
 import CreatorBanner from "@/components/CreatorBanner";
@@ -28,16 +31,10 @@ export default async function CreatorProfilePage({
   searchParams: Promise<{
     via?: string;
     subscribe?: string;
-    subscribed?: string;
-    sub?: string;
-    pi?: string;
   }>;
 }) {
   const [{ ownerId }, query] = await Promise.all([params, searchParams]);
-  const openCardSheet = query.subscribe === "1";
-  // Ids Stripe appends to the return URL after a 3-D Secure redirect.
-  const returnSubId = query.subscribed === "1" ? query.sub : undefined;
-  const returnPiId = query.subscribed === "1" ? query.pi : undefined;
+  const openPaySheet = query.subscribe === "1";
   if (!UUID_RE.test(ownerId)) notFound();
 
   const requestHeaders = await headers();
@@ -115,12 +112,19 @@ export default async function CreatorProfilePage({
     subscribed = !!sub;
   }
   const chatWithOwner = chats.find((c) => c.owner_id === ownerId);
-  // Signed up with this creator but no verified card yet (paid profile):
-  // the SUBSCRIBE bar becomes "Add your card" and opens the Stripe sheet.
+  // Signed up with this creator but the trial / paid period is over (paid
+  // profile): the bar becomes CONTINUE and opens the USDC payment sheet.
   let needsCard = false;
+  let chargeCents: number | null = null;
   if (chatWithOwner) {
     const access = await guestAccessDestination(chatWithOwner.id, ownerId);
     needsCard = !access.allowed;
+    if (needsCard) {
+      chargeCents = subscriptionChargeCents(
+        profile.plan,
+        await chatSubscription(chatWithOwner.id, ownerId)
+      );
+    }
   }
   const hasChatWithOwner = !!chatWithOwner && !needsCard;
   // Profile-level like count: owner-set base + real guest likes on posts.
@@ -150,20 +154,10 @@ export default async function CreatorProfilePage({
     blurred: blurForVisitor,
   }));
 
-  // Back from a bank (3-D Secure) redirect mid card step: finish activation.
-  const finishing = !!(returnSubId || returnPiId) && !!chatWithOwner;
-
   return (
     // No footer menu until the fan can actually get in: visitors without an
-    // account, and signed-up fans who still owe the card step.
+    // account, and signed-up fans who still owe the current period.
     <GuestPage hideHeader hideNav={chats.length === 0 || needsCard}>
-        {finishing && (
-          <SubscribeReturn
-            ownerId={ownerId}
-            subscriptionId={returnSubId}
-            paymentIntentId={returnPiId}
-          />
-        )}
         <section className="pb-4">
           {/* OnlyFans structure: banner, avatar left with actions on the right */}
           <CreatorBanner
@@ -219,8 +213,9 @@ export default async function CreatorProfilePage({
                   ownerId={ownerId}
                   ownerName={profile.name}
                   plan={profile.plan}
-                  cardOnly
-                  autoOpen={openCardSheet}
+                  payOnly
+                  chargeCents={chargeCents}
+                  autoOpen={openPaySheet}
                 />
               </div>
             ) : chats.length > 0 ? (

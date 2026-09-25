@@ -45,7 +45,7 @@ export const URL_REGEX = /(https?:\/\/[^\s<>"')\]]+)/g;
 export const LABELED_LINK_REGEX =
   /\[([^\]\n]{0,200})\](?:\{[^}\n]{0,20}\})?\((https?:\/\/[^\s)]+)\)/g;
 
-/** Strip internal Stripe tip receipt tokens from stored message text. */
+/** Strip internal tip receipt tokens from stored message text. */
 export function stripPaymentReceipt(content: string): string {
   return content.replace(/\n⌞[^⌟]+⌟\s*$/u, "").trimEnd();
 }

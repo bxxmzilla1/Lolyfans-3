@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
 
   if (follow) {
     // Following a creator opens a chat with them (created from the fan's
-    // account if needed, inheriting their verified card), so the creator
+    // account if needed, inheriting their wallet identity), so the creator
     // sees the fan in their inbox and the fan gets them in their chat list.
     const ensured = await ensureGuestChatWith(ownerId, chats);
     if (!ensured) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -3,6 +3,7 @@ import { getGuestChatId } from "@/lib/session";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestChatAccessDestination } from "@/lib/subscriptionAccess";
 import CallScreen from "@/components/CallScreen";
+import { CALL_TOKENS_PER_MIN } from "@/lib/voiceCall";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function CallPage() {
   const db = supabaseAdmin();
   const { data: chat } = await db
     .from("chats")
-    .select("owner_id, stripe_customer_id, stripe_payment_method_id")
+    .select("owner_id, token_balance")
     .eq("id", chatId)
     .maybeSingle();
   if (!chat) redirect("/api/guest/gone");
@@ -37,7 +38,7 @@ export default async function CallPage() {
     <CallScreen
       ownerName={meta.display_name || "Lolyfans"}
       avatarPath={meta.avatar_path || null}
-      hasCard={!!chat.stripe_customer_id && !!chat.stripe_payment_method_id}
+      hasTokens={(Number(chat.token_balance) || 0) >= CALL_TOKENS_PER_MIN}
       voiceReady={!!(meta.eleven_voice_id || "").trim()}
     />
   );

@@ -1,10 +1,13 @@
 import "server-only";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
-import { chargeChatDollars } from "@/lib/payments";
+import { spendTokens } from "@/lib/payments";
+import { tokensForCents } from "@/lib/tokens";
 
 /** Flat per-minute price for chatbot voice calls. */
 export const CALL_PRICE_CENTS_PER_MIN = 100;
+/** …in wallet Tokens. */
+export const CALL_TOKENS_PER_MIN = tokensForCents(CALL_PRICE_CENTS_PER_MIN);
 
 export type VoiceCall = {
   id: string;
@@ -40,20 +43,16 @@ export async function guestCall(
 }
 
 /**
- * Charge one more minute of an active call on the fan's saved card.
- * Returns true when paid; false means no card / declined (end the call).
+ * Pay one more minute of an active call from the fan's token wallet.
+ * Returns true when paid; false means the wallet is empty (end the call).
  */
 export async function chargeCallMinute(call: VoiceCall): Promise<boolean> {
-  const result = await chargeChatDollars({
+  const balance = await spendTokens({
     chatId: call.chat_id,
-    amountCents: call.price_cents_per_min,
-    kind: "voice-call",
-    description: "Voice call (per minute)",
-    metadata: { callId: call.id },
+    tokens: tokensForCents(call.price_cents_per_min),
+    kind: "call",
   }).catch(() => null);
-  // A clientSecret result means there's no chargeable saved card — calls
-  // never open a card wizard mid-conversation, so that counts as failure.
-  if (!result || !("paid" in result)) return false;
+  if (balance === null) return false;
 
   await supabaseAdmin()
     .from("voice_calls")

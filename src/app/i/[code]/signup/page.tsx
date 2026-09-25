@@ -4,13 +4,14 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { getGuestChatId } from "@/lib/session";
 import { inviteUsable, countryAllowed, ipFromHeaders, Invite } from "@/lib/invites";
 import { mediaUrl } from "@/lib/utils";
+import { subPlanFromMetadata } from "@/lib/subscriptionPlan";
 import JoinForm from "@/components/JoinForm";
 import InviteProfile from "@/components/InviteProfile";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Invite sign-up page: email + password only. After join, fans are dropped
+ * Invite sign-up page: Continue with Phantom. After join, fans are dropped
  * straight into their private chat with the creator.
  */
 export default async function InviteSignupPage({
@@ -64,6 +65,7 @@ export default async function InviteSignupPage({
     invite_button_text?: string;
   };
   const ownerName = meta.display_name || "Lolyfans";
+  const plan = subPlanFromMetadata(meta as Record<string, unknown>);
 
   return (
     <main className="flex-1 flex flex-col items-center justify-center p-6 min-h-dvh">
@@ -76,14 +78,16 @@ export default async function InviteSignupPage({
 
         <div className="text-center -mt-2">
           <p className="text-muted text-sm">
-            Sign up with your email to start chatting with {ownerName}.
+            Sign in with your Phantom wallet to start chatting with {ownerName}.
           </p>
         </div>
 
         <JoinForm
           code={code}
-          buttonText={meta.invite_button_text || "Start chatting"}
+          buttonText={meta.invite_button_text || "Continue with Phantom"}
+          ownerId={invite!.owner_id}
           ownerName={ownerName}
+          plan={plan}
         />
       </div>
     </main>

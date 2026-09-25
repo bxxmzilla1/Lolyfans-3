@@ -23,8 +23,8 @@ type ChatRow = {
   guest_city: string | null;
   last_message_at: string;
   in_all: boolean;
-  /** Card on file → the fan can one-tap purchase (credit-card icon). */
-  stripe_payment_method_id: string | null;
+  /** Signed up with Phantom (wallet icon). */
+  guest_wallet: string | null;
   invites: { label: string | null; code: string } | null;
   preview: ChatPreview | null;
   unread: number;
@@ -133,7 +133,7 @@ function subscribeInboxTyping(
 
 export default function ChatList() {
   // /api/chats already applies the plan rule: paid profiles list only
-  // card-verified fans, free profiles list everyone who signed up.
+  // subscribed fans, free profiles list everyone who signed up.
   const [chats, setChats] = useState<ChatRow[] | null>(chatsCache);
   const [ownerId, setOwnerId] = useState<string | null>(ownerIdCache);
   const [categories, setCategories] = useState<Category[]>(categoriesCache ?? []);
@@ -720,8 +720,8 @@ export default function ChatList() {
                     <p className={`text-[14px] flex items-center gap-1.5 min-w-0 ${
                       chat.unread > 0 && !active ? "font-bold" : "font-semibold"
                     }`}>
-                      {chat.stripe_payment_method_id ? (
-                        <span title="Card registered" className="shrink-0 text-accent">
+                      {chat.guest_wallet ? (
+                        <span title="Phantom wallet linked" className="shrink-0 text-accent">
                           <IconCard className="w-3.5 h-3.5" />
                         </span>
                       ) : null}

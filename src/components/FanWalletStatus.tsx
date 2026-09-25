@@ -9,38 +9,39 @@ export const FANSTATE_EVENT = "loly-fanstate";
 export type FanstateDetail = {
   chatId: string;
   balance?: number;
-  hasCard?: boolean;
+  hasWallet?: boolean;
 };
 
 /**
- * Creator's chat header, left of the fan's name: the card icon once a card
- * is registered — plus the fan's live token balance on the right of the name.
+ * Creator's chat header, left of the fan's name: the wallet icon when the
+ * fan signed up with Phantom — plus the fan's live token balance on the
+ * right of the name.
  */
 export default function FanWalletStatus({
   chatId,
   initialBalance = 0,
-  initialHasCard,
+  initialHasWallet,
   children,
 }: {
   chatId: string;
   initialBalance?: number;
-  initialHasCard: boolean;
+  initialHasWallet: boolean;
   children: React.ReactNode;
 }) {
   const [balance, setBalance] = useState(initialBalance);
-  const [hasCard, setHasCard] = useState(initialHasCard);
+  const [hasWallet, setHasWallet] = useState(initialHasWallet);
 
   useEffect(() => {
     setBalance(initialBalance);
-    setHasCard(initialHasCard);
-  }, [chatId, initialBalance, initialHasCard]);
+    setHasWallet(initialHasWallet);
+  }, [chatId, initialBalance, initialHasWallet]);
 
   useEffect(() => {
     function onFanstate(e: Event) {
       const detail = (e as CustomEvent<FanstateDetail>).detail;
       if (!detail || detail.chatId !== chatId) return;
       if (typeof detail.balance === "number") setBalance(detail.balance);
-      if (typeof detail.hasCard === "boolean") setHasCard(detail.hasCard);
+      if (typeof detail.hasWallet === "boolean") setHasWallet(detail.hasWallet);
     }
     window.addEventListener(FANSTATE_EVENT, onFanstate);
     return () => window.removeEventListener(FANSTATE_EVENT, onFanstate);
@@ -48,8 +49,8 @@ export default function FanWalletStatus({
 
   return (
     <>
-      {hasCard ? (
-        <span title="Card registered" className="shrink-0 text-accent">
+      {hasWallet ? (
+        <span title="Phantom wallet linked" className="shrink-0 text-accent">
           <IconCard className="w-4 h-4" />
         </span>
       ) : null}

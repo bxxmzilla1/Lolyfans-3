@@ -10,7 +10,7 @@ import { guestAccessDestination } from "@/lib/subscriptionAccess";
  * or back onto the payment step when the creator's profile is still unpaid.
  *
  * Optional `?next=/i/CODE/profile` keeps unpaid fans on the invite profile
- * (with the card sheet) instead of bouncing them to /signup.
+ * (with the USDC payment sheet) instead of bouncing them to /signup.
  */
 export async function GET(req: NextRequest) {
   const ip = ipFromHeaders(req.headers);

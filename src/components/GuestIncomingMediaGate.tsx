@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import IncomingMediaGate from "./IncomingMediaGate";
-import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import { parseBlurDrainer } from "@/lib/blurDrainer";
 import { useInboxSignals, type ChatOwnerPair } from "@/lib/useInboxSignals";
 import type { Message } from "./MessageBubble";
@@ -12,7 +11,6 @@ type Pending = {
   message: Message;
   peerName: string;
   chatId: string;
-  hasCard: boolean;
 };
 
 /**
@@ -30,14 +28,7 @@ export default function GuestIncomingMediaGate({
   const [pending, setPending] = useState<Pending | null>(null);
   const [deciding, setDeciding] = useState(false);
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
-  const [startingSetup, setStartingSetup] = useState(false);
   const [gateLeft, setGateLeft] = useState<number | null>(null);
-  const [gateCardSetup, setGateCardSetup] = useState<{
-    clientSecret: string;
-    country: string | null;
-    messageId: string;
-    chatId: string;
-  } | null>(null);
   const gateIdRef = useRef<string | null>(null);
   const fetchingRef = useRef(false);
 
@@ -87,11 +78,7 @@ export default function GuestIncomingMediaGate({
   }, [loadPending]);
 
   const message = pending?.message ?? null;
-  const gatePaused =
-    deciding ||
-    startingSetup ||
-    unlockingId === message?.id ||
-    (!!gateCardSetup && gateCardSetup.messageId === message?.id);
+  const gatePaused = deciding || unlockingId === message?.id;
 
   const decideGate = useCallback(
     async (msg: Message, decision: "accept" | "reject", chatId?: string) => {
@@ -108,7 +95,6 @@ export default function GuestIncomingMediaGate({
             localStorage.removeItem(`lf-decide-left:${msg.id}`);
           } catch {}
           setPending(null);
-          setGateCardSetup(null);
           if (decision === "accept" && chatId) {
             await goToChat(chatId);
           } else {
@@ -145,8 +131,8 @@ export default function GuestIncomingMediaGate({
         setPending(null);
         await goToChat(chatId);
       } else if (res.status === 402) {
-        // Not enough Tokens — open the chat wallet so they can top up, then
-        // the pending unlock resumes after purchase.
+        // Not enough Tokens — open the chat wallet so they can top up with
+        // Phantom, then the pending unlock resumes after purchase.
         try {
           sessionStorage.setItem("lf-pending-unlock", messageId);
           sessionStorage.setItem(
@@ -167,54 +153,9 @@ export default function GuestIncomingMediaGate({
     setUnlockingId(null);
   }
 
-  async function startGateCardSetup(messageId: string, chatId: string) {
-    if (startingSetup || gateCardSetup) return;
-    setStartingSetup(true);
-    try {
-      const res = await fetch("/api/payments/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.clientSecret) {
-        setGateCardSetup({
-          clientSecret: data.clientSecret,
-          country: data.country ?? null,
-          messageId,
-          chatId,
-        });
-      } else {
-        alert(data.error || "Could not start card setup");
-      }
-    } catch {
-      alert("Could not start card setup");
-    }
-    setStartingSetup(false);
-  }
-
-  async function completeGateCardSetup(setupIntentId: string) {
-    const chatId = gateCardSetup?.chatId;
-    const messageId = gateCardSetup?.messageId;
-    try {
-      await fetch("/api/payments/verify/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, setupIntentId }),
-      });
-    } catch {
-      // Card already saved on Stripe.
-    }
-    setGateCardSetup(null);
-    const msg = pending?.message;
-    if (msg && messageId === msg.id && chatId) {
-      await decideGate(msg, "accept", chatId);
-    }
-  }
-
   function acceptGate(msg: Message, chatId: string) {
-    // BlurDrainer: accept with or without a card. The Stripe card form appears
-    // inside the player on the first tap of the blur layer.
+    // BlurDrainer: accept opens the player; each layer is paid from the
+    // token wallet inside it.
     if (parseBlurDrainer(msg.blur_drainer)) {
       decideGate(msg, "accept", chatId);
       return;
@@ -273,23 +214,7 @@ export default function GuestIncomingMediaGate({
       message={pending.message}
       peerName={pending.peerName}
       secondsLeft={gateLeft}
-      busy={
-        deciding ||
-        startingSetup ||
-        unlockingId === pending.message.id ||
-        !!gateCardSetup
-      }
-      wizard={
-        gateCardSetup && gateCardSetup.messageId === pending.message.id ? (
-          <EmbeddedCardTopup
-            clientSecret={gateCardSetup.clientSecret}
-            mode="setup"
-            countryGuess={gateCardSetup.country}
-            onSuccess={completeGateCardSetup}
-            onCancel={() => setGateCardSetup(null)}
-          />
-        ) : null
-      }
+      busy={deciding || unlockingId === pending.message.id}
       onAccept={() => acceptGate(pending.message, pending.chatId)}
       onReject={() => decideGate(pending.message, "reject")}
     />

@@ -1,9 +1,7 @@
-import { NextRequest, NextResponse, after } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { guestOwnsChat } from "@/lib/guestAuth";
 import {
-  autoRefillTokens,
-  maybeAutoRefillLowBalance,
   postTipMessage,
   spendTokens,
   tokenBalance,
@@ -13,7 +11,7 @@ import { MIN_TIP_TOKENS, MAX_TIP_TOKENS } from "@/lib/tokens";
 
 /**
  * Fan tip, paid in wallet Tokens. Instant spend — the wallet is topped up
- * separately via Stripe (/api/payments/topup).
+ * separately with USDC from Phantom.
  */
 export async function POST(req: NextRequest) {
   const { chatId, tokens: tokensRaw, caption } = await req.json();
@@ -41,15 +39,7 @@ export async function POST(req: NextRequest) {
     .maybeSingle();
   if (!chat) return NextResponse.json({ error: "Chat not found" }, { status: 404 });
 
-  let balance = await spendTokens({ chatId, tokens, kind: "tip" });
-  // Auto refill (default on): saved card silently rebuys the last pack.
-  if (balance === null) {
-    const current = await tokenBalance(chatId);
-    const refilled = await autoRefillTokens(chatId, tokens - current);
-    if (refilled !== null) {
-      balance = await spendTokens({ chatId, tokens, kind: "tip" });
-    }
-  }
+  const balance = await spendTokens({ chatId, tokens, kind: "tip" });
   if (balance === null) {
     return NextResponse.json(
       {
@@ -66,10 +56,6 @@ export async function POST(req: NextRequest) {
     content: tokenTipMessageContent(tokens, note),
     ownerId: chat.owner_id,
   });
-
-  // Wallet running low (≤10 Tokens)? Refill in the background.
-  const newBalance = balance;
-  after(() => maybeAutoRefillLowBalance(chatId, newBalance));
 
   return NextResponse.json({
     ok: true,

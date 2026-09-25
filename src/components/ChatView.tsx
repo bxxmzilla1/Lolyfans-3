@@ -12,22 +12,11 @@ import {
 } from "@/lib/utils";
 import MessageBubble, { Message } from "./MessageBubble";
 import Portal from "./Portal";
-import EmbeddedCardTopup from "./EmbeddedCardTopup";
 import IncomingMediaGate from "./IncomingMediaGate";
 import BlurDrainerEditor from "./BlurDrainerEditor";
 import BlurDrainerPlayer from "./BlurDrainerPlayer";
-import { elementsEnabled, getStripe } from "@/lib/stripeClient";
 import { trackTopup } from "@/lib/metaPixel";
-import {
-  isMobileBrowser,
-  payUsdcWithPhantom,
-  phantomBrowseUrl,
-  phantomProvider,
-} from "@/lib/phantom";
-
-// Set NEXT_PUBLIC_SOLANA_USDC_RECEIVER (the receiving wallet) to offer
-// "Crypto" next to "Card" in the wallet sheet.
-const CRYPTO_ENABLED = !!process.env.NEXT_PUBLIC_SOLANA_USDC_RECEIVER;
+import { ensurePhantomOrRedirect, isPhantomCancel, payWithPhantom } from "@/lib/phantom";
 import { parseBlurDrainer, type BlurDrainerConfig } from "@/lib/blurDrainer";
 import {
   CENTS_PER_TOKEN,
@@ -92,12 +81,6 @@ export default function ChatView({
   const [blurDrainer, setBlurDrainer] = useState<BlurDrainerConfig | null>(null);
   const [blurEditorOpen, setBlurEditorOpen] = useState(false);
   const [drainPlayer, setDrainPlayer] = useState<Message | null>(null);
-  // BlurDrainer gate: card SetupIntent required before Accept can proceed.
-  const [gateCardSetup, setGateCardSetup] = useState<{
-    clientSecret: string;
-    country: string | null;
-    messageId: string;
-  } | null>(null);
   const [unlockingId, setUnlockingId] = useState<string | null>(null);
   const [tipTokens, setTipTokens] = useState<number | null>(null);
   const [tipPickerOpen, setTipPickerOpen] = useState(false);
@@ -109,24 +92,14 @@ export default function ChatView({
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNote, setWalletNote] = useState<string | null>(null);
   const [toppingUp, setToppingUp] = useState<string | null>(null);
-  // Wallet sheet payment method; "crypto" = USDC from Phantom.
-  const [payMethod, setPayMethod] = useState<"card" | "crypto">("card");
+  // Progress / error text of the Phantom USDC payment in flight.
   const [cryptoStatus, setCryptoStatus] = useState<string | null>(null);
   // In-flight guards readable from memoized bubbles' older closures.
   const unlockingRef = useRef(false);
-  // First purchase: the composer area swaps for the embedded 3-step card
-  // wizard instead of redirecting to Stripe Checkout.
-  const [cardTopup, setCardTopup] = useState<{
-    clientSecret: string;
-    amountCents: number;
-    tokens: number;
-    country: string | null;
-  } | null>(null);
   // The message the fan tried to accept while short on tokens — it unlocks
   // automatically the moment their top-up lands.
   const pendingUnlockIdRef = useRef<string | null>(null);
-  const [startingVerify, setStartingVerify] = useState(false);
-  // Owner side: coupon + Stripe payment link composers.
+  // Owner side: coupon composer.
   const [offerDialog, setOfferDialog] = useState<{
     tokens: string;
     price: string;
@@ -137,13 +110,6 @@ export default function ChatView({
   const [redeemedCoupons, setRedeemedCoupons] = useState<Set<string>>(
     () => new Set()
   );
-  const [payLinkDialog, setPayLinkDialog] = useState<{
-    tokens: string;
-    price: string;
-    url: string | null;
-  } | null>(null);
-  const [creatingLink, setCreatingLink] = useState(false);
-  const [linkCopied, setLinkCopied] = useState(false);
   // Incoming-media gate (guest side): accept/reject in flight + the
   // countdown remaining for the media currently on screen.
   const [deciding, setDeciding] = useState(false);
@@ -250,7 +216,6 @@ export default function ChatView({
     setBlurDrainer(null);
     setBlurEditorOpen(false);
     setDrainPlayer(null);
-    setGateCardSetup(null);
     setMsgSelectMode(false);
     setSelectedMsgs(new Set());
     // Wait a frame so the list has laid out its content
@@ -381,7 +346,7 @@ export default function ChatView({
         if (!res.ok || stopped) return;
         const data = (await res.json()) as {
           balance?: number;
-          hasCard?: boolean;
+          hasWallet?: boolean;
           media?: {
             id: string;
             fan_decision: "accepted" | "rejected" | null;
@@ -394,7 +359,7 @@ export default function ChatView({
             detail: {
               chatId,
               balance: data.balance,
-              hasCard: data.hasCard,
+              hasWallet: data.hasWallet,
             },
           })
         );
@@ -472,15 +437,6 @@ export default function ChatView({
     refreshWallet();
   }, [refreshWallet]);
 
-  // Preload Stripe.js while the fan still has credit: parsing the script and
-  // mounting its iframes at the exact moment the card wizard swaps in is what
-  // used to freeze phones. Idle-time load keeps the swap instant.
-  useEffect(() => {
-    if (role !== "guest" || !elementsEnabled()) return;
-    const idle = window.setTimeout(() => void getStripe(), 1500);
-    return () => window.clearTimeout(idle);
-  }, [role]);
-
   // Keep the wallet balance fresh.
   useEffect(() => {
     if (role !== "guest") return;
@@ -510,13 +466,9 @@ export default function ChatView({
     role === "guest"
       ? messages.filter((m) => m.fan_decision !== "rejected" && !needsDecision(m))
       : messages;
-  // The countdown pauses while a decision/payment is in flight or the card
-  // wizard is open — closing the wizard without finishing resumes it.
-  const gatePaused =
-    deciding ||
-    unlockingId === pendingGate?.id ||
-    (!!gateCardSetup && gateCardSetup.messageId === pendingGate?.id) ||
-    !!cardTopup;
+  // The countdown pauses while a decision/payment is in flight or the
+  // top-up sheet is open — closing it without paying resumes the countdown.
+  const gatePaused = deciding || unlockingId === pendingGate?.id || walletOpen;
 
   /** Accept or reject the media currently on the gate (free/manual-lock). */
   const decideGate = useCallback(
@@ -537,7 +489,6 @@ export default function ChatView({
           try {
             localStorage.removeItem(`lf-decide-left:${message.id}`);
           } catch {}
-          if (decision === "reject") setGateCardSetup(null);
           setDeciding(false);
           return true;
         }
@@ -552,53 +503,8 @@ export default function ChatView({
     [deciding]
   );
 
-  /** BlurDrainer Accept without a card: SetupIntent wizard (no charge). */
-  async function startGateCardSetup(messageId: string) {
-    if (startingVerify || gateCardSetup) return;
-    setStartingVerify(true);
-    try {
-      const res = await fetch("/api/payments/verify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.clientSecret) {
-        setGateCardSetup({
-          clientSecret: data.clientSecret,
-          country: data.country ?? null,
-          messageId,
-        });
-      } else {
-        alert(data.error || "Could not start card setup");
-      }
-    } catch {
-      alert("Could not start card setup");
-    }
-    setStartingVerify(false);
-  }
-
-  async function completeGateCardSetup(setupIntentId: string) {
-    try {
-      await fetch("/api/payments/verify/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, setupIntentId }),
-      });
-    } catch {
-      // Card is already on Stripe; refresh catches up.
-    }
-    const messageId = gateCardSetup?.messageId;
-    setGateCardSetup(null);
-    const msg = messages.find((m) => m.id === messageId) ?? pendingGate;
-    if (msg && parseBlurDrainer(msg.blur_drainer)) {
-      const ok = await decideGate(msg, "accept");
-      if (ok) setDrainPlayer(msg);
-    }
-  }
-
-  /** Accept: BlurDrainer opens even without a card — card is collected on
-   *  the first tap inside the player. Priced media pays; free accepts. */
+  /** Accept: BlurDrainer opens the player (each layer is paid from the token
+   *  wallet inside it). Priced media pays; free accepts. */
   async function acceptGate(message: Message) {
     if (parseBlurDrainer(message.blur_drainer)) {
       const ok = await decideGate(message, "accept");
@@ -670,38 +576,6 @@ export default function ChatView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [role]);
 
-  // After Stripe Checkout (token top-up): confirm the session, refresh, then
-  // finish a pending accept if the fan was short on tokens.
-  useEffect(() => {
-    if (role !== "guest") return;
-    const params = new URLSearchParams(window.location.search);
-    const sessionId = params.get("session_id");
-    const paid = params.get("paid") || params.get("tipped") || params.get("topup");
-    if (!sessionId && !paid) return;
-    window.history.replaceState({}, "", "/chat");
-    (async () => {
-      if (sessionId) {
-        const res = await fetch("/api/payments/confirm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sessionId }),
-        }).catch(() => null);
-        const data = await res?.json().catch(() => null);
-        if (res?.ok && data?.kind === "topup") {
-          trackTopup({ ...data, source: "checkout" });
-        }
-      }
-      await Promise.all([load(), refreshWallet()]);
-      let pendingId: string | null = null;
-      try {
-        pendingId = sessionStorage.getItem("lf-pending-unlock");
-        sessionStorage.removeItem("lf-pending-unlock");
-      } catch {}
-      if (pendingId) unlockById(pendingId);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [role, load, refreshWallet]);
-
   useEffect(() => {
     scrollToBottom(true);
   }, [messages.length, peerTyping, scrollToBottom]);
@@ -758,9 +632,6 @@ export default function ChatView({
     openWalletGuardRef.current = now;
     setWalletNote(note ?? null);
     setWalletOpen(true);
-    // Preload Stripe.js now, so a first purchase transitions straight into
-    // the card wizard with its fields already able to mount instantly.
-    if (elementsEnabled()) void getStripe();
   }
 
   /** Dismissing the sheet without paying forgets the pending auto-accept. */
@@ -769,126 +640,29 @@ export default function ChatView({
     pendingUnlockIdRef.current = null;
   }
 
-  /** Buy a token pack: one tap with a saved card; first purchase opens the
-   *  in-chat card wizard (or Stripe Checkout as fallback). */
-  async function topUp(packId: string) {
-    if (toppingUp) return;
-    setToppingUp(packId);
-    try {
-      const res = await fetch("/api/payments/topup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chatId,
-          packId,
-          embedded: elementsEnabled(),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.topped) {
-        trackTopup({ ...data, source: "one_tap" });
-        if (typeof data.balance === "number") setBalance(data.balance);
-        setToppingUp(null);
-        const pendingId = pendingUnlockIdRef.current;
-        if (pendingId) {
-          pendingUnlockIdRef.current = null;
-          setWalletOpen(false);
-          unlockById(pendingId);
-          return;
-        }
-        setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
-        setWalletOpen(true);
-        return;
-      }
-      if (res.ok && data.clientSecret) {
-        setWalletOpen(false);
-        setCardTopup({
-          clientSecret: data.clientSecret,
-          amountCents: Number(data.amountCents ?? 0),
-          tokens: Number(data.tokens ?? 0),
-          country: data.country ?? null,
-        });
-        setToppingUp(null);
-        return;
-      }
-      if (res.ok && data.checkoutUrl) {
-        if (pendingUnlockIdRef.current) {
-          try {
-            sessionStorage.setItem("lf-pending-unlock", pendingUnlockIdRef.current);
-          } catch {}
-        }
-        window.location.href = data.checkoutUrl;
-        return;
-      }
-      alert(data.error || "Could not top up");
-    } catch {
-      alert("Could not top up");
-    }
-    setToppingUp(null);
-  }
-
   /**
    * Buy a token pack with USDC from Phantom: one wallet approval, then the
-   * server checks the payment on chain and credits the tokens.
+   * server checks the payment on chain and credits the tokens. Also redeems
+   * a creator-sent coupon when `couponMessageId` is given.
    */
-  async function cryptoTopUp(packId: string) {
+  async function cryptoTopUp(packId: string, couponMessageId?: string) {
     if (toppingUp) return;
-    const provider = phantomProvider();
-    if (!provider) {
-      if (isMobileBrowser()) {
-        // Phones: reopen this page inside Phantom's browser, where the
-        // wallet is available (the fan is signed back in by device memory).
-        window.location.href = phantomBrowseUrl(window.location.href);
-        return;
-      }
-      window.open("https://phantom.app/download", "_blank", "noopener");
+    if (!ensurePhantomOrRedirect()) {
       setCryptoStatus("Install the Phantom extension, then try again.");
+      setWalletOpen(true);
       return;
     }
-    setToppingUp(packId);
-    setCryptoStatus("Preparing payment…");
+    setToppingUp(couponMessageId ?? packId);
     try {
-      const res = await fetch("/api/payments/crypto/intent", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, packId }),
-      });
-      const quote = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(quote.error || "Could not start the payment");
-
-      setCryptoStatus("Approve the payment in Phantom…");
-      const signature = await payUsdcWithPhantom(quote);
-
-      setCryptoStatus("Confirming on the blockchain…");
-      const deadline = Date.now() + 120_000;
-      let data: {
-        ok?: boolean;
-        pending?: boolean;
-        error?: string;
-        balance?: number;
-        tokens?: number;
-        amountCents?: number;
-        packId?: string | null;
-      } = {};
-      while (Date.now() < deadline) {
-        const c = await fetch("/api/payments/crypto/confirm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chatId, reference: quote.reference, signature }),
-        });
-        data = await c.json().catch(() => ({}));
-        if (c.status !== 202) {
-          if (!c.ok) throw new Error(data.error || "Payment could not be confirmed");
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 2500));
-      }
-      if (!data.ok) {
-        throw new Error("Still confirming — your tokens will appear once the network settles.");
-      }
-
-      trackTopup({ ...data, source: "crypto" });
+      const data = await payWithPhantom(
+        couponMessageId ? { chatId, couponMessageId } : { chatId, packId },
+        setCryptoStatus
+      );
+      trackTopup({ ...data, source: couponMessageId ? "coupon_crypto" : "crypto" });
       if (typeof data.balance === "number") setBalance(data.balance);
+      if (couponMessageId) {
+        setRedeemedCoupons((prev) => new Set(prev).add(couponMessageId));
+      }
       setCryptoStatus(null);
       setToppingUp(null);
       const pendingId = pendingUnlockIdRef.current;
@@ -904,57 +678,19 @@ export default function ChatView({
     } catch (err) {
       const msg = err instanceof Error ? err.message : "";
       setCryptoStatus(
-        /reject|cancel|denied/i.test(msg)
+        isPhantomCancel(err)
           ? "Payment cancelled in Phantom."
           : msg || "Could not complete the crypto payment"
       );
+      // Coupon errors happen outside the sheet — surface them there too.
+      if (couponMessageId) {
+        if (/already been used/i.test(msg)) {
+          setRedeemedCoupons((prev) => new Set(prev).add(couponMessageId));
+        }
+        setWalletOpen(true);
+      }
     }
     setToppingUp(null);
-  }
-
-  async function completeCardTopup(paymentIntentId: string) {
-    let data: {
-      balance?: number;
-      tokens?: number;
-      amountCents?: number;
-      packId?: string | null;
-    } = {};
-    try {
-      const res = await fetch("/api/payments/topup/complete", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, paymentIntentId }),
-      });
-      if (res.ok) data = await res.json().catch(() => ({}));
-    } catch {
-      // The webhook still credits the payment; the balance catches up.
-    }
-    // The card was charged even if /complete failed — the wizard only calls
-    // this after Stripe confirmed. Fall back to the wizard's own amount.
-    trackTopup({
-      amountCents: data.amountCents ?? cardTopup?.amountCents,
-      tokens: data.tokens ?? cardTopup?.tokens,
-      packId: data.packId,
-      source: "card_wizard",
-    });
-    setCardTopup(null);
-    if (typeof data.balance === "number") setBalance(data.balance);
-    let couponId: string | null = null;
-    try {
-      couponId = sessionStorage.getItem("lf-pending-coupon");
-      sessionStorage.removeItem("lf-pending-coupon");
-    } catch {}
-    if (couponId) {
-      setRedeemedCoupons((prev) => new Set(prev).add(couponId!));
-    }
-    const pendingId = pendingUnlockIdRef.current;
-    if (pendingId) {
-      pendingUnlockIdRef.current = null;
-      unlockById(pendingId);
-      return;
-    }
-    setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
-    setWalletOpen(true);
   }
 
   async function sendCustomOffer() {
@@ -1000,81 +736,16 @@ export default function ChatView({
     setSendingOffer(false);
   }
 
-  /** Fan claims a coupon bubble — one-time discounted token pack. */
+  /** Fan claims a coupon bubble — one-time discounted token pack, paid in
+   *  USDC from Phantom. */
   async function claimCoupon(messageId: string) {
     if (claimingCouponId || role !== "guest") return;
     setClaimingCouponId(messageId);
     try {
-      const res = await fetch("/api/payments/topup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          chatId,
-          couponMessageId: messageId,
-          embedded: elementsEnabled(),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.topped) {
-        trackTopup({ ...data, source: "coupon" });
-        if (typeof data.balance === "number") setBalance(data.balance);
-        setRedeemedCoupons((prev) => new Set(prev).add(messageId));
-        setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
-        setWalletOpen(true);
-      } else if (res.ok && data.clientSecret) {
-        setCardTopup({
-          clientSecret: data.clientSecret,
-          amountCents: Number(data.amountCents ?? 0),
-          tokens: Number(data.tokens ?? 0),
-          country: data.country ?? null,
-        });
-        // Remember which coupon this card wizard is for so complete can mark it.
-        pendingUnlockIdRef.current = null;
-        sessionStorage.setItem("lf-pending-coupon", messageId);
-      } else if (res.ok && data.checkoutUrl) {
-        try {
-          sessionStorage.setItem("lf-pending-coupon", messageId);
-        } catch {}
-        window.location.href = data.checkoutUrl;
-        return;
-      } else if (res.status === 410) {
-        setRedeemedCoupons((prev) => new Set(prev).add(messageId));
-        alert(data.error || "This coupon has already been used");
-      } else {
-        alert(data.error || "Could not claim coupon");
-      }
-    } catch {
-      alert("Could not claim coupon");
+      await cryptoTopUp("coupon", messageId);
+    } finally {
+      setClaimingCouponId(null);
     }
-    setClaimingCouponId(null);
-  }
-
-  async function createPayLink() {
-    if (!payLinkDialog || creatingLink) return;
-    const tokens = Math.round(parseFloat(payLinkDialog.tokens));
-    const priceCents = Math.round(parseFloat(payLinkDialog.price) * 100);
-    if (!(tokens > 0) || !(priceCents >= 50)) {
-      alert("Enter the tokens and a price of at least $0.50.");
-      return;
-    }
-    setCreatingLink(true);
-    try {
-      const res = await fetch("/api/chats/paylink", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chatId, tokens, priceCents }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (res.ok && data.url) {
-        setLinkCopied(false);
-        setPayLinkDialog({ ...payLinkDialog, url: data.url });
-      } else {
-        alert(data.error || "Could not create the link");
-      }
-    } catch {
-      alert("Could not create the link");
-    }
-    setCreatingLink(false);
   }
 
   async function sendTip() {
@@ -1927,7 +1598,7 @@ export default function ChatView({
 
       {/* Token balance bar above the chat input (guest side): live balance +
           one tap into the pack sheet. */}
-      {role === "guest" && balance !== null && !cardTopup && (
+      {role === "guest" && balance !== null && (
         <div className="px-3">
           <button
             type="button"
@@ -1948,36 +1619,6 @@ export default function ChatView({
             </span>
           </button>
         </div>
-      )}
-
-      {/* First-purchase card wizard: focused modal over a dark backdrop, same
-          treatment as the token pack sheet. */}
-      {cardTopup && (
-        <Portal>
-          <div
-            className="fixed inset-0 z-[60] bg-black/60 flex items-end sm:items-center justify-center p-4"
-            onClick={() => {
-              pendingUnlockIdRef.current = null;
-              setCardTopup(null);
-            }}
-          >
-            <div
-              className="w-full max-w-sm fade-up"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <EmbeddedCardTopup
-                clientSecret={cardTopup.clientSecret}
-                amountCents={cardTopup.amountCents}
-                countryGuess={cardTopup.country}
-                onSuccess={completeCardTopup}
-                onCancel={() => {
-                  pendingUnlockIdRef.current = null;
-                  setCardTopup(null);
-                }}
-              />
-            </div>
-          </div>
-        </Portal>
       )}
 
       <div className="p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
@@ -2108,20 +1749,6 @@ export default function ChatView({
               title="Send this fan a one-time Token coupon"
             >
               %
-            </button>
-          )}
-          {role === "owner" && (
-            <button
-              onClick={() => setPayLinkDialog({ tokens: "", price: "", url: null })}
-              className={`w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-sm font-bold transition-colors ${
-                payLinkDialog
-                  ? "bg-accent text-white glow-accent"
-                  : "bg-transparent border border-line text-muted hover:text-fg"
-              }`}
-              aria-label="Create a payment link"
-              title="Create a Stripe payment link (custom tokens & price, any card)"
-            >
-              $
             </button>
           )}
           <button
@@ -2305,26 +1932,6 @@ export default function ChatView({
               {walletNote && (
                 <p className="text-sm text-accent font-semibold -mt-1">{walletNote}</p>
               )}
-              {CRYPTO_ENABLED && (
-                <div className="grid grid-cols-2 gap-1 rounded-xl bg-card2 border border-line p-1">
-                  {(["card", "crypto"] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => {
-                        setPayMethod(m);
-                        setCryptoStatus(null);
-                      }}
-                      disabled={!!toppingUp}
-                      className={`rounded-lg py-1.5 text-xs font-bold transition-colors ${
-                        payMethod === m ? "bg-accent text-white" : "text-muted hover:text-fg"
-                      }`}
-                    >
-                      {m === "card" ? "Card" : "Crypto · USDC"}
-                    </button>
-                  ))}
-                </div>
-              )}
               <div className="grid grid-cols-2 gap-2">
                 {TOKEN_PACKS.map((pack) => {
                   const busy = toppingUp === pack.id;
@@ -2333,9 +1940,7 @@ export default function ChatView({
                   return (
                     <button
                       key={pack.id}
-                      onClick={() =>
-                        payMethod === "crypto" ? cryptoTopUp(pack.id) : topUp(pack.id)
-                      }
+                      onClick={() => cryptoTopUp(pack.id)}
                       disabled={!!toppingUp}
                       className={`relative rounded-xl border px-3 py-3 text-left transition-colors disabled:opacity-60 ${
                         highlight
@@ -2368,9 +1973,7 @@ export default function ChatView({
                 <p className="text-xs text-center font-semibold text-accent">{cryptoStatus}</p>
               )}
               <p className="text-[11px] text-muted text-center">
-                {payMethod === "crypto"
-                  ? "Pay with USDC on Solana from your Phantom wallet"
-                  : "One-tap with your saved card · secured by Stripe"}
+                Pay with USDC on Solana from your Phantom wallet
               </p>
               <p className="text-[11px] text-muted/80 text-center -mt-2">
                 All Token purchases are final and non-refundable.
@@ -2460,116 +2063,6 @@ export default function ChatView({
                   {sendingOffer ? "Sending…" : "Send coupon"}
                 </button>
               </div>
-            </div>
-          </div>
-        </Portal>
-      )}
-
-      {payLinkDialog && (
-        <Portal>
-          <div
-            className="fixed inset-0 z-[60] bg-black/60 flex items-center justify-center p-4"
-            onClick={() => setPayLinkDialog(null)}
-          >
-            <div
-              className="bg-card border border-line rounded-2xl p-5 w-full max-w-sm space-y-3 fade-up"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div>
-                <p className="font-bold">Create a payment link</p>
-                <p className="text-xs text-muted mt-0.5">
-                  A Stripe checkout page for a custom token amount and price.
-                  Works with any card — valid for 24 hours.
-                </p>
-              </div>
-              {!payLinkDialog.url ? (
-                <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted">Tokens</label>
-                      <input
-                        autoFocus
-                        inputMode="numeric"
-                        value={payLinkDialog.tokens}
-                        onChange={(e) =>
-                          setPayLinkDialog({
-                            ...payLinkDialog,
-                            tokens: e.target.value.replace(/[^\d]/g, ""),
-                          })
-                        }
-                        placeholder="e.g. 500"
-                        className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-xs font-semibold text-muted">Price ($)</label>
-                      <input
-                        inputMode="decimal"
-                        value={payLinkDialog.price}
-                        onChange={(e) =>
-                          setPayLinkDialog({
-                            ...payLinkDialog,
-                            price: e.target.value.replace(/[^\d.]/g, ""),
-                          })
-                        }
-                        placeholder="9.99"
-                        className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-sm placeholder:text-muted focus:border-accent"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={() => setPayLinkDialog(null)}
-                      className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={createPayLink}
-                      disabled={creatingLink || !payLinkDialog.tokens || !payLinkDialog.price}
-                      className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5 disabled:opacity-50"
-                    >
-                      {creatingLink ? "Creating…" : "Create link"}
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <input
-                    readOnly
-                    value={payLinkDialog.url}
-                    onFocus={(e) => e.currentTarget.select()}
-                    className="w-full bg-card2 border border-line rounded-xl px-3 py-2.5 text-xs font-mono text-muted"
-                  />
-                  <div className="flex gap-2 pt-1">
-                    <button
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(payLinkDialog.url!);
-                          setLinkCopied(true);
-                          setTimeout(() => setLinkCopied(false), 1500);
-                        } catch {}
-                      }}
-                      className="flex-1 rounded-xl border border-line text-sm font-semibold py-2.5"
-                    >
-                      {linkCopied ? "Copied!" : "Copy link"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        setText((prev) =>
-                          prev.trim()
-                            ? `${prev.trim()} ${payLinkDialog.url}`
-                            : payLinkDialog.url!
-                        );
-                        setPayLinkDialog(null);
-                      }}
-                      className="flex-1 rounded-xl bg-accent text-white text-sm font-semibold py-2.5"
-                    >
-                      Add to message
-                    </button>
-                  </div>
-                </>
-              )}
             </div>
           </div>
         </Portal>
@@ -2720,23 +2213,7 @@ export default function ChatView({
           message={pendingGate}
           peerName={peerName}
           secondsLeft={gateLeft}
-          busy={
-            deciding ||
-            unlockingId === pendingGate.id ||
-            startingVerify ||
-            gateCardSetup?.messageId === pendingGate.id
-          }
-          wizard={
-            gateCardSetup && gateCardSetup.messageId === pendingGate.id ? (
-              <EmbeddedCardTopup
-                clientSecret={gateCardSetup.clientSecret}
-                mode="setup"
-                countryGuess={gateCardSetup.country}
-                onSuccess={completeGateCardSetup}
-                onCancel={() => setGateCardSetup(null)}
-              />
-            ) : null
-          }
+          busy={deciding || unlockingId === pendingGate.id}
           onAccept={() => acceptGate(pendingGate)}
           onReject={() => decideGate(pendingGate, "reject")}
         />

@@ -1,9 +1,21 @@
-import { after } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { subPlanFromMetadata, type SubPlan } from "@/lib/subscriptionPlan";
-import { notifyCrossCreatorSubscribe } from "@/lib/adminTelegram";
+import {
+  subFirstPeriodCents,
+  subPlanFromMetadata,
+  type SubInterval,
+  type SubPlan,
+} from "@/lib/subscriptionPlan";
+import { revealPendingChat } from "@/lib/payments";
 
 export const ACTIVE_SUB_STATUSES = ["trialing", "active", "past_due", "canceling"];
+
+export type SubRow = {
+  status: string;
+  price_cents: number;
+  billing_interval: string;
+  current_period_end: string | null;
+  trial_end?: string | null;
+};
 
 /** Load a creator's subscription plan from their auth metadata. */
 export async function ownerSubPlan(ownerId: string): Promise<SubPlan> {
@@ -18,87 +30,148 @@ export async function ownerRequiresPaidSub(ownerId: string): Promise<boolean> {
 }
 
 /**
- * Should the creator's inbox list only card-verified fans? Yes for paid
- * profiles (a fan without a card hasn't finished subscribing); free profiles
+ * Chats of a paid creator that ever subscribed (started the free trial or
+ * paid in USDC). Paid profiles list only these in the inbox; free profiles
  * show everyone who signed up.
  */
-export async function inboxCardOnly(ownerId: string): Promise<boolean> {
-  return ownerRequiresPaidSub(ownerId);
+export async function subscriberChatIds(ownerId: string): Promise<Set<string>> {
+  const { data } = await supabaseAdmin()
+    .from("subscriptions")
+    .select("chat_id")
+    .eq("owner_id", ownerId);
+  return new Set((data ?? []).map((r) => String(r.chat_id)));
+}
+
+/** Trial or paid period still running (lifetime never ends). */
+export function subscriptionLive(row: SubRow | null | undefined): boolean {
+  if (!row || !ACTIVE_SUB_STATUSES.includes(row.status)) return false;
+  if (row.billing_interval === "lifetime") return true;
+  return !!row.current_period_end && Date.parse(row.current_period_end) > Date.now();
+}
+
+export async function chatSubscription(chatId: string, ownerId: string): Promise<SubRow | null> {
+  const { data } = await supabaseAdmin()
+    .from("subscriptions")
+    .select("status, price_cents, billing_interval, current_period_end, trial_end")
+    .eq("chat_id", chatId)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  return (data as SubRow | null) ?? null;
 }
 
 /**
- * Does this chat get into a paid creator's chat? Yes when the fan has a
- * verified card saved (the whole point of the paywall is card-on-file for
- * one-tap purchases) or an active/trialing subscription with this creator.
- *
- * A card verified with ANY creator counts: the same email's other chats are
- * checked and the card is copied onto this chat so one-tap works here too.
- * Canceling a subscription never removes access — the card stays.
+ * Free-trial plans: the first visit starts the trial (once per chat — the
+ * row stays after it ends, so a fan can't trial twice). Returns true when a
+ * trial was started.
+ */
+async function startTrial(chatId: string, ownerId: string, plan: SubPlan): Promise<boolean> {
+  if (plan.priceCents <= 0 || plan.trialDays <= 0) return false;
+  const end = new Date(Date.now() + plan.trialDays * 86_400_000).toISOString();
+  const { data } = await supabaseAdmin()
+    .from("subscriptions")
+    .upsert(
+      {
+        chat_id: chatId,
+        owner_id: ownerId,
+        stripe_subscription_id: null,
+        status: "trialing",
+        price_cents: plan.priceCents,
+        billing_interval: plan.interval,
+        current_period_end: end,
+        trial_end: end,
+      },
+      { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
+    )
+    .select("chat_id");
+  if (!data?.length) return false;
+  await supabaseAdmin()
+    .from("follows")
+    .upsert(
+      { chat_id: chatId, owner_id: ownerId },
+      { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
+    );
+  return true;
+}
+
+/**
+ * Does this chat get into a paid creator's chat? Yes while a trial or a
+ * USDC-paid period is running. Subscriptions never renew on their own — the
+ * fan pays each period from Phantom.
  */
 export async function chatHasPaidAccess(
   chatId: string,
-  ownerId: string
+  ownerId: string,
+  plan?: SubPlan
 ): Promise<boolean> {
-  const db = supabaseAdmin();
-  const { data: chat } = await db
-    .from("chats")
-    .select("id, guest_email, stripe_payment_method_id")
-    .eq("id", chatId)
-    .maybeSingle();
-  if (!chat) return false;
-  if (chat.stripe_payment_method_id) return true;
+  const row = await chatSubscription(chatId, ownerId);
+  if (row) return subscriptionLive(row);
+  return startTrial(chatId, ownerId, plan ?? (await ownerSubPlan(ownerId)));
+}
 
-  const { data: sub } = await db
-    .from("subscriptions")
-    .select("status")
-    .eq("chat_id", chatId)
-    .eq("owner_id", ownerId)
-    .in("status", ACTIVE_SUB_STATUSES)
-    .maybeSingle();
-  if (sub) return true;
+/** What the next USDC payment costs: first period discounted, lifetime once. */
+export function subscriptionChargeCents(plan: SubPlan, row: SubRow | null): number {
+  if (plan.interval === "lifetime") return plan.priceCents;
+  const neverPaid = !row || row.status === "trialing";
+  return neverPaid ? subFirstPeriodCents(plan) : plan.priceCents;
+}
 
-  return inheritVerifiedCard(chatId, chat.guest_email);
+function addInterval(fromMs: number, interval: SubInterval): Date {
+  const d = new Date(fromMs);
+  if (interval === "day") d.setUTCDate(d.getUTCDate() + 1);
+  else if (interval === "week") d.setUTCDate(d.getUTCDate() + 7);
+  else d.setUTCMonth(d.getUTCMonth() + 1);
+  return d;
 }
 
 /**
- * Copy a verified card from another chat with the same email onto this chat
- * (one-tap works with every creator once a card is verified anywhere).
- * Returns true if a card was copied. Notifies the admin bot: a verified fan
- * just subscribed to another creator.
+ * A USDC subscription payment landed: extend access by one period (from the
+ * end of the running trial/period, so paying early never loses days), or
+ * grant lifetime access. Returns the new end (null = lifetime).
  */
-export async function inheritVerifiedCard(
-  chatId: string,
-  guestEmail: string | null | undefined
-): Promise<boolean> {
-  if (!guestEmail) return false;
+export async function recordSubscriptionPayment(opts: {
+  chatId: string;
+  ownerId: string;
+  plan: SubPlan;
+  amountCents: number;
+}): Promise<string | null> {
   const db = supabaseAdmin();
-  const { data: other } = await db
-    .from("chats")
-    .select("owner_id, stripe_customer_id, stripe_payment_method_id")
-    .eq("guest_email", guestEmail)
-    .neq("id", chatId)
-    .not("stripe_payment_method_id", "is", null)
-    .order("last_message_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (!other?.stripe_payment_method_id) return false;
+  const row = await chatSubscription(opts.chatId, opts.ownerId);
+  const now = Date.now();
+  const lifetime = opts.plan.interval === "lifetime";
 
-  // Only the update that flips null → card matches, so a race can't copy
-  // (or notify) twice.
-  const { data: copied } = await db
-    .from("chats")
-    .update({
-      stripe_customer_id: other.stripe_customer_id,
-      stripe_payment_method_id: other.stripe_payment_method_id,
-    })
-    .eq("id", chatId)
-    .is("stripe_payment_method_id", null)
-    .select("owner_id");
-  if (!copied?.length) return true; // someone else already copied it
+  let periodEnd: string | null = null;
+  if (!lifetime) {
+    const running =
+      subscriptionLive(row) && row?.current_period_end
+        ? Math.max(now, Date.parse(row.current_period_end))
+        : now;
+    periodEnd = addInterval(running, opts.plan.interval).toISOString();
+  }
+  // Paying ends the trial for stats purposes (invite_stats 'paid').
+  const trialEnd =
+    row?.trial_end && Date.parse(row.trial_end) > now ? new Date(now).toISOString() : row?.trial_end ?? null;
 
-  const ownerId = copied[0].owner_id as string;
-  after(() => notifyCrossCreatorSubscribe(chatId, ownerId, other.owner_id as string));
-  return true;
+  await db.from("subscriptions").upsert(
+    {
+      chat_id: opts.chatId,
+      owner_id: opts.ownerId,
+      stripe_subscription_id: null,
+      status: "active",
+      price_cents: opts.amountCents,
+      billing_interval: opts.plan.interval,
+      current_period_end: periodEnd,
+      trial_end: trialEnd,
+    },
+    { onConflict: "chat_id,owner_id" }
+  );
+  await db
+    .from("follows")
+    .upsert(
+      { chat_id: opts.chatId, owner_id: opts.ownerId },
+      { onConflict: "chat_id,owner_id", ignoreDuplicates: true }
+    );
+  await revealPendingChat(opts.chatId, opts.ownerId);
+  return periodEnd;
 }
 
 export async function inviteCodeForChat(chatId: string): Promise<string | null> {
@@ -130,21 +203,23 @@ export async function inviteCodeForChat(chatId: string): Promise<string | null> 
   return (fallback?.code as string) || null;
 }
 
-/** The profile page with the card sheet auto-opened. */
+/** The profile page with the payment sheet auto-opened. */
 export function subscribeHref(ownerId: string): string {
   return `/p/${ownerId}?subscribe=1`;
 }
 
 /**
- * Where a signed-up guest should land: the app when allowed, otherwise the
- * creator's profile with the card step open (paid profile, no card yet).
+ * Where a signed-up fan should land: the app when allowed, otherwise the
+ * creator's profile with the USDC payment step open (paid profile, no
+ * running trial or paid period).
  */
 export async function guestAccessDestination(
   chatId: string,
   ownerId: string
 ): Promise<{ allowed: boolean; href: string }> {
-  if (!(await ownerRequiresPaidSub(ownerId))) return { allowed: true, href: "/home" };
-  if (await chatHasPaidAccess(chatId, ownerId)) return { allowed: true, href: "/home" };
+  const plan = await ownerSubPlan(ownerId);
+  if (plan.priceCents <= 0) return { allowed: true, href: "/home" };
+  if (await chatHasPaidAccess(chatId, ownerId, plan)) return { allowed: true, href: "/home" };
   return { allowed: false, href: subscribeHref(ownerId) };
 }
 

@@ -9,16 +9,15 @@ import type { Message } from "./MessageBubble";
 /**
  * Incoming-media gate: a creator photo/video takes over the whole screen,
  * blurred, until the fan decides. Accept shows it in the chat (priced media
- * charges the card first); Reject removes it for good. An optional
- * creator-set countdown auto-rejects when it runs out — it pauses while the
- * embedded card wizard is open (`wizard` renders in place of the buttons).
+ * spends Tokens first); Reject removes it for good. An optional creator-set
+ * countdown auto-rejects when it runs out — it pauses while the top-up
+ * sheet is open.
  */
 export default function IncomingMediaGate({
   message,
   peerName,
   secondsLeft,
   busy,
-  wizard,
   onAccept,
   onReject,
 }: {
@@ -27,8 +26,6 @@ export default function IncomingMediaGate({
   /** Countdown seconds remaining; null = no time limit. */
   secondsLeft: number | null;
   busy: boolean;
-  /** The embedded card wizard (first paid accept without a saved card). */
-  wizard?: React.ReactNode;
   onAccept: () => void;
   onReject: () => void;
 }) {
@@ -60,14 +57,7 @@ export default function IncomingMediaGate({
         />
         <div className="absolute inset-0 bg-black/40" />
 
-        {wizard ? (
-          // First paid accept without a saved card: the 3-step card wizard
-          // takes over; the parent pauses the countdown meanwhile.
-          <div className="absolute inset-0 flex items-center justify-center p-4">
-            <div className="w-full max-w-sm">{wizard}</div>
-          </div>
-        ) : (
-          <>
+        <>
             <p className="absolute top-[max(1.1rem,env(safe-area-inset-top))] left-4 z-10 text-white text-lg font-extrabold tracking-tight drop-shadow-lg select-none">
               LolyFans
             </p>
@@ -128,8 +118,7 @@ export default function IncomingMediaGate({
                 {timer}
               </p>
             )}
-          </>
-        )}
+        </>
       </div>
     </Portal>
   );

@@ -4,16 +4,18 @@ import { getGuestChatId } from "@/lib/session";
 import { broadcast } from "@/lib/realtime";
 import {
   CALL_PRICE_CENTS_PER_MIN,
+  CALL_TOKENS_PER_MIN,
   chargeCallMinute,
   creatorVoiceId,
   type VoiceCall,
 } from "@/lib/voiceCall";
+import { tokenBalance } from "@/lib/payments";
 
 /**
- * Fan starts a voice call with the creator's chatbot. Requires a saved card
- * (calls are $1/min, charged per minute off-session — the first minute is
- * charged right here). Broadcasts "call-started" on the owner's inbox topic
- * so the connected chatbot (Orion) can pull chat context before turn one.
+ * Fan starts a voice call with the creator's chatbot. Calls are $1/min paid
+ * from the token wallet, minute by minute — the first minute is paid right
+ * here. Broadcasts "call-started" on the owner's inbox topic so the
+ * connected chatbot (Orion) can pull chat context before turn one.
  */
 export async function POST() {
   const chatId = await getGuestChatId();
@@ -24,7 +26,7 @@ export async function POST() {
   const db = supabaseAdmin();
   const { data: chat } = await db
     .from("chats")
-    .select("id, owner_id, stripe_customer_id, stripe_payment_method_id")
+    .select("id, owner_id")
     .eq("id", chatId)
     .maybeSingle();
   if (!chat) {
@@ -38,12 +40,13 @@ export async function POST() {
     );
   }
 
-  if (!chat.stripe_customer_id || !chat.stripe_payment_method_id) {
+  const balance = await tokenBalance(chatId);
+  if (balance < CALL_TOKENS_PER_MIN) {
     return NextResponse.json(
       {
-        error:
-          "Calls need a saved card. Unlock any paid content or top up once — your card is saved automatically.",
-        needCard: true,
+        error: `Calls cost ${CALL_TOKENS_PER_MIN} Tokens per minute — top up your wallet to call.`,
+        needTokens: CALL_TOKENS_PER_MIN,
+        balance,
       },
       { status: 402 }
     );
@@ -73,14 +76,17 @@ export async function POST() {
   }
   const call = created as VoiceCall;
 
-  // First minute is paid up front; a declined card means no call.
+  // First minute is paid up front; an empty wallet means no call.
   if (!(await chargeCallMinute(call))) {
     await db
       .from("voice_calls")
       .update({ status: "ended", ended_at: new Date().toISOString() })
       .eq("id", call.id);
     return NextResponse.json(
-      { error: "Your card was declined — the call could not start.", needCard: true },
+      {
+        error: "Not enough Tokens — top up your wallet to call.",
+        needTokens: CALL_TOKENS_PER_MIN,
+      },
       { status: 402 }
     );
   }
