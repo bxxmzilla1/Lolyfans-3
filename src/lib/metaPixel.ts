@@ -1,7 +1,7 @@
 import { CENTS_PER_TOKEN } from "./tokens";
 
 /** Meta (Facebook) Pixel id — base code is inlined in app/layout.tsx. */
-export const META_PIXEL_ID = "1048828734453613";
+export const META_PIXEL_ID = "1402690867955069";
 
 /** Official base snippet: loads fbevents.js, inits the pixel, fires PageView. */
 export const META_PIXEL_SNIPPET = `!function(f,b,e,v,n,t,s)
