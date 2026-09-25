@@ -1,5 +1,24 @@
 -- Phantom-only: fans sign up with their Solana wallet and pay in USDC.
--- Run once in the Supabase SQL editor (after migration-crypto-topups.sql).
+-- Run once in the Supabase SQL editor. Safe to re-run.
+
+-- One row per USDC payment attempt. `reference` is a random public key the
+-- fan's transaction must include (ties the on-chain payment to this exact
+-- attempt); `signature` is unique so a payment is only ever credited once.
+create table if not exists crypto_topups (
+  id uuid primary key default gen_random_uuid(),
+  chat_id uuid not null references chats(id) on delete cascade,
+  pack_id text not null,
+  tokens int not null,
+  amount_micro bigint not null,          -- USDC, 6 decimals
+  reference text not null unique,
+  signature text unique,
+  payer text,
+  status text not null default 'pending' check (status in ('pending', 'paid')),
+  created_at timestamptz not null default now(),
+  paid_at timestamptz
+);
+alter table crypto_topups enable row level security;
+create index if not exists crypto_topups_chat_idx on crypto_topups (chat_id, created_at desc);
 
 -- Fan identity = their Phantom wallet address. One chat per wallet per
 -- creator; the same wallet links a fan's chats across creators.
