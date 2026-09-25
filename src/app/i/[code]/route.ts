@@ -6,6 +6,7 @@ import {
   ipFromHeaders,
   Invite,
   PROFILE_DESTINATION,
+  inviteSignupRequired,
 } from "@/lib/invites";
 import { recordInviteEvent } from "@/lib/inviteEvents";
 import { lookupIp } from "@/lib/ipinfo";
@@ -98,7 +99,8 @@ export async function GET(
 
   // "profile" destination: the creator's chat sign-up screen. `via` keeps the
   // sign-up attributed to this exact invite link.
-  if (url === PROFILE_DESTINATION) {
+  // Sign-up turned off: always the creator's chat, which opens on its own.
+  if (url === PROFILE_DESTINATION || !inviteSignupRequired(invite)) {
     return NextResponse.redirect(
       new URL(`/p/${invite!.owner_id}?via=${encodeURIComponent(invite!.code)}`, req.url),
       307

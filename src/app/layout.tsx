@@ -3,6 +3,7 @@ import { Geist } from "next/font/google";
 import "./globals.css";
 import RegisterSW from "@/components/RegisterSW";
 import MetaPixelRouteTracker from "@/components/MetaPixel";
+import GuestDeviceSync from "@/components/GuestDeviceSync";
 import { META_PIXEL_ID, META_PIXEL_SNIPPET } from "@/lib/metaPixel";
 
 const geistSans = Geist({
@@ -70,6 +71,7 @@ export default function RootLayout({
         </noscript>
         <RegisterSW />
         <MetaPixelRouteTracker />
+        <GuestDeviceSync />
         {children}
       </body>
     </html>

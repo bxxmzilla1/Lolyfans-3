@@ -8,6 +8,8 @@ import { DEFAULT_WELCOME_TEXT } from "@/lib/chatWelcome";
 import { mediaUrl } from "@/lib/utils";
 import CreatorChatPreview from "@/components/CreatorChatPreview";
 import SubscribeReturn from "@/components/SubscribeReturn";
+import QuickChatStart from "@/components/QuickChatStart";
+import { inviteSignupRequired, type Invite } from "@/lib/invites";
 
 export const dynamic = "force-dynamic";
 
@@ -69,13 +71,13 @@ export default async function CreatorPage({
       via
         ? db
             .from("invites")
-            .select("code")
+            .select("*")
             .eq("owner_id", ownerId)
             .eq("active", true)
             .or(`code.eq.${via},code.eq.${via.toLowerCase()}`)
             .limit(1)
             .maybeSingle()
-        : Promise.resolve({ data: null as { code: string } | null }),
+        : Promise.resolve({ data: null as Invite | null }),
       // Otherwise the creator's newest active link.
       db
         .from("invites")
@@ -109,8 +111,12 @@ export default async function CreatorPage({
         }
       : null;
 
+  // Arrived through a link with sign-up turned off: no form, straight in.
+  const quickStart = !chatWithOwner && viaInvite && !inviteSignupRequired(viaInvite as Invite);
+
   return (
     <>
+      {quickStart && <QuickChatStart code={viaInvite.code} ownerId={ownerId} />}
       {finishing && (
         <SubscribeReturn
           ownerId={ownerId}

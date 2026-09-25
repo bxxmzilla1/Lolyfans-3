@@ -452,6 +452,11 @@ create index if not exists post_comments_post_idx on post_comments (post_id, cre
 -- stats keep working either way.
 alter table invites add column if not exists skip_landing boolean not null default false;
 
+-- Invite links without sign-up (false = chat right away) + device memory.
+alter table invites add column if not exists signup_required boolean not null default true;
+alter table chats add column if not exists guest_device text;
+create index if not exists chats_guest_device_idx on chats (guest_device);
+
 -- Unlock price of a locked media message, in cents. 0 = manual lock only
 -- (owner blur toggle). A positive price makes it pay-to-unlock via Stripe.
 alter table messages add column if not exists price_cents int not null default 0;
