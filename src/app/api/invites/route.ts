@@ -263,7 +263,6 @@ export async function POST(req: NextRequest) {
       max_uses: body.maxUses ? Number(body.maxUses) : null,
       expires_at: body.expiresAt || null,
       redirect_url: redirectUrl,
-      ...(body.signupRequired === false ? { signup_required: false } : {}),
     })
     .select()
     .single();
@@ -274,7 +273,7 @@ export async function POST(req: NextRequest) {
       { status: 409 }
     );
   }
-  if (error) return NextResponse.json({ error: migrationHint(error.message) }, { status: 500 });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ invite: data });
 }
 
@@ -291,10 +290,8 @@ export async function PATCH(req: NextRequest) {
     allowed_countries?: string[] | null;
     redirect_url?: string;
     code?: string;
-    signup_required?: boolean;
   } = {};
   if (typeof active === "boolean") updates.active = active;
-  if (typeof body.signupRequired === "boolean") updates.signup_required = body.signupRequired;
   if (label !== undefined) updates.label = String(label).trim() || null;
   if (body.allowedCountries !== undefined) {
     const codes = countryCodes(body.allowedCountries);
@@ -340,14 +337,8 @@ export async function PATCH(req: NextRequest) {
       { status: 409 }
     );
   }
-  if (error) return NextResponse.json({ error: migrationHint(error.message) }, { status: 500 });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
-}
-
-function migrationHint(message: string): string {
-  return /signup_required/i.test(message)
-    ? "Run supabase/migration-quick-chat.sql in Supabase to enable no-sign-up links"
-    : message;
 }
 
 export async function DELETE(req: NextRequest) {

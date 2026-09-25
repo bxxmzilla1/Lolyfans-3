@@ -6,7 +6,6 @@ import {
   ipFromHeaders,
   Invite,
   PROFILE_DESTINATION,
-  inviteSignupRequired,
 } from "@/lib/invites";
 import { recordInviteEvent } from "@/lib/inviteEvents";
 import { lookupIp } from "@/lib/ipinfo";
@@ -97,10 +96,9 @@ export async function GET(
   // Legacy links created before redirect links became mandatory.
   if (!url) return blocked("This invite link is no longer active");
 
-  // "profile" destination: the creator's chat sign-up screen. `via` keeps the
-  // sign-up attributed to this exact invite link.
-  // Sign-up turned off: always the creator's chat, which opens on its own.
-  if (url === PROFILE_DESTINATION || !inviteSignupRequired(invite)) {
+  // "profile" destination: the creator's public profile page. `via` keeps
+  // the sign-up attributed to this exact invite link.
+  if (url === PROFILE_DESTINATION) {
     return NextResponse.redirect(
       new URL(`/p/${invite!.owner_id}?via=${encodeURIComponent(invite!.code)}`, req.url),
       307

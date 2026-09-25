@@ -4,12 +4,20 @@ import { redirect } from "next/navigation";
 import { getOwnerId, getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { ownerProfiles } from "@/lib/guest";
 import { homeCreatorOwnerId, homeRedirectInviteCode } from "@/lib/siteSettings";
-import { listCreators } from "@/lib/creatorDirectory";
+import { postStats } from "@/lib/posts";
+import { shuffleFeedByCreator } from "@/lib/feedOrder";
+import { mediaUrl } from "@/lib/utils";
 import Logo from "@/components/Logo";
-import { CreatorGrid } from "@/components/CreatorCard";
+import PostFeed, { type FeedPost } from "@/components/PostFeed";
 
 export const dynamic = "force-dynamic";
+
+/** How many posts the public feed shows. */
+const FEED_LIMIT = 60;
+/** Recent posts to draw from, so the mix isn't limited to today's uploads. */
+const FEED_POOL = 400;
 
 export default async function Home({
   searchParams,
@@ -30,9 +38,9 @@ export default async function Home({
     if (existing) redirect("/home");
   }
 
-  // "Main page" (Settings): the bare domain can open one creator's chat
-  // screen for everyone without an account, or send them to an invite link
-  // (the invite route counts the click and forwards to its destination).
+  // "Main page" (Settings): the bare domain can open one creator's profile
+  // for everyone without an account, or send them to an invite link (the
+  // invite route counts the click and forwards to its destination).
   const [homeCreator, homeRedirect] = await Promise.all([
     homeCreatorOwnerId(),
     homeRedirectInviteCode(),
@@ -58,9 +66,47 @@ export default async function Home({
     }
   }
 
-  // Everyone else — first-time visitors — see every creator as a card. The
-  // Message button opens the creator's chat sign-up screen.
-  const creators = await listCreators();
+  // Everyone else — first-time visitors — get the public home feed: posts
+  // from every creator, shuffled so the mix rotates through creators instead
+  // of being dominated by whoever uploaded last.
+  const { data: posts } = await supabaseAdmin()
+    .from("posts")
+    .select("*")
+    .order("created_at", { ascending: false })
+    .limit(FEED_POOL);
+
+  const rows = shuffleFeedByCreator(
+    (posts ?? []).map((p) => ({ ...p, ownerId: p.owner_id as string }))
+  ).slice(0, FEED_LIMIT);
+
+  const [profiles, stats] = await Promise.all([
+    ownerProfiles(rows.map((p) => p.ownerId)),
+    postStats(
+      rows.map((p) => p.id as string),
+      []
+    ),
+  ]);
+
+  const feedPosts: FeedPost[] = rows.map((post) => {
+    const profile = profiles.get(post.owner_id);
+    return {
+      id: post.id,
+      ownerId: post.owner_id,
+      ownerName: profile?.name || "Lolyfans",
+      ownerAvatar: profile?.avatarPath || null,
+      verified: !!profile?.verified,
+      url: mediaUrl(post.media_path),
+      type: post.media_type as "image" | "video",
+      caption: post.caption,
+      createdAt: post.created_at,
+      likes: (post.like_count ?? 0) + (stats.likes.get(post.id) ?? 0),
+      comments: stats.comments.get(post.id) ?? 0,
+      liked: false,
+      // This feed only renders for visitors without an account, so the
+      // creator's "blur posts for visitors" option applies directly.
+      blurred: !!profile?.blurPosts,
+    };
+  });
 
   return (
     <div className="min-h-dvh">
@@ -83,7 +129,9 @@ export default async function Home({
 
       <main className="mx-auto max-w-lg lg:max-w-2xl lg:px-8 lg:pt-6">
         <div className="lg:bg-card lg:border lg:border-line lg:rounded-2xl lg:overflow-hidden">
-          <CreatorGrid creators={creators} hrefFor={(id) => `/p/${id}`} />
+          {/* Visitors browse only: liking, commenting and messaging need an
+              account, so the feed renders read-only. */}
+          <PostFeed posts={feedPosts} canInteract={false} />
         </div>
       </main>
 

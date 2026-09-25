@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PROFILE_DESTINATION, inviteSignupRequired, type Invite } from "@/lib/invites";
+import { PROFILE_DESTINATION, type Invite } from "@/lib/invites";
 import CountryPicker, { countryFlag, countryName } from "./CountryPicker";
 import ConfirmDialog from "./ConfirmDialog";
 import Portal from "./Portal";
@@ -67,43 +67,6 @@ function DestinationToggle({
         }`}
       >
         My profile page
-      </button>
-    </div>
-  );
-}
-
-/** Sign-up on/off for profile links: off = fans chat right away, remembered by device. */
-function SignupToggle({
-  required,
-  onChange,
-}: {
-  required: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-xl bg-card2 border border-line p-3">
-      <div className="min-w-0">
-        <p className="text-sm font-semibold">Require sign-up</p>
-        <p className="text-xs text-muted mt-0.5">
-          {required
-            ? "Visitors fill in name, email and password before chatting."
-            : "No form — fans start chatting right away. Their IP and device are remembered, so they stay signed in on every browser of their phone until they log out."}
-        </p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={required}
-        onClick={() => onChange(!required)}
-        className={`relative w-11 h-6 rounded-full shrink-0 transition-colors ${
-          required ? "bg-accent" : "bg-line"
-        }`}
-      >
-        <span
-          className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-            required ? "translate-x-5" : ""
-          }`}
-        />
       </button>
     </div>
   );
@@ -265,8 +228,6 @@ export default function InviteManager() {
   const [redirectUrl, setRedirectUrl] = useState("");
   // Destination: false = custom URL, true = the creator's own profile page.
   const [toProfile, setToProfile] = useState(false);
-  const [signupRequired, setSignupRequired] = useState(true);
-  const [editSignupRequired, setEditSignupRequired] = useState(true);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
@@ -321,13 +282,11 @@ export default function InviteManager() {
         slug,
         allowedCountries: countries,
         redirectUrl: toProfile ? PROFILE_DESTINATION : redirectUrl,
-        signupRequired: toProfile ? signupRequired : true,
       }),
     }).catch(() => null);
     setCreating(false);
     if (res?.ok) {
       setLabel("");
-      setSignupRequired(true);
       setSlug("");
       setCountries([]);
       setRedirectUrl("");
@@ -417,9 +376,6 @@ export default function InviteManager() {
         // Only send a changed slug — an untouched (or cleared) field keeps it.
         ...(editSlug && editSlug !== renaming.code ? { slug: editSlug } : {}),
         redirectUrl: newRedirectUrl,
-        ...(inviteSignupRequired(renaming) !== (editToProfile ? editSignupRequired : true)
-          ? { signupRequired: editToProfile ? editSignupRequired : true }
-          : {}),
       }),
     }).catch(() => null);
     if (!res?.ok) {
@@ -516,7 +472,9 @@ export default function InviteManager() {
             </p>
             <DestinationToggle toProfile={toProfile} onChange={setToProfile} />
             {toProfile ? (
-              <SignupToggle required={signupRequired} onChange={setSignupRequired} />
+              <p className="text-xs text-muted">
+                Visitors land on your public profile page with your posts.
+              </p>
             ) : (
               <input
                 value={redirectUrl}
@@ -667,7 +625,6 @@ export default function InviteManager() {
                         invite.redirect_url === PROFILE_DESTINATION;
                       setEditToProfile(isProfile);
                       setEditRedirectUrl(isProfile ? "" : invite.redirect_url ?? "");
-                      setEditSignupRequired(inviteSignupRequired(invite));
                     }}
                     aria-label="Edit link"
                     title="Edit link"
@@ -688,11 +645,6 @@ export default function InviteManager() {
               >
                 <span className="text-muted">→ </span>
                 {redirectHost(invite.redirect_url)}
-                {!inviteSignupRequired(invite) && (
-                  <span className="ml-1.5 rounded-full bg-accent/15 text-accent px-2 py-0.5 text-[10px] font-semibold">
-                    No sign-up
-                  </span>
-                )}
               </p>
             ) : (
               <p className="text-xs mt-1 text-red-400 font-semibold">
@@ -845,10 +797,9 @@ export default function InviteManager() {
                 onChange={setEditToProfile}
               />
               {editToProfile ? (
-                <SignupToggle
-                  required={editSignupRequired}
-                  onChange={setEditSignupRequired}
-                />
+                <p className="text-xs text-muted">
+                  Visitors land on your public profile page with your posts.
+                </p>
               ) : (
                 <input
                   value={editRedirectUrl}

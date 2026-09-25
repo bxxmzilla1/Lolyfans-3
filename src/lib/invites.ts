@@ -22,16 +22,7 @@ export type Invite = {
    * to load the creator's profile page.
    */
   redirect_url?: string | null;
-  /**
-   * false = no sign-up form: visitors start chatting right away and their
-   * device is remembered. Missing (pre-migration) = required.
-   */
-  signup_required?: boolean;
 };
-
-export function inviteSignupRequired(invite: Pick<Invite, "signup_required"> | null | undefined) {
-  return invite?.signup_required !== false;
-}
 
 /** Country of the visitor, from Vercel's geo header. Null when unknown (e.g. localhost). */
 export function getRequestCountry(req: NextRequest): string | null {
