@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { guestChats, noSignupChatIds, ownerProfiles } from "@/lib/guest";
+import { guestChats, ownerProfiles } from "@/lib/guest";
 import { mediaItemsFromMessage } from "@/lib/utils";
 
 /**
@@ -12,9 +12,7 @@ export async function GET(req: NextRequest) {
   const chats = await guestChats(req.headers);
   if (!chats.length) return NextResponse.json({ pending: null });
 
-  const noGate = await noSignupChatIds(chats.map((c) => c.id));
-  const chatIds = chats.map((c) => c.id).filter((id) => !noGate.has(id));
-  if (!chatIds.length) return NextResponse.json({ pending: null });
+  const chatIds = chats.map((c) => c.id);
   const db = supabaseAdmin();
   const { data: rows } = await db
     .from("messages")

@@ -52,7 +52,6 @@ export default function ChatView({
   initialMessages,
   ownerId,
   peerName,
-  mediaGate = true,
 }: {
   chatId: string;
   role: "owner" | "guest";
@@ -62,8 +61,6 @@ export default function ChatView({
   ownerId?: string;
   /** Guest side: creator's display name, shown on incoming locked media. */
   peerName?: string;
-  /** Guest side: false = creator media shows in the chat, no fullscreen gate. */
-  mediaGate?: boolean;
 }) {
   const [messages, setMessages] = useState<Message[]>(initialMessages ?? []);
   const [text, setText] = useState("");
@@ -487,13 +484,12 @@ export default function ChatView({
   const needsDecision = useCallback(
     (m: Message) =>
       role === "guest" &&
-      mediaGate &&
       m.sender === "owner" &&
       !m.id.startsWith("temp-") &&
       m.fan_decision === null &&
       !m.unlocked &&
       mediaItemsFromMessage(m).some((i) => i.type === "image" || i.type === "video"),
-    [role, mediaGate]
+    [role]
   );
   // Oldest undecided first; the next one takes over after each decision.
   const pendingGate = messages.find(needsDecision) ?? null;

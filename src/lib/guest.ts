@@ -56,31 +56,6 @@ export async function guestChats(requestHeaders: Headers): Promise<GuestChat[]> 
   return chats;
 }
 
-/**
- * Chats started through an invite link with sign-up turned off. Creator
- * photos/videos there arrive as normal chat messages, without the fullscreen
- * Accept / Reject gate.
- */
-export async function noSignupChatIds(chatIds: string[]): Promise<Set<string>> {
-  const result = new Set<string>();
-  if (!chatIds.length) return result;
-  const db = supabaseAdmin();
-  const { data: chats } = await db.from("chats").select("id, invite_id").in("id", chatIds);
-  const inviteIds = [
-    ...new Set((chats ?? []).map((c) => c.invite_id as string | null).filter(Boolean)),
-  ] as string[];
-  if (!inviteIds.length) return result;
-  // "*" keeps this working before signup_required is migrated.
-  const { data: invites } = await db.from("invites").select("*").in("id", inviteIds);
-  const quick = new Set(
-    (invites ?? []).filter((i) => i.signup_required === false).map((i) => i.id as string)
-  );
-  for (const c of chats ?? []) {
-    if (c.invite_id && quick.has(c.invite_id)) result.add(c.id as string);
-  }
-  return result;
-}
-
 export type OwnerProfile = {
   name: string;
   avatarPath: string | null;

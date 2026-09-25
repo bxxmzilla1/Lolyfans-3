@@ -4,7 +4,7 @@ import { after } from "next/server";
 import { getGuestChatId } from "@/lib/session";
 import { ipFromHeaders } from "@/lib/invites";
 import { supabaseAdmin } from "@/lib/supabase/admin";
-import { guestChats, noSignupChatIds } from "@/lib/guest";
+import { guestChats } from "@/lib/guest";
 import { guestChatAccessDestination } from "@/lib/subscriptionAccess";
 import ChatView from "@/components/ChatView";
 import GuestChatHeader from "@/components/GuestChatHeader";
@@ -46,7 +46,6 @@ export default async function GuestChatPage() {
       guestChats(requestHeaders),
     ]);
   const chatCount = allChats.length;
-  const mediaGate = !(await noSignupChatIds([chatId])).has(chatId);
   // Chat was deleted by the creator: clear the dead session and send them to
   // the public home page.
   if (!chat) redirect("/api/guest/gone");
@@ -108,7 +107,6 @@ export default async function GuestChatPage() {
         initialMessages={initialMessages}
         ownerId={chat.owner_id}
         peerName={meta.display_name || "Lolyfans"}
-        mediaGate={mediaGate}
       />
       <GuestNav chatCount={chatCount} />
     </div>
