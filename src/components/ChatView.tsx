@@ -18,6 +18,16 @@ import BlurDrainerEditor from "./BlurDrainerEditor";
 import BlurDrainerPlayer from "./BlurDrainerPlayer";
 import { elementsEnabled, getStripe } from "@/lib/stripeClient";
 import { trackTopup } from "@/lib/metaPixel";
+import {
+  isMobileBrowser,
+  payUsdcWithPhantom,
+  phantomBrowseUrl,
+  phantomProvider,
+} from "@/lib/phantom";
+
+// Set NEXT_PUBLIC_SOLANA_USDC_RECEIVER (the receiving wallet) to offer
+// "Crypto" next to "Card" in the wallet sheet.
+const CRYPTO_ENABLED = !!process.env.NEXT_PUBLIC_SOLANA_USDC_RECEIVER;
 import { parseBlurDrainer, type BlurDrainerConfig } from "@/lib/blurDrainer";
 import {
   CENTS_PER_TOKEN,
@@ -99,6 +109,9 @@ export default function ChatView({
   const [walletOpen, setWalletOpen] = useState(false);
   const [walletNote, setWalletNote] = useState<string | null>(null);
   const [toppingUp, setToppingUp] = useState<string | null>(null);
+  // Wallet sheet payment method; "crypto" = USDC from Phantom.
+  const [payMethod, setPayMethod] = useState<"card" | "crypto">("card");
+  const [cryptoStatus, setCryptoStatus] = useState<string | null>(null);
   // In-flight guards readable from memoized bubbles' older closures.
   const unlockingRef = useRef(false);
   // First purchase: the composer area swaps for the embedded 3-step card
@@ -810,6 +823,91 @@ export default function ChatView({
       alert(data.error || "Could not top up");
     } catch {
       alert("Could not top up");
+    }
+    setToppingUp(null);
+  }
+
+  /**
+   * Buy a token pack with USDC from Phantom: one wallet approval, then the
+   * server checks the payment on chain and credits the tokens.
+   */
+  async function cryptoTopUp(packId: string) {
+    if (toppingUp) return;
+    const provider = phantomProvider();
+    if (!provider) {
+      if (isMobileBrowser()) {
+        // Phones: reopen this page inside Phantom's browser, where the
+        // wallet is available (the fan is signed back in by device memory).
+        window.location.href = phantomBrowseUrl(window.location.href);
+        return;
+      }
+      window.open("https://phantom.app/download", "_blank", "noopener");
+      setCryptoStatus("Install the Phantom extension, then try again.");
+      return;
+    }
+    setToppingUp(packId);
+    setCryptoStatus("Preparing payment…");
+    try {
+      const res = await fetch("/api/payments/crypto/intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chatId, packId }),
+      });
+      const quote = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(quote.error || "Could not start the payment");
+
+      setCryptoStatus("Approve the payment in Phantom…");
+      const signature = await payUsdcWithPhantom(quote);
+
+      setCryptoStatus("Confirming on the blockchain…");
+      const deadline = Date.now() + 120_000;
+      let data: {
+        ok?: boolean;
+        pending?: boolean;
+        error?: string;
+        balance?: number;
+        tokens?: number;
+        amountCents?: number;
+        packId?: string | null;
+      } = {};
+      while (Date.now() < deadline) {
+        const c = await fetch("/api/payments/crypto/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chatId, reference: quote.reference, signature }),
+        });
+        data = await c.json().catch(() => ({}));
+        if (c.status !== 202) {
+          if (!c.ok) throw new Error(data.error || "Payment could not be confirmed");
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 2500));
+      }
+      if (!data.ok) {
+        throw new Error("Still confirming — your tokens will appear once the network settles.");
+      }
+
+      trackTopup({ ...data, source: "crypto" });
+      if (typeof data.balance === "number") setBalance(data.balance);
+      setCryptoStatus(null);
+      setToppingUp(null);
+      const pendingId = pendingUnlockIdRef.current;
+      if (pendingId) {
+        pendingUnlockIdRef.current = null;
+        setWalletOpen(false);
+        unlockById(pendingId);
+        return;
+      }
+      setWalletNote(`+${formatTokens(data.tokens ?? 0)} added to your wallet 🎉`);
+      setWalletOpen(true);
+      return;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "";
+      setCryptoStatus(
+        /reject|cancel|denied/i.test(msg)
+          ? "Payment cancelled in Phantom."
+          : msg || "Could not complete the crypto payment"
+      );
     }
     setToppingUp(null);
   }
@@ -2207,6 +2305,26 @@ export default function ChatView({
               {walletNote && (
                 <p className="text-sm text-accent font-semibold -mt-1">{walletNote}</p>
               )}
+              {CRYPTO_ENABLED && (
+                <div className="grid grid-cols-2 gap-1 rounded-xl bg-card2 border border-line p-1">
+                  {(["card", "crypto"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => {
+                        setPayMethod(m);
+                        setCryptoStatus(null);
+                      }}
+                      disabled={!!toppingUp}
+                      className={`rounded-lg py-1.5 text-xs font-bold transition-colors ${
+                        payMethod === m ? "bg-accent text-white" : "text-muted hover:text-fg"
+                      }`}
+                    >
+                      {m === "card" ? "Card" : "Crypto · USDC"}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2">
                 {TOKEN_PACKS.map((pack) => {
                   const busy = toppingUp === pack.id;
@@ -2215,7 +2333,9 @@ export default function ChatView({
                   return (
                     <button
                       key={pack.id}
-                      onClick={() => topUp(pack.id)}
+                      onClick={() =>
+                        payMethod === "crypto" ? cryptoTopUp(pack.id) : topUp(pack.id)
+                      }
                       disabled={!!toppingUp}
                       className={`relative rounded-xl border px-3 py-3 text-left transition-colors disabled:opacity-60 ${
                         highlight
@@ -2244,8 +2364,13 @@ export default function ChatView({
                   );
                 })}
               </div>
+              {cryptoStatus && (
+                <p className="text-xs text-center font-semibold text-accent">{cryptoStatus}</p>
+              )}
               <p className="text-[11px] text-muted text-center">
-                One-tap with your saved card · secured by Stripe
+                {payMethod === "crypto"
+                  ? "Pay with USDC on Solana from your Phantom wallet"
+                  : "One-tap with your saved card · secured by Stripe"}
               </p>
               <p className="text-[11px] text-muted/80 text-center -mt-2">
                 All Token purchases are final and non-refundable.

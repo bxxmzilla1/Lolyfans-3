@@ -541,6 +541,24 @@ begin
   return coalesce(new_balance, -1);
 end $$;
 
+-- Crypto token top-ups (USDC on Solana via Phantom). See
+-- migration-crypto-topups.sql for the column notes.
+create table if not exists crypto_topups (
+  id uuid primary key default gen_random_uuid(),
+  chat_id uuid not null references chats(id) on delete cascade,
+  pack_id text not null,
+  tokens int not null,
+  amount_micro bigint not null,
+  reference text not null unique,
+  signature text unique,
+  payer text,
+  status text not null default 'pending' check (status in ('pending', 'paid')),
+  created_at timestamptz not null default now(),
+  paid_at timestamptz
+);
+alter table crypto_topups enable row level security;
+create index if not exists crypto_topups_chat_idx on crypto_topups (chat_id, created_at desc);
+
 -- Paid profile subscriptions (Stripe Billing). One row per fan chat + creator.
 -- status mirrors Stripe: trialing / active / canceling / past_due / canceled.
 create table if not exists subscriptions (
